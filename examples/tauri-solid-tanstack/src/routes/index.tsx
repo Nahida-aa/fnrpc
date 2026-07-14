@@ -1,7 +1,7 @@
-import { fnrpc, client } from '#/integrations/fnrpc/client.ts';
-import { CreateQueryResult } from '@tanstack/solid-query';
+import {  fnrpc, client } from '#/integrations/fnrpc/client.ts';
+import { CreateQueryResult, useMutation, useQuery, UseQueryOptions } from '@tanstack/solid-query';
 import { createFileRoute } from '@tanstack/solid-router';
-import { createSignal, createEffect, onCleanup, Show } from 'solid-js';
+import { createSignal, createEffect, onCleanup, Show, Switch, Match } from 'solid-js';
 
 export const Route = createFileRoute('/')({
   component: IndexPage,
@@ -19,24 +19,43 @@ function IndexPage() {
 }
 
 function QuerySection() {
-  const health =  fnrpc.createQuery(() => ['health_check']);
+  // const health = useQuery(() => client.health_check.queryOptions(null))
+  const get_count = useQuery(() => client.get_count.queryOptions(null))
+  console.log(JSON.stringify("hello"))
+  const health = useQuery(() =>({
+    queryKey: ['health_check'],
+    queryFn: () => fnrpc.health_check.query(),
+  }))
+  createEffect(() => {
+    console.log(JSON.stringify(health.data))
+  })
+
+  // fnrpcHook.createQuery(() => ['health_check']);
+
   const [name, setName] = createSignal('World');
-  const greet = fnrpc.createQuery(() => ['greet', name()]);
+  const greet = useQuery(() => client.greet.queryOptions(name()));
+  // const greet = fnrpcHook.createQuery(() => ['greet', name()]);
   const [a, setA] = createSignal(1);
   const [b, setB] = createSignal(2);
-  const add = fnrpc.createQuery(() => ['add', [a(), b()] as [number, number]]);
+
+  const add = useQuery(() => client.add.queryOptions([a(), b()]));
+  // const add = fnrpcHook.createQuery(() => ['add', [a(), b()] as [number, number]]);
   const [uid, setUid] = createSignal(1);
-  const user = fnrpc.createQuery(() => ['get_user', uid()]);
+  const user = useQuery(() => client.get_user.queryOptions(uid()));
+  // const user = fnrpcHook.createQuery(() => ['get_user', uid()]);
   const [x, setX] = createSignal(10);
   const [y, setY] = createSignal(2);
-  const divide = fnrpc.createQuery(() => ['divide', [x(), y()] as [number, number]]);
+  const divide = useQuery(() => client.divide.queryOptions([x(), y()]));
+  // const divide = fnrpcHook.createQuery(() => ['divide', [x(), y()] as [number, number]]);
 
   return (
     <section class="space-y-3">
       <h2 class="text-lg font-semibold border-b pb-1">Queries</h2>
-
+      <Row label="get_count()">
+        <QueryResult query={get_count} />
+      </Row>
       <Row label="health_check()">
-        <QueryResult query={fnrpc.createQuery(() => ['health_check'])} />
+        <QueryResult query={health} />
       </Row>
 
       <Row label="greet(name)">
@@ -71,7 +90,8 @@ function QuerySection() {
 function MutationSection() {
   const [name, setName] = createSignal('Bob');
   const [email, setEmail] = createSignal('bob@test.com');
-  const mutation = fnrpc.createMutation(() => 'create_user');
+  const mutation = useMutation(() => client.create_user.mutationOptions())
+  // const mutation = fnrpcHook.createMutation(() => 'create_user');
 
   return (
     <section class="space-y-3">
@@ -115,7 +135,7 @@ function TickTest() {
 
   createEffect(() => {
     if (!running()) return;
-    const sub = client.tick.subscribe(BigInt(500), {
+    const sub = fnrpc.tick.subscribe(BigInt(500), {
       onData: v => setCount(Number(v)),
     });
     onCleanup(() => sub.unsubscribe());
@@ -146,7 +166,7 @@ function EchoTest() {
 
   createEffect(() => {
     if (!running()) { setMsgs([]); return; }
-    const sub = client.echo_stream.subscribe(prefix(), {
+    const sub = fnrpc.echo_stream.subscribe(prefix(), {
       onData: v => setMsgs(prev => [...prev, String(v)]),
     });
     onCleanup(() => sub.unsubscribe());
@@ -177,7 +197,7 @@ function WatchTest() {
 
   createEffect(() => {
     if (!running()) { setMsgs([]); return; }
-    const sub = client.watch_status.subscribe(key(), {
+    const sub = fnrpc.watch_status.subscribe(key(), {
       onData: v => setMsgs(prev => [...prev, String(v)]),
     });
     onCleanup(() => sub.unsubscribe());
@@ -211,17 +231,21 @@ function Row(props: { label: string; children: any }) {
 }
 
 function QueryResult(props: { query: CreateQueryResult }) {
+  console.log('QueryResult')
+  createEffect(() => {
+    console.log('QueryResult effect', props.query.data, props.query.error, props.query.isLoading)
+  })
   return (
-    <>
-      <Show when={props.query.isLoading}>
+    <Switch>
+      <Match when={props.query.isPending}>
         <span class="text-muted-foreground text-xs">loading...</span>
-      </Show>
-      <Show when={props.query.error}>
-        {err => <span class="text-destructive text-xs">{err().message}</span>}
-      </Show>
-      <Show when={props.query.data}>
-        {data => <span class="font-mono text-sm">{JSON.stringify(data())}</span>}
-      </Show>
-    </>
+      </Match>
+      <Match when={props.query.isError}>
+        <span class="text-destructive text-xs">{props.query.error?.message}</span>
+      </Match>
+      <Match when={props.query.isSuccess}>
+        <span class="font-mono text-sm">{JSON.stringify(props.query.data)}</span>
+      </Match>
+    </Switch>
   );
 }

@@ -11,6 +11,7 @@
       "dependencies": {
         "@fnrpc/client": "workspace:*",
         "@fnrpc/solid-query": "workspace:*",
+        "@fnrpc/tanstack-query": "workspace:*",
         "@kobalte/core": "^0.13.12",
         "@tanstack/solid-devtools": "^0.8.8",
         "@tanstack/solid-form": "^1.33.2",
