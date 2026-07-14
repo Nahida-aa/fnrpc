@@ -1,0 +1,41 @@
+{
+  "name": "@fnrpc/client",
+  "version": "0.0.1",
+  "description": "fnRPC client — transport-agnostic RPC client with Proxy-based typed API",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./src/index.ts",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "tsup": {
+    "entry": [
+      "src/index.ts"
+    ],
+    "format": [
+      "esm",
+      "cjs"
+    ],
+    "dts": true,
+    "splitting": true,
+    "clean": true,
+    "sourcemap": true
+  },
+  "devDependencies": {
+    "tsup": "^8.3.6",
+    "typescript": "^7"
+  }
+}

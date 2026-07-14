@@ -1,3 +1,6 @@
 {
-  "name": "fnrpc-root"
+  "name": "fnrpc-root",
+  "workspaces": [
+    "packages/*"
+  ],
 }
