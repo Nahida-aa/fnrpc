@@ -6,8 +6,8 @@ use futures::StreamExt;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
-use specta::datatype::{DataType, FunctionResultVariant};
-use specta::{Generics, Type, TypeCollection};
+use specta::datatype::{DataType, Primitive, Reference};
+use specta::Type;
 
 use crate::error::RpcErr;
 
@@ -20,18 +20,44 @@ pub struct TsTypeInfo {
 
 /// Compute the TS type reference name for a type.
 fn type_ts<T: Type>() -> TsTypeInfo {
-    let mut type_map = TypeCollection::default();
-    let data_type = T::inline(&mut type_map, Generics::NONE);
+    let mut types = specta::Types::default();
+    let data_type = T::definition(&mut types);
 
     let ts_ref = match &data_type {
-        DataType::Struct(s) => s.name().to_string(),
-        DataType::Enum(e) => e.name().to_string(),
-        _ => specta_typescript::datatype(
-            &Default::default(),
-            &FunctionResultVariant::Value(data_type),
-            &type_map,
-        )
-        .unwrap_or_else(|_| "unknown".to_string()),
+        DataType::Struct(_) | DataType::Enum(_) => {
+            types
+                .into_sorted_iter()
+                .next()
+                .map(|ndt| ndt.name.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        }
+        DataType::Reference(Reference::Named(r)) => {
+            if let Some(ndt) = types.get(r) {
+                if ndt.ty.is_some() {
+                    ndt.name.to_string()
+                } else {
+                    let exporter = specta_typescript::Typescript::default();
+                    specta_typescript::primitives::inline(&exporter, &types, &data_type)
+                        .unwrap_or_else(|_| "unknown".to_string())
+                }
+            } else {
+                "unknown".to_string()
+            }
+        }
+        DataType::Primitive(p)
+            if matches!(
+                p,
+                Primitive::u64 | Primitive::i64 | Primitive::u128 | Primitive::i128
+                    | Primitive::usize | Primitive::isize
+            ) =>
+        {
+            "bigint".to_string()
+        }
+        _ => {
+            let exporter = specta_typescript::Typescript::default();
+            specta_typescript::primitives::inline(&exporter, &types, &data_type)
+                .unwrap_or_else(|_| "unknown".to_string())
+        }
     };
 
     TsTypeInfo { ts_ref }
@@ -44,10 +70,10 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
     fn kind(&self) -> &'static str;
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
-    /// Populate a shared `TypeCollection` and collect top-level input/output DataTypes.
+    /// Populate a shared type registry and collect top-level input/output DataTypes.
     fn populate_types(
         &self,
-        type_map: &mut TypeCollection,
+        types: &mut specta::Types,
         top_level: &mut Vec<DataType>,
     );
     async fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr>;
@@ -91,11 +117,11 @@ where
 
     fn populate_types(
         &self,
-        type_map: &mut TypeCollection,
+        types: &mut specta::Types,
         top_level: &mut Vec<DataType>,
     ) {
-        let input = F::Input::inline(type_map, Generics::NONE);
-        let output = F::Output::inline(type_map, Generics::NONE);
+        let input = F::Input::definition(types);
+        let output = F::Output::definition(types);
         top_level.push(input);
         top_level.push(output);
     }
@@ -133,7 +159,7 @@ pub trait ErasedSubscriptionHandler<Ctx>: Send + Sync {
     fn output_ts(&self) -> TsTypeInfo;
     fn populate_types(
         &self,
-        type_map: &mut TypeCollection,
+        types: &mut specta::Types,
         top_level: &mut Vec<DataType>,
     );
     fn call<'a>(
@@ -164,11 +190,11 @@ where
 
     fn populate_types(
         &self,
-        type_map: &mut TypeCollection,
+        types: &mut specta::Types,
         top_level: &mut Vec<DataType>,
     ) {
-        let input = F::Input::inline(type_map, Generics::NONE);
-        let output = F::Output::inline(type_map, Generics::NONE);
+        let input = F::Input::definition(types);
+        let output = F::Output::definition(types);
         top_level.push(input);
         top_level.push(output);
     }

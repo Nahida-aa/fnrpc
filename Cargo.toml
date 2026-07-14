@@ -8,7 +8,7 @@ resolver = "3"
 [workspace.dependencies]
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
-specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
+specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
 
 [profile.release]
 lto = "fat"
