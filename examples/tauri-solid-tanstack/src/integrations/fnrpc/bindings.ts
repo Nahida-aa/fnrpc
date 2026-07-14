@@ -6,13 +6,13 @@ export type User = {
 	email: string,
 };
 export type Procedures = {
-  greet: { kind: "query"; input: string; output: string; error: unknown };
-  health_check: { kind: "query"; input: null; output: string; error: unknown };
-  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: unknown };
   get_user: { kind: "query"; input: bigint; output: User; error: unknown };
-  add: { kind: "query"; input: [number, number]; output: number; error: unknown };
   create_user: { kind: "mutation"; input: [string, string]; output: User; error: unknown };
+  add: { kind: "query"; input: [number, number]; output: number; error: unknown };
+  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: unknown };
+  health_check: { kind: "query"; input: null; output: string; error: unknown };
+  greet: { kind: "query"; input: string; output: string; error: unknown };
   echo_stream: { kind: "subscription"; input: string; output: string; error: unknown };
-  watch_status: { kind: "subscription"; input: string; output: string; error: unknown };
   tick: { kind: "subscription"; input: bigint; output: bigint; error: unknown };
+  watch_status: { kind: "subscription"; input: string; output: string; error: unknown };
 }

@@ -44,6 +44,8 @@ fn type_ts<T: Type>() -> TsTypeInfo {
                 "unknown".to_string()
             }
         }
+        // BigInt types: exporter forbids them by default (precision loss concern);
+        // the TS bindings use `bigint` via `Configuration::enable_lossless_bigints()`.
         DataType::Primitive(p)
             if matches!(
                 p,
@@ -53,6 +55,10 @@ fn type_ts<T: Type>() -> TsTypeInfo {
         {
             "bigint".to_string()
         }
+        // f64 → `number | null`: JSON cannot represent NaN/Infinity/-Infinity,
+        // serde_json serialises them as `null`.  The exporter always does this;
+        // it is NOT controlled by the semantic config above.
+        DataType::Primitive(Primitive::f64) => "number | null".to_string(),
         _ => {
             let exporter = specta_typescript::Typescript::default();
             specta_typescript::primitives::inline(&exporter, &types, &data_type)

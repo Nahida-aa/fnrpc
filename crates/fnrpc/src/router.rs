@@ -130,7 +130,18 @@ where
             sub.populate_types(&mut types, &mut vec![]);
         }
 
-        // Apply lossless bigint remap (u64/i64 → bigint in TS)
+        // Apply semantic remapping for TS types.
+        //
+        // - `enable_lossless_bigints()`: u64/i64/u128/i128/usize/isize → `bigint`
+        //   (default: error — specta forbids bigint to avoid silent precision loss)
+        // - If your runtime supports JSON `number` with precision loss, use
+        //   `#[specta(type = Number)]` per-field instead.
+        //
+        // f64 → `number | null` is the DEFAULT exporter behaviour (not from this config),
+        // because JSON cannot represent NaN/Infinity/-Infinity — serde_json serialises
+        // them as `null`.  If your transport layer preserves them losslessly, add:
+        //   `.enable_lossless_floats()`
+        // to flatten it back to plain `number`.
         let semantic = specta_typescript::semantic::Configuration::default()
             .enable_lossless_bigints();
         let types = semantic.apply_types(&types);
