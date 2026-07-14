@@ -13,7 +13,7 @@ function IndexPage() {
       <h1 class="text-2xl font-bold">fnrpc Examples</h1>
       <QuerySection />
       <MutationSection />
-      {/* <SubscriptionSection /> */}
+      <SubscriptionSection />
     </div>
   );
 }
@@ -115,7 +115,7 @@ function TickTest() {
 
   createEffect(() => {
     if (!running()) return;
-    const sub = client.tick.subscribe(500, {
+    const sub = client.tick.subscribe(BigInt(500), {
       onData: v => setCount(Number(v)),
     });
     onCleanup(() => sub.unsubscribe());

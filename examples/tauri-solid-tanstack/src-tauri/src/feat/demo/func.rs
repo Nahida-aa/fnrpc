@@ -2,12 +2,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use crate::ctx::Ctx;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct User {
-    pub id: u64,
-    pub name: String,
-    pub email: String,
-}
+
 
 #[fnrpc::rpc_query]
 pub async fn greet(name: String) -> String {
@@ -19,8 +14,15 @@ pub async fn add(a: i32, b: i32) -> i32 {
     a + b
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct User {
+    pub id: u32,
+    pub name: String,
+    pub email: String,
+}
+
 #[fnrpc::rpc_query]
-pub async fn get_user(id: u64) -> User {
+pub async fn get_user(id: u32) -> User {
     User { id, name: "Alice".into(), email: "alice@example.com".into() }
 }
 
