@@ -1,0 +1,47 @@
+{
+  "name": "tauri-solid-tanstack",
+  "version": "0.1.0",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "dev:desktop": "bun run tauri dev",
+    "dev:android": "bun run tauri android dev",
+    "build": "vite build",
+    "serve": "vite preview",
+    "tauri": "tauri",
+    "gen-fnrpc": "cargo run --bin gen-fnrpc --manifest-path src-tauri/Cargo.toml"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fnrpc/client": "workspace:*",
+    "@fnrpc/solid-query": "workspace:*",
+    "@kobalte/core": "^0.13.12",
+    "@tanstack/solid-devtools": "^0.8.8",
+    "@tanstack/solid-form": "^1.33.2",
+    "@tanstack/solid-form-devtools": "^0.2.31",
+    "@tanstack/solid-query": "^5.101.2",
+    "@tanstack/solid-query-devtools": "^5.101.2",
+    "@tanstack/solid-router": "^1.170.18",
+    "@tanstack/solid-router-devtools": "^1.167.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "class-variance-authority": "^0.7.1",
+    "solid-js": "^1.9.3",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.2",
+    "@tanstack/devtools-vite": "^0.8.1",
+    "@tanstack/router-plugin": "^1.168.20",
+    "@tauri-apps/cli": "^2",
+    "typescript": "7",
+    "vite": "^8.0.16",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}

@@ -85,6 +85,14 @@ where
         svc.call(ctx, path, input).await
     }
 
+    /// Retrieve a subscription handler by path (owned `Arc` for `'static` usage).
+    pub fn get_sub_handler(
+        &self,
+        path: &str,
+    ) -> Option<Arc<dyn ErasedSubscriptionHandler<Ctx>>> {
+        self.inner.subscriptions.get(path).cloned()
+    }
+
     /// Dispatch a subscription by path, returning a stream of values.
     pub fn dispatch_subscribe<'a>(
         &'a self,

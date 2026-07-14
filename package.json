@@ -1,6 +1,7 @@
 {
   "name": "fnrpc-root",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/tauri-solid-tanstack"
   ],
 }

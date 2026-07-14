@@ -185,7 +185,6 @@ apps/web/.env*
 # Python
 backend/.pytest_cache/
 backend/.mypy_cache/
-examples/
 
 pnpm-lock.yaml
 node_modules
