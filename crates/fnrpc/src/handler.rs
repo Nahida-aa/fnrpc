@@ -123,7 +123,7 @@ pub trait RpcSubscription<Ctx>: Send + Sync {
     fn exec(
         ctx: &Ctx,
         input: Self::Input,
-    ) -> Pin<Box<dyn Stream<Item = Result<Self::Output, RpcErr>> + Send>>;
+    ) -> Pin<Box<dyn Stream<Item = Result<Self::Output, RpcErr>> + Send + '_>>;
 }
 
 /// Object-safe erased subscription handler stored in the router.
@@ -136,11 +136,11 @@ pub trait ErasedSubscriptionHandler<Ctx>: Send + Sync {
         type_map: &mut TypeCollection,
         top_level: &mut Vec<DataType>,
     );
-    fn call(
-        &self,
-        ctx: &Ctx,
+    fn call<'a>(
+        &'a self,
+        ctx: &'a Ctx,
         input: Value,
-    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send>>;
+    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'a>>;
 }
 
 /// Blanket impl: any `RpcSubscription<Ctx>` becomes an `ErasedSubscriptionHandler<Ctx>`.
@@ -173,11 +173,11 @@ where
         top_level.push(output);
     }
 
-    fn call(
-        &self,
-        ctx: &Ctx,
+    fn call<'a>(
+        &'a self,
+        ctx: &'a Ctx,
         input: Value,
-    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'a>> {
         let input = match serde_json::from_value(input) {
             Ok(v) => v,
             Err(e) => {

@@ -479,7 +479,7 @@ fn rpc_subscription_impl(item: TokenStream) -> TokenStream {
                 fn exec(
                     ctx: &#ctx_ty,
                     input: Self::Input,
-                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send>> {
+                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + '_>> {
                     #exec_body
                 }
             }
@@ -499,7 +499,7 @@ fn rpc_subscription_impl(item: TokenStream) -> TokenStream {
                 fn exec(
                     _ctx: &T,
                     input: Self::Input,
-                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send>> {
+                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + '_>> {
                     #exec_body
                 }
             }

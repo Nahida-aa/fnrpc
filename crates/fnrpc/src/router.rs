@@ -86,12 +86,12 @@ where
     }
 
     /// Dispatch a subscription by path, returning a stream of values.
-    pub fn dispatch_subscribe(
-        &self,
-        ctx: &Ctx,
+    pub fn dispatch_subscribe<'a>(
+        &'a self,
+        ctx: &'a Ctx,
         path: &str,
         input: Value,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send>>, RpcErr> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'a>>, RpcErr> {
         let handler = self
             .inner
             .subscriptions
