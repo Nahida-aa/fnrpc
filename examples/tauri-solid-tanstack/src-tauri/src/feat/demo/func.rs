@@ -3,7 +3,6 @@ use specta::Type;
 use crate::ctx::Ctx;
 
 
-
 #[fnrpc::rpc_query]
 pub async fn greet(name: String) -> String {
     format!("Hello, {name}!")

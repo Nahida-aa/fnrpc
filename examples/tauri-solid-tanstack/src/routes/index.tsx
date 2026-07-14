@@ -19,7 +19,7 @@ function IndexPage() {
 }
 
 function QuerySection() {
-  const health = fnrpc.createQuery(() => ['health_check']);
+  const health =  fnrpc.createQuery(() => ['health_check']);
   const [name, setName] = createSignal('World');
   const greet = fnrpc.createQuery(() => ['greet', name()]);
   const [a, setA] = createSignal(1);
@@ -36,7 +36,7 @@ function QuerySection() {
       <h2 class="text-lg font-semibold border-b pb-1">Queries</h2>
 
       <Row label="health_check()">
-        <QueryResult query={health} />
+        <QueryResult query={fnrpc.createQuery(() => ['health_check'])} />
       </Row>
 
       <Row label="greet(name)">

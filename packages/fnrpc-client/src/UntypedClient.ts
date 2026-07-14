@@ -70,6 +70,16 @@ export function observable<T>(
 
 export type Observable<T> = ReturnType<typeof observable<T>>;
 
+// JSON.stringify throws on BigInt values. This replacer converts BigInt to
+// Number so JSON transport works. Values > 2^53 lose precision — acceptable
+// for this transport (JSON has no native bigint type; the Rust backend
+// receives a JSON number either way).
+function safeStringify(value: unknown): string {
+  return JSON.stringify(value, (_, val) =>
+    typeof val === "bigint" ? Number(val) : val,
+  );
+}
+
 export const fetchExecute = (
   config: { url: string },
   args: ExecuteArgs,
@@ -77,7 +87,7 @@ export const fetchExecute = (
   if (args.type === "subscription") {
     return observable<ExeceuteData>((subscriber) => {
       const params = new URLSearchParams({
-        input: JSON.stringify(args.input),
+        input: safeStringify(args.input),
       });
       const es = new EventSource(
         `${config.url}/sub/${args.path}?${params}`,
@@ -103,7 +113,7 @@ export const fetchExecute = (
   if (args.type === "query") {
     promise = fetch(
       `${config.url}/${args.path}?${new URLSearchParams({
-        input: JSON.stringify(args.input),
+        input: safeStringify(args.input),
       })}`,
       {
         method: "GET",
@@ -119,7 +129,7 @@ export const fetchExecute = (
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify(args.input),
+      body: safeStringify(args.input),
     });
   }
 

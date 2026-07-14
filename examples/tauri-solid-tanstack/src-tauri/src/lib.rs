@@ -1,14 +1,11 @@
 mod ctx;
 pub mod feat;
 pub mod integrations;
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    tracing_subscriber::fmt().with_env_filter("info").init();
+
     let app_state = ctx::AppState {
         app_dir: std::path::PathBuf::from("."),
     };
@@ -25,4 +22,20 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+pub async fn run_axum() {
+    let app_state = ctx::AppState {
+        app_dir: std::path::PathBuf::from("."),
+    };
+    let fnrpc_router =
+        integrations::fnrpc_func::build_fn_rpc().layer(fnrpc::middleware::TracingLayer);
+
+    let router = integrations::fnrpc_axum::build_axum_router(fnrpc_router, app_state);
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:19110")
+        .await
+        .expect("failed to bind");
+    axum::serve(listener, router)
+        .await
+        .expect("failed to serve");
 }

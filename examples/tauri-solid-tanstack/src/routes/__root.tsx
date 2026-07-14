@@ -4,6 +4,8 @@ import type { JSX } from 'solid-js';
 import styleCss from '../styles.css?url'
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { Devtools } from '#/components/app/devtools.tsx';
+import { client, fnrpc } from '#/integrations/fnrpc/client.ts';
+import { getQueryClient } from '#/integrations/tanstack-query/provider.ts';
 // import * as deviceApi from '../feat/env/device';
 // import { getGroupList } from '#/cmd/tasks.ts';
 interface MyRouterContext {
@@ -33,14 +35,17 @@ function RootComponent() {
   )
 }
 function RootDocument({ children }: { children: JSX.Element }) {
+  const queryClient = getQueryClient();
   return <>
   <HeadContent />
-  
+  <fnrpc.Provider client={client} queryClient={queryClient}>
+
     <ThemeProvider>
         <main class="min-w-0 flex-1 h-screen grid grid-rows-[auto_1fr]">
           {children}
         </main>
     </ThemeProvider>
+  </fnrpc.Provider>
   <Devtools />
   <Scripts />
   </>
