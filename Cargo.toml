@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "crates/*",
-    "examples/tauri-solid-tanstack/src-tauri"
+    "examples/tauri-solid-tanstack/src-tauri",
+    "examples/axum-react-query/server"
 ]
 default-members = ["crates/*"]
 resolver = "3"

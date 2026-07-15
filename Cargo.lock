@@ -272,6 +272,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum-react-query-server"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "fnrpc",
+ "fnrpc-axum",
+ "futures",
+ "serde",
+ "serde_json",
+ "specta",
+ "tokio",
+ "tower-http",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
