@@ -400,7 +400,7 @@ async fn test_ts_client() {
         .route(Greet)
         .route(multi_param__FnRpc);
 
-    let client = router.generate_ts_client("/rpc");
+    let client = fnrpc::codegen::generate_ts_client(&router, "/rpc");
     assert!(client.contains("greet"), "should contain method name");
     assert!(client.contains("GreetInput"), "should contain input type");
     assert!(client.contains("GreetOutput"), "should contain output type");

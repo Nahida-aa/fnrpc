@@ -67,8 +67,8 @@ router
 - `dispatch(ctx, path, input)` — builds RouterService, wraps in layers, calls through
 - `dispatch_subscribe(ctx, path, input)` — subscribe lookup (no middleware wrapping)
 - `get_sub_handler(path)` — returns `Arc<dyn ErasedSubscribeHandler>` for Tauri `'static`
-- `generate_ts_client(url)` → TS bindings string
-- `write_ts_client(url, path)` — write bindings to disk
+- `codegen::generate_ts_client(router, url)` → TS bindings string
+- `codegen::write_ts_client(router, url, path)` — write bindings to disk
 
 ## Handler traits
 

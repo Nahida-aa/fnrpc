@@ -13,27 +13,27 @@ export type User = {
 	email: string,
 };
 export type Procedures = {
-  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: RpcErr };
-  get_user: { kind: "query"; input: number; output: User; error: RpcErr };
-  create_user: { kind: "mutate"; input: [string, string]; output: User; error: RpcErr };
-  health_check: { kind: "query"; input: null; output: string; error: RpcErr };
-  greet: { kind: "query"; input: string; output: string; error: RpcErr };
   get_count: { kind: "query"; input: null; output: string; error: RpcErr };
   add: { kind: "query"; input: [number, number]; output: number; error: RpcErr };
-  tick: { kind: "subscribe"; input: bigint; output: bigint; error: RpcErr };
-  watch_status: { kind: "subscribe"; input: string; output: string; error: RpcErr };
+  greet: { kind: "query"; input: string; output: string; error: RpcErr };
+  health_check: { kind: "query"; input: null; output: string; error: RpcErr };
+  get_user: { kind: "query"; input: number; output: User; error: RpcErr };
+  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: RpcErr };
+  create_user: { kind: "mutate"; input: [string, string]; output: User; error: RpcErr };
   echo_stream: { kind: "subscribe"; input: string; output: string; error: RpcErr };
+  watch_status: { kind: "subscribe"; input: string; output: string; error: RpcErr };
+  tick: { kind: "subscribe"; input: bigint; output: bigint; error: RpcErr };
 }
 
 export const __procedureKinds = {
-  divide: "query",
-  get_user: "query",
-  create_user: "mutate",
-  health_check: "query",
-  greet: "query",
   get_count: "query",
   add: "query",
-  tick: "subscribe",
-  watch_status: "subscribe",
+  greet: "query",
+  health_check: "query",
+  get_user: "query",
+  divide: "query",
+  create_user: "mutate",
   echo_stream: "subscribe",
+  watch_status: "subscribe",
+  tick: "subscribe",
 } as const;
