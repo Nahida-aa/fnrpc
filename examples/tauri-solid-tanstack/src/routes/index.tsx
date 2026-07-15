@@ -190,7 +190,7 @@ function TickStreamedTest() {
       >
         {running() ? 'Stop' : 'Start'}
       </button>
-      <Show when={query.data}>
+      <Show when={query.isSuccess}>
         <span class="font-mono text-xs truncate max-w-60">
           {query.data!.join(', ')}
         </span>
@@ -218,7 +218,7 @@ function TickLiveTest() {
       >
         {running() ? 'Stop' : 'Start'}
       </button>
-      <Show when={query.data}>
+      <Show when={query.isSuccess}>
         <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
       </Show>
       <Show when={query.isFetching}>
