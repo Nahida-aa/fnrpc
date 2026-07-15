@@ -9,81 +9,89 @@ export const fetchTransport = (
     input: unknown,
     kind: ProcedureKind,
     signal?: AbortSignal,
-  ): Promise<unknown> | AsyncIterable<unknown> => {
+  ): Promise<unknown> => {
     if (kind === "subscribe") {
-      const serialized = serialize(input);
-      const params = new URLSearchParams({
-        input: safeStringify(serialized),
-      });
-      const url = `${config.url}/${path}?${params}`;
-      const es = new EventSource(url);
+      return new Promise((resolve, reject) => {
+        const serialized = serialize(input);
+        const params = new URLSearchParams({
+          input: safeStringify(serialized),
+        });
+        const url = `${config.url}/${path}?${params}`;
+        const es = new EventSource(url);
 
-      const iterable: AsyncIterable<unknown> = {
-        [Symbol.asyncIterator]() {
-          let done = false;
-          const pending: Array<IteratorResult<unknown>> = [];
-          let resolve: ((r: IteratorResult<unknown>) => void) | null = null;
+        const iterable: AsyncIterable<unknown> = {
+          [Symbol.asyncIterator]() {
+            let done = false;
+            const pending: Array<IteratorResult<unknown>> = [];
+            let resolveNext:
+              | ((r: IteratorResult<unknown>) => void)
+              | null = null;
 
-          es.onmessage = (e) => {
-            if (done) return;
-            try {
-              const val = JSON.parse(e.data);
-              push({ done: false, value: val });
-            } catch {
-              // skip malformed data
-            }
-          };
+            es.onmessage = (e) => {
+              if (done) return;
+              try {
+                const val = JSON.parse(e.data);
+                push({ done: false, value: val });
+              } catch {
+                // skip malformed data
+              }
+            };
 
-          es.onerror = () => {
-            done = true;
-            es.close();
-            push({ done: true, value: undefined as any });
-          };
-
-          function push(result: IteratorResult<unknown>) {
-            if (resolve) {
-              resolve(result);
-              resolve = null;
-            } else {
-              pending.push(result);
-            }
-          }
-
-          if (signal) {
-            signal.addEventListener("abort", () => {
+            es.onerror = () => {
               done = true;
               es.close();
-              if (resolve) {
-                resolve({ done: true, value: undefined as any });
-              }
-            }, { once: true });
-          }
+              push({ done: true, value: undefined as any });
+            };
 
-          return {
-            next(): Promise<IteratorResult<unknown>> {
-              if (done) {
+            function push(result: IteratorResult<unknown>) {
+              if (resolveNext) {
+                resolveNext(result);
+                resolveNext = null;
+              } else {
+                pending.push(result);
+              }
+            }
+
+            if (signal) {
+              signal.addEventListener("abort", () => {
+                done = true;
+                es.close();
+                if (resolveNext) {
+                  resolveNext({ done: true, value: undefined as any });
+                }
+              }, { once: true });
+            }
+
+            return {
+              next(): Promise<IteratorResult<unknown>> {
+                if (done) {
+                  return Promise.resolve({ done: true, value: undefined as any });
+                }
+                if (pending.length > 0) {
+                  return Promise.resolve(pending.shift()!);
+                }
+                return new Promise((res) => {
+                  resolveNext = res;
+                });
+              },
+              return(): Promise<IteratorResult<unknown>> {
+                done = true;
+                es.close();
+                if (resolveNext) {
+                  resolveNext({ done: true, value: undefined as any });
+                }
                 return Promise.resolve({ done: true, value: undefined as any });
-              }
-              if (pending.length > 0) {
-                return Promise.resolve(pending.shift()!);
-              }
-              return new Promise((res) => {
-                resolve = res;
-              });
-            },
-            return(): Promise<IteratorResult<unknown>> {
-              done = true;
-              es.close();
-              if (resolve) {
-                resolve({ done: true, value: undefined as any });
-              }
-              return Promise.resolve({ done: true, value: undefined as any });
-            },
-          };
-        },
-      };
+              },
+            };
+          },
+        } satisfies AsyncIterable<unknown>;
 
-      return iterable;
+        es.onopen = () => resolve(iterable);
+        es.onerror = () => {
+          reject(new Error("EventSource connection failed"));
+          es.close();
+        };
+      });
     }
 
     // query / mutate
@@ -119,7 +127,7 @@ export const fetchTransport = (
 };
 
 export function consumeEventIterator<T, E = Error>(
-  iterable: AsyncIterable<T>,
+  iterable: AsyncIterable<T> | Promise<AsyncIterable<T>>,
   opts: {
     onEvent?: (value: T) => void;
     onError?: (err: E) => void;
@@ -130,10 +138,13 @@ export function consumeEventIterator<T, E = Error>(
 ): () => void {
   let cancelled = false;
 
-  const iterator = iterable[Symbol.asyncIterator]();
+  let iterator: AsyncIterator<T>;
 
   async function run() {
     try {
+      const resolved = await iterable;
+      iterator = resolved[Symbol.asyncIterator]();
+
       while (!cancelled) {
         const { done, value } = await iterator.next();
         if (done || cancelled) break;
@@ -158,12 +169,12 @@ export function consumeEventIterator<T, E = Error>(
   if (signal) {
     signal.addEventListener("abort", () => {
       cancelled = true;
-      iterator.return?.();
+      iterator?.return?.();
     }, { once: true });
   }
 
   return () => {
     cancelled = true;
-    iterator.return?.();
+    iterator?.return?.();
   };
 }

@@ -177,15 +177,24 @@ function EchoTest() {
     if (!running()) { setMsgs([]); return; }
 
     const ac = new AbortController();
-    const iter = fnrpc.echo_stream(prefix(), ac.signal);
+    let cancelled = false;
 
     (async () => {
-      for await (const v of iter) {
-        setMsgs(prev => [...prev, String(v)]);
+      try {
+        const iter = await fnrpc.echo_stream(prefix(), ac.signal);
+        for await (const v of iter) {
+          if (cancelled) break;
+          setMsgs(prev => [...prev, String(v)]);
+        }
+      } catch (e) {
+        console.error('echo error', e);
       }
     })();
 
-    onCleanup(() => ac.abort());
+    onCleanup(() => {
+      cancelled = true;
+      ac.abort();
+    });
   });
 
   return (
@@ -216,6 +225,7 @@ function EchoWithConsumeEventIterator() {
     const iter = fnrpc.echo_stream(prefix());
     const cancel = consumeEventIterator(iter, {
       onEvent: v => setMsgs(prev => [...prev, String(v)]),
+    
     });
     onCleanup(() => cancel());
   });

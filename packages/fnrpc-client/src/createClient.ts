@@ -12,7 +12,7 @@ export type VoidIfInputNull<
 
 export type ProcedureCallable<P extends Procedure> =
   P["kind"] extends "subscribe"
-    ? (input: VoidIfInputNull<P>, signal?: AbortSignal) => AsyncIterable<P["output"]>
+    ? (input: VoidIfInputNull<P>, signal?: AbortSignal) => Promise<AsyncIterable<P["output"]>>
     : (input: VoidIfInputNull<P>, signal?: AbortSignal) => Promise<P["output"]>;
 
 type ClientProceduresProxy<P extends Procedures> = {
@@ -30,7 +30,7 @@ type Transport = (
   input: unknown,
   kind: ProcedureKind,
   signal?: AbortSignal,
-) => Promise<unknown> | AsyncIterable<unknown>;
+) => Promise<unknown>;
 
 const noop = () => {
   // noop

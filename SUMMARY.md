@@ -11,15 +11,24 @@
 
 ## Work State
 ### Completed
-- Rust side: macros (`rpc_subscribe`/`rpc_mutate`), handler traits, router (`get_procedure_kind`, `__procedureKinds` codegen), Axum merge, Tauri command rename — all compile + 25 tests pass (18 integration + 7 serializer)
+- Rust side: macros (`rpc_subscribe`/`rpc_mutate`), handler traits, router (`get_procedure_kind`, `__procedureKinds` codegen), Axum merge, Tauri command rename — all compile + 26 tests pass (18 integration + 8 serializer)
 - TS `types.ts`: `ProcedureKind = "query" | "mutate" | "subscribe"`; removed old types; added `ConsumeEventOptions`
-- TS `UntypedClient.ts`: `fetchTransport(path, input, kind, signal?)` with SSE for subscribe, GET/POST for query/mutate; `consumeEventIterator`
 - TS `createClient.ts`: `createClient<P>(transport, kindMap)` — direct proxy calls, no method suffixes
-- TS `tauri.ts`: rewritten to accept `getCore: () => Promise<TauriCore>` and return transport function
+  - `ProcedureCallable` for subscribe: `(input, signal?) => Promise<AsyncIterable<output>>` (was `AsyncIterable<output>`)
+  - `Transport` always returns `Promise<unknown>` (was `Promise<unknown> | AsyncIterable<unknown>`)
+- TS `tauri.ts`: subscribe 返回 `Promise<AsyncIterable>` — invoke 成功后 resolve Promise 代表连接就绪
+- TS `UntypedClient.ts`: fetchTransport subscribe 返回 `Promise<AsyncIterable>` — EventSource `onopen` 后 resolve Promise
+  - `consumeEventIterator` 接受 `AsyncIterable<T> | Promise<AsyncIterable<T>>`（内部 await）
 - TS `serializer.ts`: orpc-style `serialize(input)` → `{ json, meta }` with `BIGINT` type tag, `deserialize(serialized)` → restored value, `flattenForRust()` for Rust compat, `safeStringify()`
-- Rust `serializer.rs`: `unpack_meta()` — unwraps `{ json, meta }` envelope, applies BIGINT string→number conversion
+  - `walk()` 中 `undefined` → `null`，避免 Tauri IPC 丢 key
+  - `flattenForRust()` / `deserialize()` 处理根级别 meta（segments 为空）
+- Rust `serializer.rs`: `unpack_meta()` + `apply_root_fix()` — 处理根级别 BIGINT
 - Tauri & Axum handlers: both call `unpack_meta()` before dispatch
-- Example client, bindings, and routes updated to new API
+- `fnrpc-tanstack-query`:
+  - `ProcedureUtils` 新增 `streamedKey`、`streamedOptions`、`liveKey`、`liveOptions`
+  - `stream-query.ts`: `serializableStreamedQuery` — 累积流到数组，支持 `refetchMode`/`maxChunks`
+  - `live-query.ts`: `liveQuery` — 每个 chunk 通过 `setQueryData` 实时更新 cache，返回最后一个值
+- Example client updated to `await fnrpc.echo_stream(prefix(), signal)` pattern
 
 ### Known
 - Tick subscription in Tauri previously broken by `JSON.stringify(BigInt)` — now fixed via serializer envelope in transport layer + Rust-side unwrap

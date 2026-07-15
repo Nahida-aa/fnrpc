@@ -12,80 +12,73 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
     input: unknown,
     kind: ProcedureKind,
     signal?: AbortSignal,
-  ): Promise<unknown> | AsyncIterable<unknown> => {
+  ): Promise<unknown> => {
     if (kind === "subscribe") {
-      const iterable: AsyncIterable<unknown> = {
-        [Symbol.asyncIterator]() {
-          let done = false;
-          const pending: Array<IteratorResult<unknown>> = [];
-          let resolve: ((r: IteratorResult<unknown>) => void) | null = null;
+      return getCore().then(async (mod) => {
+        const serialized = serialize(input);
+        const channel = new mod.Channel<string>();
 
-          void getCore()
-            .then(async (mod) => {
-              const serialized = serialize(input);
-              const channel = new mod.Channel<string>();
-              channel.onmessage = (msg: string) => {
-                if (done) return;
-                if (msg.startsWith("__error:")) {
-                  push({ done: true as const, value: undefined as any });
-                } else {
-                  push({ done: false as const, value: msg });
-                }
-              };
+        const iterable: AsyncIterable<unknown> = {
+          [Symbol.asyncIterator]() {
+            let done = false;
+            const pending: Array<IteratorResult<unknown>> = [];
+            let resolve: ((r: IteratorResult<unknown>) => void) | null = null;
 
-              await mod.invoke("rpc_sub", {
-                path,
-                input: serialized,
-                channel,
-              }).catch((err: unknown) => {
-                console.error("[fnrpc] tauri subscribe invoke error:", err);
+            channel.onmessage = (msg: string) => {
+              if (done) return;
+              if (msg.startsWith("__error:")) {
                 push({ done: true as const, value: undefined as any });
-              });
-            })
-            .catch((err: unknown) => {
-              console.error("[fnrpc] tauri subscribe getCore error:", err);
-              push({ done: true as const, value: undefined as any });
-            });
-
-          function push(result: IteratorResult<unknown>) {
-            if (resolve) {
-              resolve(result);
-              resolve = null;
-            } else {
-              pending.push(result);
-            }
-          }
-
-          if (signal) {
-            signal.addEventListener("abort", () => {
-              done = true;
-            }, { once: true });
-          }
-
-          return {
-            next(): Promise<IteratorResult<unknown>> {
-              if (done) {
-                return Promise.resolve({ done: true, value: undefined as any });
+              } else {
+                push({ done: false as const, value: msg });
               }
-              if (pending.length > 0) {
-                return Promise.resolve(pending.shift()!);
-              }
-              return new Promise((res) => {
-                resolve = res;
-              });
-            },
-            return(): Promise<IteratorResult<unknown>> {
-              done = true;
+            };
+
+            function push(result: IteratorResult<unknown>) {
               if (resolve) {
-                resolve({ done: true, value: undefined as any });
+                resolve(result);
+                resolve = null;
+              } else {
+                pending.push(result);
               }
-              return Promise.resolve({ done: true, value: undefined as any });
-            },
-          };
-        },
-      };
+            }
 
-      return iterable;
+            if (signal) {
+              signal.addEventListener("abort", () => {
+                done = true;
+              }, { once: true });
+            }
+
+            return {
+              next(): Promise<IteratorResult<unknown>> {
+                if (done) {
+                  return Promise.resolve({ done: true, value: undefined as any });
+                }
+                if (pending.length > 0) {
+                  return Promise.resolve(pending.shift()!);
+                }
+                return new Promise((res) => {
+                  resolve = res;
+                });
+              },
+              return(): Promise<IteratorResult<unknown>> {
+                done = true;
+                if (resolve) {
+                  resolve({ done: true, value: undefined as any });
+                }
+                return Promise.resolve({ done: true, value: undefined as any });
+              },
+            };
+          },
+        } satisfies AsyncIterable<unknown>;
+
+        await mod.invoke("rpc_sub", {
+          path,
+          input: serialized,
+          channel,
+        });
+
+        return iterable;
+      });
     }
 
     // query / mutate

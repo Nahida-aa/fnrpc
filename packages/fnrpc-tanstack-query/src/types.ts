@@ -1,6 +1,7 @@
 import type { Procedure, Procedures } from "@fnrpc/client";
 
 import type { ProcedureUtils } from "./procedure-utils";
+import type { StreamedQueryOptions } from "./stream-query";
 
 export type RouterUtils<T extends Procedures> = {
   [K in keyof T]: T[K] extends Procedure
@@ -27,3 +28,17 @@ export interface ProcedureUtilsOptions {
   queryKey?: (input: unknown) => unknown[];
   mutateKey?: () => unknown[];
 }
+
+export type StreamedKeyOptions = {
+  queryFnOptions?: StreamedQueryOptions;
+};
+
+export type StreamedOptionsIn = {
+  queryFnOptions?: StreamedQueryOptions;
+};
+
+export type LiveKeyOptions = Record<string, never>;
+
+export type LiveOptionsIn = Record<string, never>;
+
+export type { StreamedQueryOptions } from "./stream-query";
