@@ -8,6 +8,19 @@ import { liveQuery } from "./live-query";
 import { serializableStreamedQuery } from "./stream-query";
 import type { StreamedKeyOptions, StreamedOptionsIn } from "./types";
 
+function sanitizeVal(val: unknown): unknown {
+  if (typeof val === "bigint") return `${val}n`;
+  if (Array.isArray(val)) return val.map(sanitizeVal);
+  if (val !== null && typeof val === "object") {
+    const obj: Record<string, unknown> = {};
+    for (const k of Object.keys(val as Record<string, unknown>)) {
+      obj[k] = sanitizeVal((val as Record<string, unknown>)[k]);
+    }
+    return obj;
+  }
+  return val;
+}
+
 export class ProcedureUtils<TInput, TOutput, TError> {
   constructor(
     private path: string,
@@ -15,7 +28,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
   ) {}
 
   queryKey(input: TInput): ProcedureKey<TInput, TOutput> {
-    return [this.path, input] as any;
+    return [this.path, sanitizeVal(input)] as any;
   }
 
   queryOptions(input: TInput): {
@@ -47,7 +60,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
     input: TInput,
     options?: StreamedKeyOptions,
   ): DataTag<QueryKey, TOutput[], TError> {
-    return [this.path, input, "streamed", options?.queryFnOptions].filter(Boolean) as any;
+    return [this.path, sanitizeVal(input), "streamed", options?.queryFnOptions].filter(Boolean) as any;
   }
 
   streamedOptions<UInput = TInput>(
@@ -57,8 +70,6 @@ export class ProcedureUtils<TInput, TOutput, TError> {
     queryKey: DataTag<QueryKey, TOutput[], TError>;
     queryFn: (context: any) => Promise<TOutput[]>;
   } {
-    // const queryKey = this.streamedKey(input as any, options);
-
     return {
       queryKey: this.streamedKey(input as any, options),
       queryFn: serializableStreamedQuery(
@@ -77,7 +88,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
   liveKey(
     input: TInput,
   ): DataTag<QueryKey, TOutput, TError> {
-    return [this.path, input, "live"] as any;
+    return [this.path, sanitizeVal(input), "live"] as any;
   }
 
   liveOptions<UInput = TInput>(

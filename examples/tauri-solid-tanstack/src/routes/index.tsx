@@ -124,8 +124,8 @@ function SubscriptionSection() {
     <section class="space-y-3">
       <h2 class="text-lg font-semibold border-b pb-1">Subscriptions</h2>
       <TickTest />
-      {/* <TickStreamedTest /> */}
-      {/* <TickLiveTest /> */}
+      <TickStreamedTest />
+      <TickLiveTest />
       <EchoTest />
       <EchoWithConsumeEventIterator />
       <EchoStreamedTest />
@@ -173,7 +173,9 @@ function TickTest() {
 
 function TickStreamedTest() {
   const [running, setRunning] = createSignal(false);
-  const query = useQuery(() => client.tick.streamedOptions(500n, ));
+  const query = useQuery(() => ({...client.tick.streamedOptions(500n, ), 
+    enabled: running(),
+  }));
 
   return (
     <Row label="tick streamed(500)">
@@ -185,13 +187,13 @@ function TickStreamedTest() {
       >
         {running() ? 'Stop' : 'Start'}
       </button>
-      {/* <Show when={query.data}>
+      <Show when={query.data}>
         <span class="font-mono text-xs truncate max-w-60">
           {query.data!.join(', ')}
         </span>
-      </Show> */}
+      </Show>
       <Show when={query.isFetching}>
-        <span class="text-muted-foreground text-xs">streaming...</span>
+        <span class="text-muted-foreground text-xs">isFetching</span>
       </Show>
     </Row>
   );
@@ -202,8 +204,8 @@ function TickLiveTest() {
   const query = useQuery(() => ({
     ...client.tick.liveOptions(500n),
     enabled: running(),
-  
-    refetchInterval: undefined,
+    retry: true, // Infinite retry for more reliable streaming
+    // refetchInterval: undefined,
   }));
 
   return (
