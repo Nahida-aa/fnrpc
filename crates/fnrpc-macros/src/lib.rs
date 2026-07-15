@@ -1,15 +1,15 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse_macro_input, FnArg, GenericArgument, ItemFn, PathArguments, ReturnType, Type,
-    TypePath, TypeReference,
+    FnArg, GenericArgument, ItemFn, PathArguments, ReturnType, Type, TypePath, TypeReference,
+    parse_macro_input,
 };
 
 struct RegistryInput {
     ctx_ty: syn::Type,
     query_fns: Vec<syn::Path>,
-    mutation_fns: Vec<syn::Path>,
-    subscription_fns: Vec<syn::Path>,
+    mutate_fns: Vec<syn::Path>,
+    subscribe_fns: Vec<syn::Path>,
 }
 
 /// Given `handlers::log::watch_task_log`, return `handlers::log::watch_task_log__FnRpc`.
@@ -36,8 +36,8 @@ impl syn::parse::Parse for RegistryInput {
         syn::braced!(content in input);
 
         let mut query_fns = Vec::new();
-        let mut mutation_fns = Vec::new();
-        let mut subscription_fns = Vec::new();
+        let mut mutate_fns = Vec::new();
+        let mut subscribe_fns = Vec::new();
 
         while !content.is_empty() {
             let section: syn::Ident = content.parse()?;
@@ -46,14 +46,14 @@ impl syn::parse::Parse for RegistryInput {
             syn::bracketed!(items in content);
             let target = if section == "queries" {
                 &mut query_fns
-            } else if section == "mutations" {
-                &mut mutation_fns
-            } else if section == "subscriptions" {
-                &mut subscription_fns
+            } else if section == "mutates" {
+                &mut mutate_fns
+            } else if section == "subscribes" {
+                &mut subscribe_fns
             } else {
                 return Err(syn::Error::new(
                     section.span(),
-                    "expected `queries`, `mutations`, or `subscriptions`",
+                    "expected `queries`, `mutates`, or `subscribes`",
                 ));
             };
             while !items.is_empty() {
@@ -73,8 +73,8 @@ impl syn::parse::Parse for RegistryInput {
         Ok(RegistryInput {
             ctx_ty,
             query_fns,
-            mutation_fns,
-            subscription_fns,
+            mutate_fns,
+            subscribe_fns,
         })
     }
 }
@@ -84,28 +84,17 @@ pub fn fnrpc_registry(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as RegistryInput);
     let ctx_ty = &input.ctx_ty;
 
-    let query_structs: Vec<syn::Path> = input
-        .query_fns
-        .iter()
-        .map(fn_rpc_struct_path)
-        .collect();
-    let mutation_structs: Vec<syn::Path> = input
-        .mutation_fns
-        .iter()
-        .map(fn_rpc_struct_path)
-        .collect();
-    let subscription_structs: Vec<syn::Path> = input
-        .subscription_fns
-        .iter()
-        .map(fn_rpc_struct_path)
-        .collect();
+    let query_structs: Vec<syn::Path> = input.query_fns.iter().map(fn_rpc_struct_path).collect();
+    let mutate_structs: Vec<syn::Path> = input.mutate_fns.iter().map(fn_rpc_struct_path).collect();
+    let subscribe_structs: Vec<syn::Path> =
+        input.subscribe_fns.iter().map(fn_rpc_struct_path).collect();
 
     quote! {
         pub fn build_fn_rpc() -> fnrpc::router::RpcRouter<#ctx_ty> {
             fnrpc::router::RpcRouter::new()
                 #(.route(#query_structs))*
-                #(.route(#mutation_structs))*
-                #(.subscribe(#subscription_structs))*
+                #(.route(#mutate_structs))*
+                #(.subscribe(#subscribe_structs))*
         }
     }
     .into()
@@ -212,7 +201,8 @@ fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
         }
     } else {
         let types: Vec<_> = input_params
-            .iter().copied()
+            .iter()
+            .copied()
             .map(|arg| match arg {
                 FnArg::Typed(pat_type) => &pat_type.ty,
                 _ => panic!("parameter must be typed"),
@@ -272,13 +262,13 @@ pub fn rpc_query(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn rpc_mutation(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    rpc_fn_impl("mutation", item)
+pub fn rpc_mutate(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    rpc_fn_impl("mutate", item)
 }
 
 #[proc_macro_attribute]
-pub fn rpc_subscription(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    rpc_subscription_impl(item)
+pub fn rpc_subscribe(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    rpc_subscribe_impl(item)
 }
 
 /// Extract the Output type from a stream return type like `impl Stream<Item = T>` or
@@ -287,7 +277,7 @@ pub fn rpc_subscription(_attr: TokenStream, item: TokenStream) -> TokenStream {
 fn extract_stream_output(return_type: &ReturnType) -> (proc_macro2::TokenStream, bool) {
     let ty = match return_type {
         ReturnType::Type(_, ty) => ty.as_ref(),
-        _ => panic!("subscription function must have a stream return type"),
+        _ => panic!("subscribe function must have a stream return type"),
     };
 
     // Recursively find `Stream<Item = T>` inside impl Trait, TraitObject, or nested generics
@@ -367,7 +357,7 @@ fn extract_stream_output(return_type: &ReturnType) -> (proc_macro2::TokenStream,
     (quote! { #item_ty }, false)
 }
 
-fn rpc_subscription_impl(item: TokenStream) -> TokenStream {
+fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
     let fn_name = &input_fn.sig.ident;
     let fn_vis = &input_fn.vis;
@@ -391,7 +381,7 @@ fn rpc_subscription_impl(item: TokenStream) -> TokenStream {
         params.iter().copied().collect()
     };
 
-    // --- Build call expression (not async — subscription exec is sync) ---
+    // --- Build call expression (not async — subscribe exec is sync) ---
     let call = if input_params.is_empty() {
         if has_ctx {
             quote! { #fn_name(ctx) }
@@ -431,7 +421,8 @@ fn rpc_subscription_impl(item: TokenStream) -> TokenStream {
         }
     } else {
         let types: Vec<_> = input_params
-            .iter().copied()
+            .iter()
+            .copied()
             .map(|arg| match arg {
                 FnArg::Typed(pat_type) => &pat_type.ty,
                 _ => panic!("parameter must be typed"),

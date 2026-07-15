@@ -1,27 +1,20 @@
-import { createClient, fetchExecute, tauriExecute, ExecuteArgs } from "@fnrpc/client";
+import { createClient, fetchTransport, tauriTransport } from "@fnrpc/client";
 import type { Procedures } from "./bindings";
-import { isTauri } from "@tauri-apps/api/core";
-// import { createSolidQueryHooks } from "@fnrpc/solid-query";
-import { getQueryClient } from "#/integrations/tanstack-query/provider.ts";
+import { __procedureKinds } from "./bindings";
 import { createTanstackQueryUtils } from "@fnrpc/tanstack-query";
+import { isTauri } from "@tauri-apps/api/core";
 
-/**
- * ```ts
- * fnrpc.health_check.query()
- * ```
- * 
- * tanstack query (不绑定框架)
- * ```ts
- * client.
- */
-export const fnrpc = createClient<Procedures>(
-	isTauri() 
-		? tauriExecute() 
-		: (args) => fetchExecute({ url: "http://localhost:19110/fnrpc" }, args),
-);
+const transport = (() => {
+  try {
+    if (isTauri()) {
+      return tauriTransport(() => import("@tauri-apps/api/core"));
+    }
+  } catch {
+    // ignore
+  }
+  return fetchTransport({ url: "http://localhost:19110/fnrpc" });
+})();
 
-export const client = createTanstackQueryUtils(fnrpc)
+export const fnrpc = createClient<Procedures>(transport, __procedureKinds);
 
-// export const fnrpcHook = createSolidQueryHooks<Procedures>({
-// 	client: fnrpc, queryClient: getQueryClient()
-// });
+export const client = createTanstackQueryUtils(fnrpc);

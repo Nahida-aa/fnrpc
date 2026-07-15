@@ -1,11 +1,9 @@
-import type { Observable } from "./UntypedClient";
-
 export type JoinPath<
   TPath extends string,
   TNext extends string,
 > = TPath extends "" ? TNext : `${TPath}.${TNext}`;
 
-export type ProcedureKind = "query" | "mutation" | "subscription";
+export type ProcedureKind = "query" | "mutate" | "subscribe";
 
 export type Procedure = {
   kind: ProcedureKind;
@@ -27,21 +25,9 @@ export type ProcedureResult<P extends Procedure> = Result<
   P["error"]
 >;
 
-export type Unsubscribable = { unsubscribe: () => void };
-
-export interface SubscriptionObserver<TValue, TError> {
-  onStarted: () => void;
-  onData: (value: TValue) => void;
-  onError: (err: TError) => void;
-  onStopped: () => void;
-  onComplete: () => void;
-}
-
-export type ExecuteArgs = {
-  type: ProcedureKind;
-  path: string;
-  input: unknown;
+export type ConsumeEventOptions<T, E> = {
+  onEvent?: (value: T) => void;
+  onError?: (err: E) => void;
+  onComplete?: () => void;
+  onFinish?: () => void;
 };
-export type ExecuteFn = (args: ExecuteArgs) => Observable<ExeceuteData>;
-
-export type ExeceuteData = { code: number; value: any } | null;

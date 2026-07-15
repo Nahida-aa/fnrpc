@@ -30,12 +30,12 @@ pub async fn divide(a: f64, b: f64) -> Result<f64, String> {
     if b == 0.0 { Err("cannot divide by zero".into()) } else { Ok(a / b) }
 }
 
-#[fnrpc::rpc_mutation]
+#[fnrpc::rpc_mutate]
 pub async fn create_user(_ctx: &Ctx, name: String, email: String) -> User {
     User { id: 42, name, email }
 }
 
-#[fnrpc::rpc_subscription]
+#[fnrpc::rpc_subscribe]
 pub fn tick(interval_ms: u64) -> impl futures::Stream<Item = u64> {
     futures::stream::unfold(0u64, move |count| async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
@@ -43,7 +43,7 @@ pub fn tick(interval_ms: u64) -> impl futures::Stream<Item = u64> {
     })
 }
 
-#[fnrpc::rpc_subscription]
+#[fnrpc::rpc_subscribe]
 pub fn echo_stream(prefix: String) -> impl futures::Stream<Item = String> {
     futures::stream::unfold(0u64, move |count| {
         let prefix = prefix.clone();
@@ -54,7 +54,7 @@ pub fn echo_stream(prefix: String) -> impl futures::Stream<Item = String> {
     })
 }
 
-#[fnrpc::rpc_subscription]
+#[fnrpc::rpc_subscribe]
 pub fn watch_status(ctx: &Ctx, key: String) -> impl futures::Stream<Item = String> {
     let app_dir = ctx.state.app_dir.clone();
     futures::stream::unfold((0u64, key, app_dir), |(count, key, app_dir)| async move {

@@ -1,8 +1,6 @@
 import type {
   Client,
-  Procedure,
   Procedures,
-  ProcedureProxyMethods,
 } from "@fnrpc/client";
 import { traverseClient, getQueryKey } from "@fnrpc/client";
 import type * as tanstack from "@tanstack/query-core";
@@ -13,10 +11,8 @@ export function callQuery<P extends Procedures, K extends keyof P & string>(
   input: P[K]["input"],
 ): Promise<P[K]["output"]> {
   const segments = (path as string).split(".");
-  const proxy = traverseClient(client, segments) as ProcedureProxyMethods<
-    P[K] & Procedure
-  >;
-  return (proxy as any).query(input);
+  const proxy = traverseClient(client, segments);
+  return proxy(input) as Promise<P[K]["output"]>;
 }
 
 export function callMutation<P extends Procedures, K extends keyof P & string>(
@@ -25,10 +21,8 @@ export function callMutation<P extends Procedures, K extends keyof P & string>(
   input: P[K]["input"],
 ): Promise<P[K]["output"]> {
   const segments = (path as string).split(".");
-  const proxy = traverseClient(client, segments) as ProcedureProxyMethods<
-    P[K] & Procedure
-  >;
-  return (proxy as any).mutate(input);
+  const proxy = traverseClient(client, segments);
+  return proxy(input) as Promise<P[K]["output"]>;
 }
 
 export function createUtils<P extends Procedures>(

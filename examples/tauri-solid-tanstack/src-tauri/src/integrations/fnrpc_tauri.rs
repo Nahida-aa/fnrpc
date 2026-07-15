@@ -33,7 +33,7 @@ pub async fn rpc_subscribe(
 ) -> Result<(), String> {
     let handler = router
         .get_sub_handler(&path)
-        .ok_or_else(|| format!("unknown subscription path: {path}"))?;
+        .ok_or_else(|| format!("unknown subscribe path: {path}"))?;
     let state = state.inner().clone();
 
     tokio::spawn(async move {

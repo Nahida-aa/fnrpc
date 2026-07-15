@@ -1,60 +1,95 @@
-import { observable } from "./UntypedClient";
-import type { ExecuteArgs, ExeceuteData, ExecuteFn } from "./types";
+import type { ProcedureKind } from "./types";
 
-export function tauriExecute(): ExecuteFn {
-  return (args: ExecuteArgs) => {
-    if (args.type === "subscription") {
-      return observable<ExeceuteData>((subscriber) => {
-        let canceled = false;
+export interface TauriCore {
+  invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+  Channel: new <T = unknown>() => { onmessage: ((msg: T) => void) | null };
+}
 
-        import("@tauri-apps/api/core")
-          .then(({ invoke, Channel }) => {
-            const channel = new Channel<string>();
-            channel.onmessage = (msg) => {
-              if (canceled) return;
-              if (msg.startsWith("__error:")) {
-                subscriber.next({ code: 500, value: msg.slice(8) });
-                subscriber.complete();
-              } else {
-                subscriber.next({ code: 200, value: msg });
-              }
-            };
+export function tauriTransport(getCore: () => Promise<TauriCore>) {
+  return (
+    path: string,
+    input: unknown,
+    kind: ProcedureKind,
+    signal?: AbortSignal,
+  ): Promise<unknown> | AsyncIterable<unknown> => {
+    if (kind === "subscribe") {
+      const iterable: AsyncIterable<unknown> = {
+        [Symbol.asyncIterator]() {
+          let done = false;
+          const pending: Array<IteratorResult<unknown>> = [];
+          let resolve: ((r: IteratorResult<unknown>) => void) | null = null;
 
-            invoke("rpc_subscribe", {
-              path: args.path,
-              input: args.input ?? null,
-              channel,
-            }).catch((err) => {
-              if (canceled) return;
-              subscriber.next({ code: 500, value: String(err) });
-              subscriber.complete();
+          void getCore()
+            .then(async (mod) => {
+              const channel = new mod.Channel<string>();
+              channel.onmessage = (msg: string) => {
+                if (done) return;
+                if (msg.startsWith("__error:")) {
+                  push({ done: true as const, value: undefined as any });
+                } else {
+                  push({ done: false as const, value: msg });
+                }
+              };
+
+              await mod.invoke("rpc_sub", {
+                path,
+                input: input ?? null,
+                channel,
+              }).catch(() => {
+                push({ done: true as const, value: undefined as any });
+              });
+            })
+            .catch(() => {
+              push({ done: true as const, value: undefined as any });
             });
-          })
-          .catch((err) => {
-            subscriber.next({ code: 500, value: String(err) });
-            subscriber.complete();
-          });
 
-        return () => {
-          canceled = true;
-        };
-      });
+          function push(result: IteratorResult<unknown>) {
+            if (resolve) {
+              resolve(result);
+              resolve = null;
+            } else {
+              pending.push(result);
+            }
+          }
+
+          if (signal) {
+            signal.addEventListener("abort", () => {
+              done = true;
+            }, { once: true });
+          }
+
+          return {
+            next(): Promise<IteratorResult<unknown>> {
+              if (done) {
+                return Promise.resolve({ done: true, value: undefined as any });
+              }
+              if (pending.length > 0) {
+                return Promise.resolve(pending.shift()!);
+              }
+              return new Promise((res) => {
+                resolve = res;
+              });
+            },
+            return(): Promise<IteratorResult<unknown>> {
+              done = true;
+              if (resolve) {
+                resolve({ done: true, value: undefined as any });
+              }
+              return Promise.resolve({ done: true, value: undefined as any });
+            },
+          };
+        },
+      };
+
+      return iterable;
     }
 
-    return observable<ExeceuteData>((subscriber) => {
-      import("@tauri-apps/api/core")
-        .then(({ invoke }) =>
-          invoke("rpc_fn", {
-            path: args.path,
-            input: args.input ?? null,
-          }),
-        )
-        .then((value) => subscriber.next({ code: 200, value }))
-        .catch((err) => {
-          console.error("[fnrpc] tauri invoke error:", err);
-          subscriber.next({ code: 500, value: String(err) });
-        })
-        .finally(() => subscriber.complete());
-    });
+    return getCore()
+      .then((mod) =>
+        mod.invoke("rpc_fn", {
+          path,
+          input: input ?? null,
+        }),
+      );
   };
 }

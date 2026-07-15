@@ -1,13 +1,13 @@
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use futures::stream::Stream;
 use futures::StreamExt;
-use serde::de::DeserializeOwned;
+use futures::stream::Stream;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
-use specta::datatype::{DataType, Primitive, Reference};
 use specta::Type;
+use specta::datatype::{DataType, Primitive, Reference};
 
 use crate::error::RpcErr;
 
@@ -24,13 +24,11 @@ fn type_ts<T: Type>() -> TsTypeInfo {
     let data_type = T::definition(&mut types);
 
     let ts_ref = match &data_type {
-        DataType::Struct(_) | DataType::Enum(_) => {
-            types
-                .into_sorted_iter()
-                .next()
-                .map(|ndt| ndt.name.to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        }
+        DataType::Struct(_) | DataType::Enum(_) => types
+            .into_sorted_iter()
+            .next()
+            .map(|ndt| ndt.name.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
         DataType::Reference(Reference::Named(r)) => {
             if let Some(ndt) = types.get(r) {
                 if ndt.ty.is_some() {
@@ -49,8 +47,12 @@ fn type_ts<T: Type>() -> TsTypeInfo {
         DataType::Primitive(p)
             if matches!(
                 p,
-                Primitive::u64 | Primitive::i64 | Primitive::u128 | Primitive::i128
-                    | Primitive::usize | Primitive::isize
+                Primitive::u64
+                    | Primitive::i64
+                    | Primitive::u128
+                    | Primitive::i128
+                    | Primitive::usize
+                    | Primitive::isize
             ) =>
         {
             "bigint".to_string()
@@ -77,17 +79,13 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
     /// Populate a shared type registry and collect top-level input/output DataTypes.
-    fn populate_types(
-        &self,
-        types: &mut specta::Types,
-        top_level: &mut Vec<DataType>,
-    );
+    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
     async fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr>;
 }
 
 /// Typed RPC function trait.
 ///
-/// Implement this directly, or use the `#[rpc_query]` / `#[rpc_mutation]` proc macros.
+/// Implement this directly, or use the `#[rpc_query]` / `#[rpc_mutate]` proc macros.
 #[async_trait]
 pub trait RpcFn<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type;
@@ -121,11 +119,7 @@ where
         type_ts::<F::Output>()
     }
 
-    fn populate_types(
-        &self,
-        types: &mut specta::Types,
-        top_level: &mut Vec<DataType>,
-    ) {
+    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>) {
         let input = F::Input::definition(types);
         let output = F::Output::definition(types);
         top_level.push(input);
@@ -133,24 +127,23 @@ where
     }
 
     async fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr> {
-        let input: F::Input = serde_json::from_value(input)
-            .map_err(|e| RpcErr(format!("deserialize input: {e}")))?;
+        let input: F::Input =
+            serde_json::from_value(input).map_err(|e| RpcErr(format!("deserialize input: {e}")))?;
         let output = F::exec(ctx, input).await?;
-        Ok(serde_json::to_value(output)
-            .map_err(|e| RpcErr(format!("serialize output: {e}")))?)
+        Ok(serde_json::to_value(output).map_err(|e| RpcErr(format!("serialize output: {e}")))?)
     }
 }
 
 // ── Subscription traits ────────────────────────────────────
 
-/// Typed RPC subscription trait.
+/// Typed RPC subscribe trait.
 ///
-/// Implement this directly, or use the `#[rpc_subscription]` proc macro.
+/// Implement this directly, or use the `#[rpc_subscribe]` proc macro.
 pub trait RpcSubscription<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type;
     type Output: Serialize + Type + 'static;
     const NAME: &'static str;
-    const KIND: &'static str = "subscription";
+    const KIND: &'static str = "subscribe";
 
     fn exec(
         ctx: &Ctx,
@@ -158,16 +151,12 @@ pub trait RpcSubscription<Ctx>: Send + Sync {
     ) -> Pin<Box<dyn Stream<Item = Result<Self::Output, RpcErr>> + Send + '_>>;
 }
 
-/// Object-safe erased subscription handler stored in the router.
+/// Object-safe erased subscribe handler stored in the router.
 pub trait ErasedSubscriptionHandler<Ctx>: Send + Sync {
     fn name(&self) -> &'static str;
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
-    fn populate_types(
-        &self,
-        types: &mut specta::Types,
-        top_level: &mut Vec<DataType>,
-    );
+    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
     fn call<'a>(
         &'a self,
         ctx: &'a Ctx,
@@ -194,11 +183,7 @@ where
         type_ts::<F::Output>()
     }
 
-    fn populate_types(
-        &self,
-        types: &mut specta::Types,
-        top_level: &mut Vec<DataType>,
-    ) {
+    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>) {
         let input = F::Input::definition(types);
         let output = F::Output::definition(types);
         top_level.push(input);
@@ -213,15 +198,14 @@ where
         let input = match serde_json::from_value(input) {
             Ok(v) => v,
             Err(e) => {
-                return Box::pin(futures::stream::once(futures::future::ready(Err(
-                    RpcErr(format!("deserialize input: {e}")),
-                ))))
+                return Box::pin(futures::stream::once(futures::future::ready(Err(RpcErr(
+                    format!("deserialize input: {e}"),
+                )))));
             }
         };
         let stream = F::exec(ctx, input);
         Box::pin(stream.map(|item| match item {
-            Ok(v) => serde_json::to_value(v)
-                .map_err(|e| RpcErr(format!("serialize output: {e}"))),
+            Ok(v) => serde_json::to_value(v).map_err(|e| RpcErr(format!("serialize output: {e}"))),
             Err(e) => Err(e),
         }))
     }

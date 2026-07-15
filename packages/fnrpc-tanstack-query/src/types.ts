@@ -25,5 +25,5 @@ export type RouterUtilsScoped<T extends Procedures> = {
 
 export interface ProcedureUtilsOptions {
   queryKey?: (input: unknown) => unknown[];
-  mutationKey?: () => unknown[];
+  mutateKey?: () => unknown[];
 }

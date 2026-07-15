@@ -76,9 +76,9 @@ async fn macro_greet(input: GreetInput) -> Result<GreetOutput, String> {
     })
 }
 
-// --- rpc_mutation macro test ---
+// --- rpc_mutate macro test ---
 
-#[fnrpc::rpc_mutation]
+#[fnrpc::rpc_mutate]
 async fn macro_mutate(input: GreetInput) -> Result<GreetOutput, String> {
     Ok(GreetOutput {
         message: format!("mutated {}", input.name),
@@ -106,7 +106,9 @@ async fn test_manual_rpc() {
     assert_eq!(output.message, "hello world");
 
     // Unknown method
-    let err = router.dispatch(&(), "nonexistent", serde_json::json!(null)).await;
+    let err = router
+        .dispatch(&(), "nonexistent", serde_json::json!(null))
+        .await;
     assert!(err.is_err());
     assert!(err.unwrap_err().to_string().contains("unknown path"));
 }
@@ -149,26 +151,32 @@ async fn test_ts_info() {
 }
 
 #[tokio::test]
-async fn test_macro_mutation_kind() {
+async fn test_macro_mutate_kind() {
     use fnrpc::handler::ErasedHandler;
     let handler = macro_mutate__FnRpc;
 
     // ErasedHandler (blanket impl) provides access to kind()
     let erased: Box<dyn ErasedHandler<()>> = Box::new(handler);
-    assert_eq!(erased.kind(), "mutation");
+    assert_eq!(erased.kind(), "mutate");
 }
 
 #[tokio::test]
 async fn test_macro_health_no_ctx() {
     let router = RpcRouter::<()>::new().route(macro_health__FnRpc);
-    let result = router.dispatch(&(), "macro_health", serde_json::json!(null)).await.unwrap();
+    let result = router
+        .dispatch(&(), "macro_health", serde_json::json!(null))
+        .await
+        .unwrap();
     assert_eq!(result, serde_json::json!("ok"));
 }
 
 #[tokio::test]
 async fn test_macro_health_with_ctx() {
     let router = RpcRouter::<()>::new().route(macro_health_ctx__FnRpc);
-    let result = router.dispatch(&(), "macro_health_ctx", serde_json::json!(null)).await.unwrap();
+    let result = router
+        .dispatch(&(), "macro_health_ctx", serde_json::json!(null))
+        .await
+        .unwrap();
     assert_eq!(result, serde_json::json!("ok"));
 }
 
@@ -181,19 +189,22 @@ async fn test_macro_ctx_rpc() {
     };
     let input = serde_json::json!({ "name": "world" });
 
-    let result = router.dispatch(&ctx, "macro_ctx_greet", input).await.unwrap();
+    let result = router
+        .dispatch(&ctx, "macro_ctx_greet", input)
+        .await
+        .unwrap();
     let output: GreetOutput = serde_json::from_value(result).unwrap();
     assert_eq!(output.message, "yo world");
 }
 
 // ── Subscription tests ─────────────────────────────────
 
-#[fnrpc::rpc_subscription]
+#[fnrpc::rpc_subscribe]
 fn sub_count(input: u32) -> impl futures::Stream<Item = u32> {
     futures::stream::iter(1..=input)
 }
 
-#[fnrpc::rpc_subscription]
+#[fnrpc::rpc_subscribe]
 fn sub_count_ctx(ctx: &AppCtx, input: u32) -> impl futures::Stream<Item = Result<String, String>> {
     let prefix = ctx.prefix.clone();
     let items: Vec<_> = (1..=input).map(|n| Ok(format!("{prefix}{n}"))).collect();
@@ -201,7 +212,7 @@ fn sub_count_ctx(ctx: &AppCtx, input: u32) -> impl futures::Stream<Item = Result
 }
 
 #[tokio::test]
-async fn test_subscription() {
+async fn test_subscribe() {
     let router = RpcRouter::<()>::new().subscribe(sub_count__FnRpc);
 
     let stream = router
@@ -215,7 +226,7 @@ async fn test_subscription() {
 }
 
 #[tokio::test]
-async fn test_subscription_ctx() {
+async fn test_subscribe_ctx() {
     let ctx = AppCtx {
         prefix: "n".to_string(),
     };
@@ -232,12 +243,11 @@ async fn test_subscription_ctx() {
 }
 
 #[tokio::test]
-async fn test_subscription_unknown_path() {
+async fn test_subscribe_unknown_path() {
     let router = RpcRouter::<()>::new();
-    let err = router
-        .dispatch_subscribe(&(), "nonexistent", serde_json::json!(null));
+    let err = router.dispatch_subscribe(&(), "nonexistent", serde_json::json!(null));
     match err {
-        Err(e) => assert!(e.to_string().contains("unknown subscription")),
+        Err(e) => assert!(e.to_string().contains("unknown subscribe")),
         Ok(_) => panic!("expected error"),
     }
 }
@@ -271,7 +281,10 @@ async fn test_multi_param_ctx() {
     let router = RpcRouter::<AppCtx>::new().route(multi_param_ctx__FnRpc);
 
     let input = serde_json::json!([3, 4]);
-    let result = router.dispatch(&ctx, "multi_param_ctx", input).await.unwrap();
+    let result = router
+        .dispatch(&ctx, "multi_param_ctx", input)
+        .await
+        .unwrap();
     assert_eq!(result, serde_json::json!("7x"));
 }
 
@@ -298,7 +311,10 @@ use fnrpc::middleware::{FnLayer, HookLayer};
 struct PrefixLayer;
 
 impl FnLayer<()> for PrefixLayer {
-    fn layer(&self, inner: Box<dyn fnrpc::middleware::FnService<()>>) -> Box<dyn fnrpc::middleware::FnService<()>> {
+    fn layer(
+        &self,
+        inner: Box<dyn fnrpc::middleware::FnService<()>>,
+    ) -> Box<dyn fnrpc::middleware::FnService<()>> {
         Box::new(PrefixService { inner })
     }
 }
@@ -309,7 +325,12 @@ struct PrefixService {
 
 #[async_trait::async_trait]
 impl fnrpc::middleware::FnService<()> for PrefixService {
-    async fn call(&self, ctx: &(), path: &str, input: serde_json::Value) -> Result<serde_json::Value, fnrpc::error::RpcErr> {
+    async fn call(
+        &self,
+        ctx: &(),
+        path: &str,
+        input: serde_json::Value,
+    ) -> Result<serde_json::Value, fnrpc::error::RpcErr> {
         let result = self.inner.call(ctx, path, input).await?;
         let s = result.as_str().unwrap_or("");
         Ok(serde_json::json!(format!("layered:{s}")))
@@ -322,7 +343,10 @@ async fn test_custom_layer() {
         .route(macro_health__FnRpc)
         .layer(PrefixLayer);
 
-    let result = router.dispatch(&(), "macro_health", serde_json::json!(null)).await.unwrap();
+    let result = router
+        .dispatch(&(), "macro_health", serde_json::json!(null))
+        .await
+        .unwrap();
     assert_eq!(result, serde_json::json!("layered:ok"));
 }
 
@@ -330,22 +354,23 @@ async fn test_custom_layer() {
 async fn test_hook_layer() {
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let log_clone = log.clone();
-    let router = RpcRouter::<()>::new()
-        .route(macro_health__FnRpc)
-        .layer(
-            HookLayer::new()
-                .before(move |_ctx, path, _input| {
-                    log_clone.lock().unwrap().push(format!("before:{path}"));
-                    Ok(())
-                })
-                .after(move |_ctx, _path, result| {
-                    if let Ok(val) = result {
-                        *val = serde_json::json!("hooked");
-                    }
-                }),
-        );
+    let router = RpcRouter::<()>::new().route(macro_health__FnRpc).layer(
+        HookLayer::new()
+            .before(move |_ctx, path, _input| {
+                log_clone.lock().unwrap().push(format!("before:{path}"));
+                Ok(())
+            })
+            .after(move |_ctx, _path, result| {
+                if let Ok(val) = result {
+                    *val = serde_json::json!("hooked");
+                }
+            }),
+    );
 
-    let result = router.dispatch(&(), "macro_health", serde_json::json!(null)).await.unwrap();
+    let result = router
+        .dispatch(&(), "macro_health", serde_json::json!(null))
+        .await
+        .unwrap();
     assert_eq!(result, serde_json::json!("hooked"));
     assert_eq!(log.lock().unwrap()[0], "before:macro_health");
 }
@@ -362,7 +387,10 @@ async fn test_multiple_layers() {
         }));
 
     // HookLayer (last added) is outermost, so after-hook runs after PrefixLayer
-    let result = router.dispatch(&(), "macro_health", serde_json::json!(null)).await.unwrap();
+    let result = router
+        .dispatch(&(), "macro_health", serde_json::json!(null))
+        .await
+        .unwrap();
     assert_eq!(result, serde_json::json!("wrapped"));
 }
 
@@ -376,9 +404,15 @@ async fn test_ts_client() {
     assert!(client.contains("greet"), "should contain method name");
     assert!(client.contains("GreetInput"), "should contain input type");
     assert!(client.contains("GreetOutput"), "should contain output type");
-    assert!(client.contains("Procedures"), "should generate Procedures interface");
+    assert!(
+        client.contains("Procedures"),
+        "should generate Procedures interface"
+    );
     assert!(client.contains("\"query\""), "should contain kind");
-    assert!(client.contains("multi_param"), "should contain multi_param method");
+    assert!(
+        client.contains("multi_param"),
+        "should contain multi_param method"
+    );
     assert!(
         client.contains("[number, number, string]"),
         "multi_param should have tuple input"

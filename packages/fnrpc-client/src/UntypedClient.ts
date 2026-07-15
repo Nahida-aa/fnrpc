@@ -1,74 +1,4 @@
-import type {
-  ExeceuteData,
-  ExecuteArgs,
-  ExecuteFn,
-  SubscriptionObserver,
-  Unsubscribable,
-} from "./types";
-
-export function observable<T>(
-  cb: (
-    subscriber: {
-      next: (value: T) => void;
-      error: (err: unknown) => void;
-      complete(): void;
-    },
-  ) => (() => void) | void,
-) {
-  let callbacks: Array<(v: T) => void> = [];
-  let completeCallbacks: Array<() => void> = [];
-  let done = false;
-  let cleanup: (() => void) | null = null;
-
-  cleanup =
-    cb({
-      next: (v) => {
-        if (done) return;
-        callbacks.forEach((cb) => cb(v));
-      },
-      error: (err) => {
-        if (done) return;
-        done = true;
-        errorCallbacks.forEach((cb) => cb(err));
-        completeCallbacks.forEach((cb) => cb());
-      },
-      complete: () => {
-        if (done) return;
-        done = true;
-        completeCallbacks.forEach((cb) => cb());
-      },
-    }) ?? null;
-
-  let errorCallbacks: Array<(err: unknown) => void> = [];
-
-  const result = {
-    subscribe(cb: (v: T) => void) {
-      if (done) return Promise.resolve();
-      callbacks.push(cb);
-      return new Promise<void>((res) => {
-        completeCallbacks.push(() => res());
-      });
-    },
-    onError(cb: (err: unknown) => void) {
-      if (done) return;
-      errorCallbacks.push(cb);
-    },
-    get done() {
-      return done;
-    },
-    unsubscribe() {
-      done = true;
-      cleanup?.();
-      callbacks = [];
-      errorCallbacks = [];
-      completeCallbacks = [];
-    },
-  };
-
-  return result;
-}
-
-export type Observable<T> = ReturnType<typeof observable<T>>;
+import type { ProcedureKind } from "./types";
 
 // JSON.stringify throws on BigInt values. This replacer converts BigInt to
 // Number so JSON transport works. Values > 2^53 lose precision — acceptable
@@ -80,122 +10,170 @@ function safeStringify(value: unknown): string {
   );
 }
 
-export const fetchExecute = (
+export const fetchTransport = (
   config: { url: string },
-  args: ExecuteArgs,
-): ReturnType<ExecuteFn> => {
-  if (args.type === "subscription") {
-    return observable<ExeceuteData>((subscriber) => {
+) => {
+  return (
+    path: string,
+    input: unknown,
+    kind: ProcedureKind,
+    signal?: AbortSignal,
+  ): Promise<unknown> | AsyncIterable<unknown> => {
+    if (kind === "subscribe") {
+      // GET → SSE
       const params = new URLSearchParams({
-        input: safeStringify(args.input),
+        input: safeStringify(input),
       });
-      const es = new EventSource(
-        `${config.url}/sub/${args.path}?${params}`,
-      );
+      const url = `${config.url}/${path}?${params}`;
+      const es = new EventSource(url);
 
-      es.onmessage = (e) => {
-        try {
-          subscriber.next({ code: 200, value: JSON.parse(e.data) });
-        } catch {
-          subscriber.next({ code: 500, value: e.data });
-        }
-      };
+      const iterable: AsyncIterable<unknown> = {
+        [Symbol.asyncIterator]() {
+          let done = false;
+          const pending: Array<IteratorResult<unknown>> = [];
+          let resolve: ((r: IteratorResult<unknown>) => void) | null = null;
 
-      es.onerror = () => {
-        subscriber.complete();
-      };
+          es.onmessage = (e) => {
+            if (done) return;
+            try {
+              const val = JSON.parse(e.data);
+              push({ done: false, value: val });
+            } catch {
+              // skip malformed data
+            }
+          };
 
-      return () => es.close();
-    });
-  }
+          es.onerror = () => {
+            done = true;
+            es.close();
+            push({ done: true, value: undefined as any });
+          };
 
-  let promise: Promise<Response>;
-  if (args.type === "query") {
-    promise = fetch(
-      `${config.url}/${args.path}?${new URLSearchParams({
-        input: safeStringify(args.input),
-      })}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
+          function push(result: IteratorResult<unknown>) {
+            if (resolve) {
+              resolve(result);
+              resolve = null;
+            } else {
+              pending.push(result);
+            }
+          }
+
+          if (signal) {
+            signal.addEventListener("abort", () => {
+              done = true;
+              es.close();
+              if (resolve) {
+                resolve({ done: true, value: undefined as any });
+              }
+            }, { once: true });
+          }
+
+          return {
+            next(): Promise<IteratorResult<unknown>> {
+              if (done) {
+                return Promise.resolve({ done: true, value: undefined as any });
+              }
+              if (pending.length > 0) {
+                return Promise.resolve(pending.shift()!);
+              }
+              return new Promise((res) => {
+                resolve = res;
+              });
+            },
+            return(): Promise<IteratorResult<unknown>> {
+              done = true;
+              es.close();
+              if (resolve) {
+                resolve({ done: true, value: undefined as any });
+              }
+              return Promise.resolve({ done: true, value: undefined as any });
+            },
+          };
         },
-      },
-    );
-  } else {
-    promise = fetch(`${config.url}/${args.path}`, {
+      };
+
+      return iterable;
+    }
+
+    // query / mutate
+    const isQuery = kind === "query";
+
+    if (isQuery) {
+      const params = new URLSearchParams({
+        input: safeStringify(input),
+      });
+      return fetch(`${config.url}/${path}?${params}`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal,
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+        return r.json();
+      });
+    }
+
+    // mutate
+    return fetch(`${config.url}/${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: safeStringify(args.input),
+      body: safeStringify(input),
+      signal,
+    }).then((r) => {
+      if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+      return r.json();
     });
-  }
-
-  return observable<ExeceuteData>((subscriber) => {
-    promise
-      .then(async (r) => {
-        if (r.status === 200) {
-          subscriber.next({ code: 200, value: await r.json() });
-        } else {
-          const err = await r.json();
-          subscriber.next({ code: r.status, value: err });
-        }
-      })
-      .finally(() => subscriber.complete());
-  });
+  };
 };
 
-export class UntypedClient {
-  constructor(public execute: ExecuteFn) {}
+export function consumeEventIterator<T, E = Error>(
+  iterable: AsyncIterable<T>,
+  opts: {
+    onEvent?: (value: T) => void;
+    onError?: (err: E) => void;
+    onComplete?: () => void;
+    onFinish?: () => void;
+  },
+  signal?: AbortSignal,
+): () => void {
+  let cancelled = false;
 
-  private async executeAsPromise(args: ExecuteArgs) {
-    const obs = this.execute(args);
+  const iterator = iterable[Symbol.asyncIterator]();
 
-    let data: ExeceuteData | undefined;
-
-    await obs.subscribe((d) => {
-      if (data === undefined) data = d;
-    });
-
-    if (!data) throw new Error("No data received");
-    if (data.code !== 200)
-      throw new Error(
-        `Error with code '${data.code}' occurred`,
-        data.value,
-      );
-
-    return data.value;
-  }
-
-  public query(path: string, input: unknown) {
-    return this.executeAsPromise({ type: "query", path, input });
-  }
-  public mutation(path: string, input: unknown) {
-    return this.executeAsPromise({ type: "mutation", path, input });
-  }
-  public subscription(
-    path: string,
-    input: unknown,
-    opts?: Partial<SubscriptionObserver<unknown, unknown>>,
-  ): Unsubscribable {
-    const obs = this.execute({ type: "subscription", path, input });
-
-    obs.subscribe((data) => {
-      if (data && data.code === 200) {
-        opts?.onData?.(data.value);
-      } else {
-        opts?.onError?.(data?.value ?? new Error("Unknown error"));
+  async function run() {
+    try {
+      while (!cancelled) {
+        const { done, value } = await iterator.next();
+        if (done || cancelled) break;
+        opts.onEvent?.(value);
       }
-    });
-
-    obs.onError((err) => {
-      opts?.onError?.(err);
-    });
-
-    return {
-      unsubscribe: () => obs.unsubscribe(),
-    };
+      if (!cancelled) {
+        opts.onComplete?.();
+      }
+    } catch (err) {
+      if (!cancelled) {
+        opts.onError?.(err as E);
+      }
+    } finally {
+      if (!cancelled) {
+        opts.onFinish?.();
+      }
+    }
   }
+
+  run();
+
+  if (signal) {
+    signal.addEventListener("abort", () => {
+      cancelled = true;
+      iterator.return?.();
+    }, { once: true });
+  }
+
+  return () => {
+    cancelled = true;
+    iterator.return?.();
+  };
 }

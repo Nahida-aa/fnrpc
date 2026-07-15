@@ -24,10 +24,10 @@ fnrpc::fnrpc_registry! { Router<Ctx> {
       crate::feat::demo::func::get_user,
       crate::feat::demo::func::divide,
     ],
-    mutations: [
+    mutates: [
       crate::feat::demo::func::create_user,
     ],
-    subscriptions: [
+    subscribes: [
       crate::feat::demo::func::tick,
       crate::feat::demo::func::echo_stream,
       crate::feat::demo::func::watch_status,

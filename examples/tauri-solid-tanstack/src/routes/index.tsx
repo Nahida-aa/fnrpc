@@ -1,4 +1,5 @@
 import {  fnrpc, client } from '#/integrations/fnrpc/client.ts';
+import { consumeEventIterator } from '@fnrpc/client';
 import { CreateQueryResult, useMutation, useQuery, UseQueryOptions } from '@tanstack/solid-query';
 import { createFileRoute } from '@tanstack/solid-router';
 import { createSignal, createEffect, onCleanup, Show, Switch, Match } from 'solid-js';
@@ -24,7 +25,7 @@ function QuerySection() {
   console.log(JSON.stringify("hello"))
   const health = useQuery(() =>({
     queryKey: ['health_check'],
-    queryFn: () => fnrpc.health_check.query(),
+    queryFn: () => fnrpc.health_check(),
   }))
   createEffect(() => {
     console.log(JSON.stringify(health.data))
@@ -90,8 +91,8 @@ function QuerySection() {
 function MutationSection() {
   const [name, setName] = createSignal('Bob');
   const [email, setEmail] = createSignal('bob@test.com');
-  const mutation = useMutation(() => client.create_user.mutationOptions())
-  // const mutation = fnrpcHook.createMutation(() => 'create_user');
+  const mutate = useMutation(() => client.create_user.mutationOptions())
+  // const mutate = fnrpcHook.createMutation(() => 'create_user');
 
   return (
     <section class="space-y-3">
@@ -102,15 +103,15 @@ function MutationSection() {
         <input class="border rounded px-2 py-0.5 bg-background text-sm" value={email()} onInput={e => setEmail(e.currentTarget.value)} placeholder="email" />
         <button
           class="bg-primary text-primary-foreground px-3 py-1 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
-          onClick={() => mutation.mutate([name(), email()])}
-          disabled={mutation.isPending}
+          onClick={() => mutate.mutate([name(), email()])}
+          disabled={mutate.isPending}
         >
-          {mutation.isPending ? 'Saving...' : 'Create'}
+          {mutate.isPending ? 'Saving...' : 'Create'}
         </button>
-        <Show when={mutation.data}>
+        <Show when={mutate.data}>
           {data => <span class="ml-2 text-sm">{JSON.stringify(data())}</span>}
         </Show>
-        <Show when={mutation.error}>
+        <Show when={mutate.error}>
           {err => <span class="ml-2 text-sm text-destructive">{err().message}</span>}
         </Show>
       </Row>
@@ -135,10 +136,11 @@ function TickTest() {
 
   createEffect(() => {
     if (!running()) return;
-    const sub = fnrpc.tick.subscribe(BigInt(500), {
-      onData: v => setCount(Number(v)),
+    const iter = fnrpc.tick(BigInt(500));
+    const cancel = consumeEventIterator(iter, {
+      onEvent: v => setCount(Number(v)),
     });
-    onCleanup(() => sub.unsubscribe());
+    onCleanup(() => cancel());
   });
 
   return (
@@ -166,10 +168,11 @@ function EchoTest() {
 
   createEffect(() => {
     if (!running()) { setMsgs([]); return; }
-    const sub = fnrpc.echo_stream.subscribe(prefix(), {
-      onData: v => setMsgs(prev => [...prev, String(v)]),
+    const iter = fnrpc.echo_stream(prefix());
+    const cancel = consumeEventIterator(iter, {
+      onEvent: v => setMsgs(prev => [...prev, String(v)]),
     });
-    onCleanup(() => sub.unsubscribe());
+    onCleanup(() => cancel());
   });
 
   return (
@@ -197,10 +200,11 @@ function WatchTest() {
 
   createEffect(() => {
     if (!running()) { setMsgs([]); return; }
-    const sub = fnrpc.watch_status.subscribe(key(), {
-      onData: v => setMsgs(prev => [...prev, String(v)]),
+    const iter = fnrpc.watch_status(key());
+    const cancel = consumeEventIterator(iter, {
+      onEvent: v => setMsgs(prev => [...prev, String(v)]),
     });
-    onCleanup(() => sub.unsubscribe());
+    onCleanup(() => cancel());
   });
 
   return (

@@ -1,16 +1,15 @@
 export * from "./types";
-export { observable, fetchExecute, UntypedClient } from "./UntypedClient";
-export type { Observable } from "./UntypedClient";
-export { tauriExecute } from "./tauri";
+export { fetchTransport, consumeEventIterator } from "./UntypedClient";
+export { tauriTransport } from "./tauri";
 export {
-	createClient,
-	createProceduresProxy,
-	getQueryKey,
-	traverseClient,
+  createClient,
+  createProceduresProxy,
+  getQueryKey,
+  traverseClient,
 } from "./createClient";
 export type {
-	Client,
-	ProcedureProxyMethods,
-	ProcedureWithKind,
-	VoidIfInputNull,
+  Client,
+  ProcedureCallable,
+  ProcedureWithKind,
+  VoidIfInputNull,
 } from "./createClient";

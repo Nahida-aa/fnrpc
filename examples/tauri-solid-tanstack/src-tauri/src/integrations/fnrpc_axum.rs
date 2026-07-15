@@ -62,7 +62,7 @@ async fn rpc_sub_axum(
     let handler = state
         .router
         .get_sub_handler(&path)
-        .expect("unknown subscription path");
+        .expect("unknown subscribe path");
 
     let raw = params.get("input").cloned().unwrap_or_else(|| "null".into());
     let input: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
