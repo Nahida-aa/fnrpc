@@ -1,3 +1,4 @@
+import { Button } from '#/components/ui/button.tsx';
 import {  fnrpc, client } from '#/integrations/fnrpc/client.ts';
 import { consumeEventIterator } from '@fnrpc/client';
 import { CreateQueryResult, useMutation, useQuery, UseQueryOptions } from '@tanstack/solid-query';
@@ -23,7 +24,7 @@ function QuerySection() {
   // const health = useQuery(() => client.health_check.queryOptions(null))
   const get_count = useQuery(() => client.get_count.queryOptions(null,))
   console.log(JSON.stringify("hello"))
-  
+  const [greet_enabled, setGreetEnabled] = createSignal(false);
   const health = useQuery(() =>({
     queryKey: ['health_check'],
     queryFn: () => fnrpc.health_check(),
@@ -36,7 +37,9 @@ function QuerySection() {
   // fnrpcHook.createQuery(() => ['health_check']);
 
   const [name, setName] = createSignal('World');
-  const greet = useQuery(() => client.greet.queryOptions(name()));
+  const greet = useQuery(() => client.greet.queryOptions(name(), {
+    enabled: greet_enabled(),
+  }));
  
   // const greet = fnrpcHook.createQuery(() => ['greet', name()]);
 
@@ -61,11 +64,15 @@ function QuerySection() {
         <QueryResult query={get_count} />
       </Row>
       <Row label="health_check()">
+
         <QueryResult query={health} />
       </Row>
 
       <Row label="greet(name)">
         <input class="border rounded px-2 py-0.5 bg-background text-sm" value={name()} onInput={e => setName(e.currentTarget.value)} />
+        <Button onClick={() => setGreetEnabled(!greet_enabled())}>
+          {greet_enabled() ? 'Disable' : 'Enable'}
+        </Button>
         <QueryResult query={greet} />
       </Row>
 
@@ -317,6 +324,7 @@ function PostEchoLiveTest() {
     enabled: running()
   }));
   return <Row label="echo_stream live(prefix())">
+    <input class="border rounded px-2 py-0.5 bg-background text-sm w-24" value={prefix()} onInput={e => setPrefix(e.currentTarget.value)} />
       <button
         class={running()
           ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
@@ -342,6 +350,7 @@ function PostPostEchoLiveTest() {
   }), enabled: running()
   }));
   return <Row label="post_echo_stream live(prefix())">
+    <input class="border rounded px-2 py-0.5 bg-background text-sm w-24" value={prefix()} onInput={e => setPrefix(e.currentTarget.value)} />
       <button
         class={running()
           ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'

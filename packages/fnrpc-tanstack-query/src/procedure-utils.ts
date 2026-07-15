@@ -40,7 +40,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
   } & Omit<QueryObserverOptions<TOutput, TError, TOutput, TOutput, QueryKey>, "queryKey" | "queryFn" | "initialData"> {
     return {
       queryKey: this.queryKey(input as any),
-      queryFn: () => this.callClient(input, undefined) as Promise<TOutput>,
+      queryFn: () => this.call(input, undefined) as Promise<TOutput>,
       ...opts,
     } as any;
   }
@@ -58,7 +58,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
     return {
       mutationKey: this.mutationKey(),
       mutationFn: (input: TInput) =>
-        this.callClient(input, undefined) as Promise<TOutput>,
+        this.call(input, undefined) as Promise<TOutput>,
       ...opts,
     } as any;
   }
@@ -84,7 +84,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
       queryKey: this.streamedKey(input as any, { queryFnOptions: queryFnOpts }),
       queryFn: serializableStreamedQuery(
         async (context) => {
-          const output = await this.callClient(input, context.signal);
+          const output = await this.call(input, context.signal);
           if (!isAsyncIterable(output)) {
             throw new Error("streamedOptions requires a subscribe procedure (AsyncIterable output)");
           }
@@ -114,7 +114,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
       queryKey: this.liveKey(input as any),
       queryFn: liveQuery(
         async (context) => {
-          const output = await this.callClient(input, context.signal);
+          const output = await this.call(input, context.signal);
           if (!isAsyncIterable(output)) {
             throw new Error("liveOptions requires a subscribe procedure (AsyncIterable output)");
           }
@@ -125,7 +125,7 @@ export class ProcedureUtils<TInput, TOutput, TError> {
     } as any;
   }
 
-  private callClient(input: any, signal?: AbortSignal) {
+  call(input: any, signal?: AbortSignal) {
     const segments = this.path.split(".");
     const proxy = traverseClient(this.client, segments);
     return proxy(input, signal);

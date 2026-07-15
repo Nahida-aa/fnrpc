@@ -15,6 +15,8 @@ const transport = (() => {
   return fetchTransport({ url: "http://localhost:19110/fnrpc" });
 })();
 
+console.debug("Using transport");
 export const fnrpc = createClient<Procedures>(transport, __procedureMeta);
+console.debug("Created fnrpc");
 
 export const client = createTanstackQueryUtils(fnrpc);

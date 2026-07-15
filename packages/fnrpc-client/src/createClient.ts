@@ -65,6 +65,7 @@ export function createClient<P extends Procedures>(
   return createProceduresProxy<Client<P>>(({ args, path }) => {
     const pathStr = path.join(".");
     const meta = metaMap[pathStr];
+    console.debug('transport args:', pathStr, 'input:', args[0], 'kind:', meta.kind, 'signal:', args[1], 'method:', meta.method);
     if (!meta) throw new Error(`Unknown procedure: ${pathStr}`);
     return transport(pathStr, args[0], meta.kind, args[1], meta.method);
   });
