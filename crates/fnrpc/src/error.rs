@@ -10,6 +10,7 @@ use specta::{
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RpcErr {
+    pub name: String,
     pub code: String,
     pub message: String,
     pub data: Option<Value>,
@@ -28,6 +29,7 @@ impl Type for RpcErr {
                 ndt.module_path = Cow::Borrowed("fnrpc::error");
                 ndt.ty = Some(
                     Struct::named()
+                        .field("name", Field::new(DataType::Primitive(Primitive::str)))
                         .field("code", Field::new(DataType::Primitive(Primitive::str)))
                         .field(
                             "message",
@@ -44,6 +46,7 @@ impl Type for RpcErr {
             },
             |_types| {
                 Struct::named()
+                    .field("name", Field::new(DataType::Primitive(Primitive::str)))
                     .field("code", Field::new(DataType::Primitive(Primitive::str)))
                     .field(
                         "message",
@@ -64,6 +67,7 @@ impl Type for RpcErr {
 impl RpcErr {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
+            name: "RpcErr".to_string(),
             code: code.into(),
             message: message.into(),
             data: None,

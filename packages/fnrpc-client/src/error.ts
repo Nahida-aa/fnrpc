@@ -1,5 +1,5 @@
 export class RpcError extends Error {
-  override name = "RpcError" as const;
+  override name = "RpcErr" as const;
   code: string;
   data?: unknown;
 
@@ -9,7 +9,7 @@ export class RpcError extends Error {
     this.data = data;
   }
 
-  static fromJson(json: { code: string; message: string; data?: unknown }): RpcError {
+  static fromJson(json: { name?: string; code: string; message: string; data?: unknown }): RpcError {
     return new RpcError(json.code, json.message, json.data);
   }
 
@@ -25,8 +25,8 @@ export class RpcError extends Error {
     return new RpcError("NOT_FOUND", message, data);
   }
 
-  toJSON(): { code: string; message: string; data?: unknown } {
-    return { code: this.code, message: this.message, data: this.data };
+  toJSON(): { name: string; code: string; message: string; data?: unknown } {
+    return { name: this.name, code: this.code, message: this.message, data: this.data };
   }
 }
 
