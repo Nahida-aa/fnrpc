@@ -61,7 +61,9 @@ pub fn echo_stream(prefix: String) -> impl futures::Stream<Item = String> {
         let prefix = prefix.clone();
         async move {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            Some((format!("{prefix} #{count}"), count + 1))
+            let msg = format!("{prefix} #{count}");
+            println!("echo_stream: {msg}");
+            Some((msg, count + 1))
         }
     })
 }
