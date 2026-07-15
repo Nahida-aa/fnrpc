@@ -14,6 +14,11 @@ pub async fn get_count() -> String {
     format!("count: {n}")
 }
 
+#[fnrpc::rpc_mutate]
+pub async fn reset_count() -> () {
+    COUNTER.store(0, Ordering::Relaxed);
+}
+
 fnrpc::fnrpc_registry! { Router<Ctx> {
     queries: [
       get_count,
@@ -24,6 +29,7 @@ fnrpc::fnrpc_registry! { Router<Ctx> {
       crate::feat::demo::func::divide,
     ],
     mutates: [
+      reset_count,
       crate::feat::demo::func::create_user,
     ],
     subscribes: [
