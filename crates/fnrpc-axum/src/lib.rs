@@ -52,13 +52,20 @@ where
 
                     tokio::spawn(async move {
                         let mut stream = handler.call(&ctx, input);
+                        let mut event_id = 0u64;
                         while let Some(item) = stream.next().await {
+                            event_id += 1;
                             let event = match item {
-                                Ok(val) => Event::default().json_data(val).unwrap(),
-                                Err(e) => Event::default().data(format!(
-                                    "__error:{}",
-                                    serde_json::to_string(&e).unwrap()
-                                )),
+                                Ok(val) => Event::default()
+                                    .id(event_id.to_string())
+                                    .json_data(val)
+                                    .unwrap(),
+                                Err(e) => Event::default()
+                                    .id(event_id.to_string())
+                                    .data(format!(
+                                        "__error:{}",
+                                        serde_json::to_string(&e).unwrap()
+                                    )),
                             };
                             if tx.send(Ok(event)).await.is_err() {
                                 break;

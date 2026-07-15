@@ -1,68 +1,71 @@
-use std::borrow::Cow;
+// use std::borrow::Cow;
 use std::fmt;
 
 use serde::Serialize;
 use serde_json::Value;
 use specta::{
-    Type, Types,
-    datatype::{DataType, Field, NamedDataType, Primitive, Struct},
+    Type,
+    // Types,
+    // datatype::{DataType, Field, NamedDataType, Primitive, Struct},
 };
+// use specta_typescript::Unknown;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Type)]
 pub struct RpcErr {
     pub name: &'static str,
     pub code: String,
     pub message: String,
+    #[specta(type = Option<specta_typescript::Unknown>)]
     pub data: Option<Value>,
 }
 
-impl Type for RpcErr {
-    fn definition(types: &mut Types) -> DataType {
-        DataType::Reference(NamedDataType::init_with_sentinel(
-            "fnrpc::error::RpcErr",
-            &[],
-            false,
-            false,
-            types,
-            |_types, ndt| {
-                ndt.name = Cow::Borrowed("RpcErr");
-                ndt.module_path = Cow::Borrowed("fnrpc::error");
-                ndt.ty = Some(
-                    Struct::named()
-                        .field("name", Field::new(DataType::Reference(specta_typescript::define("\"RpcErr\""))))
-                        .field("code", Field::new(DataType::Primitive(Primitive::str)))
-                        .field(
-                            "message",
-                            Field::new(DataType::Primitive(Primitive::str)),
-                        )
-                        .field(
-                            "data",
-                            Field::new(DataType::Nullable(Box::new(
-                                DataType::Reference(specta_typescript::define("unknown")),
-                            ))),
-                        )
-                        .build(),
-                );
-            },
-            |_types| {
-                Struct::named()
-                    .field("name", Field::new(DataType::Primitive(Primitive::str)))
-                    .field("code", Field::new(DataType::Primitive(Primitive::str)))
-                    .field(
-                        "message",
-                        Field::new(DataType::Primitive(Primitive::str)),
-                    )
-                    .field(
-                        "data",
-                        Field::new(DataType::Nullable(Box::new(
-                            DataType::Reference(specta_typescript::define("unknown")),
-                        ))),
-                    )
-                    .build()
-            },
-        ))
-    }
-}
+// impl Type for RpcErr {
+//     fn definition(types: &mut Types) -> DataType {
+//         DataType::Reference(NamedDataType::init_with_sentinel(
+//             "fnrpc::error::RpcErr",
+//             &[],
+//             false,
+//             false,
+//             types,
+//             |_types, ndt| {
+//                 ndt.name = Cow::Borrowed("RpcErr");
+//                 ndt.module_path = Cow::Borrowed("fnrpc::error");
+//                 ndt.ty = Some(
+//                     Struct::named()
+//                         .field("name", Field::new(DataType::Reference(specta_typescript::define("\"RpcErr\""))))
+//                         .field("code", Field::new(DataType::Primitive(Primitive::str)))
+//                         .field(
+//                             "message",
+//                             Field::new(DataType::Primitive(Primitive::str)),
+//                         )
+//                         .field(
+//                             "data",
+//                             Field::new(DataType::Nullable(Box::new(
+//                                 DataType::Reference(specta_typescript::define("unknown")),
+//                             ))),
+//                         )
+//                         .build(),
+//                 );
+//             },
+//             |_types| {
+//                 Struct::named()
+//                     .field("name", Field::new(DataType::Primitive(Primitive::str)))
+//                     .field("code", Field::new(DataType::Primitive(Primitive::str)))
+//                     .field(
+//                         "message",
+//                         Field::new(DataType::Primitive(Primitive::str)),
+//                     )
+//                     .field(
+//                         "data",
+//                         Field::new(DataType::Nullable(Box::new(
+//                             DataType::Reference(specta_typescript::define("unknown")),
+//                         ))),
+//                     )
+//                     .build()
+//             },
+//         ))
+//     }
+// }
 
 impl RpcErr {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
