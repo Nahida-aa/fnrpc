@@ -129,7 +129,7 @@ async fn test_ctx_rpc() {
 
 #[tokio::test]
 async fn test_macro_rpc() {
-    let router = RpcRouter::<()>::new().route(macro_greet__FnRpc);
+    let router = RpcRouter::<()>::new().route(macro_greet);
 
     let input = serde_json::json!({ "name": "world" });
 
@@ -153,7 +153,7 @@ async fn test_ts_info() {
 #[tokio::test]
 async fn test_macro_mutate_kind() {
     use fnrpc::handler::ErasedHandler;
-    let handler = macro_mutate__FnRpc;
+    let handler = macro_mutate;
 
     // ErasedHandler (blanket impl) provides access to kind()
     let erased: Box<dyn ErasedHandler<()>> = Box::new(handler);
@@ -162,7 +162,7 @@ async fn test_macro_mutate_kind() {
 
 #[tokio::test]
 async fn test_macro_health_no_ctx() {
-    let router = RpcRouter::<()>::new().route(macro_health__FnRpc);
+    let router = RpcRouter::<()>::new().route(macro_health);
     let result = router
         .dispatch(&(), "macro_health", serde_json::json!(null))
         .await
@@ -172,7 +172,7 @@ async fn test_macro_health_no_ctx() {
 
 #[tokio::test]
 async fn test_macro_health_with_ctx() {
-    let router = RpcRouter::<()>::new().route(macro_health_ctx__FnRpc);
+    let router = RpcRouter::<()>::new().route(macro_health_ctx);
     let result = router
         .dispatch(&(), "macro_health_ctx", serde_json::json!(null))
         .await
@@ -182,7 +182,7 @@ async fn test_macro_health_with_ctx() {
 
 #[tokio::test]
 async fn test_macro_ctx_rpc() {
-    let router = RpcRouter::<AppCtx>::new().route(macro_ctx_greet__FnRpc);
+    let router = RpcRouter::<AppCtx>::new().route(macro_ctx_greet);
 
     let ctx = AppCtx {
         prefix: "yo ".to_string(),
@@ -213,7 +213,7 @@ fn sub_count_ctx(ctx: &AppCtx, input: u32) -> impl futures::Stream<Item = Result
 
 #[tokio::test]
 async fn test_subscribe() {
-    let router = RpcRouter::<()>::new().subscribe(sub_count__FnRpc);
+    let router = RpcRouter::<()>::new().subscribe(sub_count);
 
     let handler = router.get_sub_handler("sub_count").unwrap();
     let stream = handler.call(&(), serde_json::json!(3));
@@ -229,7 +229,7 @@ async fn test_subscribe_ctx() {
     let ctx = AppCtx {
         prefix: "n".to_string(),
     };
-    let router = RpcRouter::<AppCtx>::new().subscribe(sub_count_ctx__FnRpc);
+    let router = RpcRouter::<AppCtx>::new().subscribe(sub_count_ctx);
 
     let handler = router.get_sub_handler("sub_count_ctx").unwrap();
     let stream = handler.call(&ctx, serde_json::json!(2));
@@ -260,7 +260,7 @@ async fn multi_param_ctx(ctx: &AppCtx, a: i32, b: i32) -> String {
 
 #[tokio::test]
 async fn test_multi_param() {
-    let router = RpcRouter::<()>::new().route(multi_param__FnRpc);
+    let router = RpcRouter::<()>::new().route(multi_param);
 
     let input = serde_json::json!([1, 2, "hello"]);
     let result = router.dispatch(&(), "multi_param", input).await.unwrap();
@@ -272,7 +272,7 @@ async fn test_multi_param_ctx() {
     let ctx = AppCtx {
         prefix: "x".to_string(),
     };
-    let router = RpcRouter::<AppCtx>::new().route(multi_param_ctx__FnRpc);
+    let router = RpcRouter::<AppCtx>::new().route(multi_param_ctx);
 
     let input = serde_json::json!([3, 4]);
     let result = router
@@ -287,7 +287,7 @@ async fn test_multi_param_ts_info() {
     use fnrpc::handler::ErasedHandler;
     // multi_param has no ctx param, so RpcFn<T> is generic over T.
     // Use a fully qualified path via Box<dyn ErasedHandler<()>> to pin Ctx.
-    let erased: Box<dyn ErasedHandler<()>> = Box::new(multi_param__FnRpc);
+    let erased: Box<dyn ErasedHandler<()>> = Box::new(multi_param);
 
     let input_info = erased.input_ts();
     // (i32, i32, String) should inline as [number, number, string]
@@ -334,7 +334,7 @@ impl fnrpc::middleware::FnService<()> for PrefixService {
 #[tokio::test]
 async fn test_custom_layer() {
     let router = RpcRouter::<()>::new()
-        .route(macro_health__FnRpc)
+        .route(macro_health)
         .layer(PrefixLayer);
 
     let result = router
@@ -348,7 +348,7 @@ async fn test_custom_layer() {
 async fn test_hook_layer() {
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let log_clone = log.clone();
-    let router = RpcRouter::<()>::new().route(macro_health__FnRpc).layer(
+    let router = RpcRouter::<()>::new().route(macro_health).layer(
         HookLayer::new()
             .before(move |_ctx, path, _input| {
                 log_clone.lock().unwrap().push(format!("before:{path}"));
@@ -372,7 +372,7 @@ async fn test_hook_layer() {
 #[tokio::test]
 async fn test_multiple_layers() {
     let router = RpcRouter::<()>::new()
-        .route(macro_health__FnRpc)
+        .route(macro_health)
         .layer(PrefixLayer)
         .layer(HookLayer::new().after(|_ctx, _path, result| {
             if let Ok(val) = result {
@@ -392,7 +392,7 @@ async fn test_multiple_layers() {
 async fn test_ts_client() {
     let router = RpcRouter::<()>::new()
         .route(Greet)
-        .route(multi_param__FnRpc);
+        .route(multi_param);
 
     let client = fnrpc::codegen::generate_ts_client(&router, "/rpc");
     assert!(client.contains("greet"), "should contain method name");

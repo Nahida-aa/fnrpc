@@ -95,9 +95,12 @@ pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
     let fn_name = &input_fn.sig.ident;
     let fn_vis = &input_fn.vis;
+    let impl_fn_name = syn::Ident::new(&format!("{}_impl", fn_name), fn_name.span());
+    let mut impl_fn = input_fn.clone();
+    impl_fn.sig.ident = impl_fn_name.clone();
 
     // --- Analyse parameters (same as rpc_fn_impl) ---
-    let params: Vec<&FnArg> = input_fn.sig.inputs.iter().collect();
+    let params: Vec<&FnArg> = impl_fn.sig.inputs.iter().collect();
 
     let (has_ctx, ctx_ty) = if let Some(FnArg::Typed(pat)) = params.first() {
         if let Type::Reference(TypeReference { elem, .. }) = pat.ty.as_ref() {
@@ -118,15 +121,15 @@ pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
     // --- Build call expression (not async — subscribe exec is sync) ---
     let call = if input_params.is_empty() {
         if has_ctx {
-            quote! { #fn_name(ctx) }
+            quote! { #impl_fn_name(ctx) }
         } else {
-            quote! { #fn_name() }
+            quote! { #impl_fn_name() }
         }
     } else if input_params.len() == 1 {
         if has_ctx {
-            quote! { #fn_name(ctx, input) }
+            quote! { #impl_fn_name(ctx, input) }
         } else {
-            quote! { #fn_name(input) }
+            quote! { #impl_fn_name(input) }
         }
     } else {
         let destructure: Vec<_> = (0..input_params.len())
@@ -136,9 +139,9 @@ pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
             })
             .collect();
         if has_ctx {
-            quote! { #fn_name(ctx, #(#destructure),*) }
+            quote! { #impl_fn_name(ctx, #(#destructure),*) }
         } else {
-            quote! { #fn_name(#(#destructure),*) }
+            quote! { #impl_fn_name(#(#destructure),*) }
         }
     };
 
@@ -185,11 +188,11 @@ pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
         }
     };
 
-    let struct_name = syn::Ident::new(&format!("{}__FnRpc", fn_name), fn_name.span());
+    let struct_name = fn_name.clone();
 
     let expanded = if has_ctx {
         quote! {
-            #input_fn
+            #impl_fn
 
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;
@@ -209,7 +212,7 @@ pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
         }
     } else {
         quote! {
-            #input_fn
+            #impl_fn
 
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;

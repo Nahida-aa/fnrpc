@@ -19,9 +19,12 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
     let fn_name = &input_fn.sig.ident;
     let fn_vis = &input_fn.vis;
+    let impl_fn_name = syn::Ident::new(&format!("{}_impl", fn_name), fn_name.span());
+    let mut impl_fn = input_fn.clone();
+    impl_fn.sig.ident = impl_fn_name.clone();
 
     // --- Analyse parameters: infer Ctx from first param type ---
-    let params: Vec<&FnArg> = input_fn.sig.inputs.iter().collect();
+    let params: Vec<&FnArg> = impl_fn.sig.inputs.iter().collect();
 
     let (has_ctx, ctx_ty) = if let Some(FnArg::Typed(pat)) = params.first() {
         if let Type::Reference(TypeReference { elem, .. }) = pat.ty.as_ref() {
@@ -67,18 +70,18 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
         ReturnType::Default => panic!("function must have a return type"),
     };
 
-    // --- Build the call expression to the original function ---
+    // --- Build the call expression to the renamed impl function ---
     let call = if input_params.is_empty() {
         if has_ctx {
-            quote! { #fn_name(ctx).await }
+            quote! { #impl_fn_name(ctx).await }
         } else {
-            quote! { #fn_name().await }
+            quote! { #impl_fn_name().await }
         }
     } else if input_params.len() == 1 {
         if has_ctx {
-            quote! { #fn_name(ctx, input).await }
+            quote! { #impl_fn_name(ctx, input).await }
         } else {
-            quote! { #fn_name(input).await }
+            quote! { #impl_fn_name(input).await }
         }
     } else {
         let destructure: Vec<_> = (0..input_params.len())
@@ -88,9 +91,9 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
             })
             .collect();
         if has_ctx {
-            quote! { #fn_name(ctx, #(#destructure),*).await }
+            quote! { #impl_fn_name(ctx, #(#destructure),*).await }
         } else {
-            quote! { #fn_name(#(#destructure),*).await }
+            quote! { #impl_fn_name(#(#destructure),*).await }
         }
     };
 
@@ -132,11 +135,11 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
         quote! { (#(#types,)*) }
     };
 
-    let struct_name = syn::Ident::new(&format!("{}__FnRpc", fn_name), fn_name.span());
+    let struct_name = fn_name.clone();
 
     let expanded = if has_ctx {
         quote! {
-            #input_fn
+            #impl_fn
 
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;
@@ -155,7 +158,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
         }
     } else {
         quote! {
-            #input_fn
+            #impl_fn
 
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;

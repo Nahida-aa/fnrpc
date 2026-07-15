@@ -9,16 +9,6 @@ struct RegistryInput {
     subscribe_fns: Vec<syn::Path>,
 }
 
-/// Given `handlers::log::watch_task_log`, return `handlers::log::watch_task_log__FnRpc`.
-fn fn_rpc_struct_path(path: &syn::Path) -> syn::Path {
-    let mut new_path = path.clone();
-    if let Some(last) = new_path.segments.last_mut() {
-        let name = format!("{}__FnRpc", last.ident);
-        last.ident = syn::Ident::new(&name, last.ident.span());
-    }
-    new_path
-}
-
 impl syn::parse::Parse for RegistryInput {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let kw: syn::Ident = input.parse()?;
@@ -79,18 +69,16 @@ impl syn::parse::Parse for RegistryInput {
 pub(crate) fn fnrpc_registry_impl(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as RegistryInput);
     let ctx_ty = &input.ctx_ty;
-
-    let query_structs: Vec<syn::Path> = input.query_fns.iter().map(fn_rpc_struct_path).collect();
-    let mutate_structs: Vec<syn::Path> = input.mutate_fns.iter().map(fn_rpc_struct_path).collect();
-    let subscribe_structs: Vec<syn::Path> =
-        input.subscribe_fns.iter().map(fn_rpc_struct_path).collect();
+    let query_fns = &input.query_fns;
+    let mutate_fns = &input.mutate_fns;
+    let subscribe_fns = &input.subscribe_fns;
 
     quote! {
         pub fn build_fn_rpc() -> fnrpc::router::RpcRouter<#ctx_ty> {
             fnrpc::router::RpcRouter::new()
-                #(.route(#query_structs))*
-                #(.route(#mutate_structs))*
-                #(.subscribe(#subscribe_structs))*
+                #(.query(#query_fns))*
+                #(.mutate(#mutate_fns))*
+                #(.subscribe(#subscribe_fns))*
         }
     }
     .into()

@@ -49,6 +49,16 @@ where
         }
     }
 
+    /// Alias for `route` — register a query handler.
+    pub fn query<H: ErasedHandler<Ctx> + 'static>(self, handler: H) -> Self {
+        self.route(handler)
+    }
+
+    /// Alias for `route` — register a mutate handler.
+    pub fn mutate<H: ErasedHandler<Ctx> + 'static>(self, handler: H) -> Self {
+        self.route(handler)
+    }
+
     /// Register a subscribe handler.
     pub fn subscribe<H: ErasedSubscribeHandler<Ctx> + 'static>(self, handler: H) -> Self {
         let name = handler.name();
