@@ -1,14 +1,5 @@
 import type { ProcedureKind } from "./types";
-
-// JSON.stringify throws on BigInt values. This replacer converts BigInt to
-// Number so JSON transport works. Values > 2^53 lose precision — acceptable
-// for this transport (JSON has no native bigint type; the Rust backend
-// receives a JSON number either way).
-function safeStringify(value: unknown): string {
-  return JSON.stringify(value, (_, val) =>
-    typeof val === "bigint" ? Number(val) : val,
-  );
-}
+import { serialize, flattenForRust, safeStringify } from "./serializer";
 
 export const fetchTransport = (
   config: { url: string },
@@ -20,9 +11,9 @@ export const fetchTransport = (
     signal?: AbortSignal,
   ): Promise<unknown> | AsyncIterable<unknown> => {
     if (kind === "subscribe") {
-      // GET → SSE
+      const serialized = serialize(input);
       const params = new URLSearchParams({
-        input: safeStringify(input),
+        input: safeStringify(serialized),
       });
       const url = `${config.url}/${path}?${params}`;
       const es = new EventSource(url);
@@ -97,11 +88,11 @@ export const fetchTransport = (
 
     // query / mutate
     const isQuery = kind === "query";
+    const serialized = serialize(input);
+    const body = safeStringify(flattenForRust(serialized));
 
     if (isQuery) {
-      const params = new URLSearchParams({
-        input: safeStringify(input),
-      });
+      const params = new URLSearchParams({ input: body });
       return fetch(`${config.url}/${path}?${params}`, {
         method: "GET",
         headers: { Accept: "application/json" },
@@ -112,14 +103,13 @@ export const fetchTransport = (
       });
     }
 
-    // mutate
     return fetch(`${config.url}/${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: safeStringify(input),
+      body,
       signal,
     }).then((r) => {
       if (!r.ok) throw new Error(`Request failed: ${r.status}`);

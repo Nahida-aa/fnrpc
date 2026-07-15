@@ -9,6 +9,7 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::get;
 use axum::Router;
 use fnrpc::router::RpcRouter;
+use fnrpc::serializer::unpack_meta;
 use futures::StreamExt;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -36,7 +37,8 @@ async fn fnrpc_handle(
     match kind {
         Some("subscribe") => {
             let raw = params.get("input").cloned().unwrap_or_else(|| "null".into());
-            let input: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+            let input_raw: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+            let input = unpack_meta(&input_raw);
 
             match state.router.get_sub_handler(&path) {
                 Some(handler) => {
@@ -78,7 +80,7 @@ async fn fnrpc_handle(
                 headers,
             };
 
-            let input = match method {
+            let input_raw = match method {
                 Method::GET => {
                     let raw = params.get("input").cloned().unwrap_or_else(|| "null".into());
                     serde_json::from_str(&raw).unwrap_or(Value::Null)
@@ -86,6 +88,7 @@ async fn fnrpc_handle(
                 Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
                 _ => Value::Null,
             };
+            let input = unpack_meta(&input_raw);
 
             match state.router.dispatch(&ctx, &path, input).await {
                 Ok(val) => Json(val).into_response(),

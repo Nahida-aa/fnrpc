@@ -1,4 +1,5 @@
 use fnrpc::router::RpcRouter;
+use fnrpc::serializer::unpack_meta;
 use futures::StreamExt;
 use serde_json::Value;
 use tauri::ipc::Channel;
@@ -17,6 +18,7 @@ pub async fn rpc_fn(
         state: state.inner().clone(),
         headers: HeaderMap::new(),
     };
+    let input = unpack_meta(&input);
     router
         .dispatch(&ctx, &path, input)
         .await
@@ -33,8 +35,9 @@ pub async fn rpc_sub(
 ) -> Result<(), String> {
     let handler = router
         .get_sub_handler(&path)
-        .ok_or_else(|| format!("unknown subscribe path: {path}"))?;
+        .ok_or_else(|| format!("unknown subscription path: {path}"))?;
     let state = state.inner().clone();
+    let input = unpack_meta(&input);
 
     tokio::spawn(async move {
         let ctx = Ctx { state, headers: HeaderMap::new() };
