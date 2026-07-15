@@ -124,8 +124,11 @@ function SubscriptionSection() {
     <section class="space-y-3">
       <h2 class="text-lg font-semibold border-b pb-1">Subscriptions</h2>
       <TickTest />
+      {/* <TickStreamedTest /> */}
+      {/* <TickLiveTest /> */}
       <EchoTest />
       <EchoWithConsumeEventIterator />
+      <EchoStreamedTest />
       <WatchTest />
     </section>
   );
@@ -163,6 +166,61 @@ function TickTest() {
       </button>
       <Show when={count() !== null}>
         <span class="font-mono text-sm">Value: {count()}</span>
+      </Show>
+    </Row>
+  );
+}
+
+function TickStreamedTest() {
+  const [running, setRunning] = createSignal(false);
+  const query = useQuery(() => client.tick.streamedOptions(500n, ));
+
+  return (
+    <Row label="tick streamed(500)">
+      <button
+        class={running()
+          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
+        onClick={() => setRunning(!running())}
+      >
+        {running() ? 'Stop' : 'Start'}
+      </button>
+      {/* <Show when={query.data}>
+        <span class="font-mono text-xs truncate max-w-60">
+          {query.data!.join(', ')}
+        </span>
+      </Show> */}
+      <Show when={query.isFetching}>
+        <span class="text-muted-foreground text-xs">streaming...</span>
+      </Show>
+    </Row>
+  );
+}
+
+function TickLiveTest() {
+  const [running, setRunning] = createSignal(false);
+  const query = useQuery(() => ({
+    ...client.tick.liveOptions(500n),
+    enabled: running(),
+  
+    refetchInterval: undefined,
+  }));
+
+  return (
+    <Row label="tick live(500)">
+      <button
+        class={running()
+          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
+        onClick={() => setRunning(!running())}
+      >
+        {running() ? 'Stop' : 'Start'}
+      </button>
+      <Show when={query.data}>
+        <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
+      </Show>
+      <Show when={query.isFetching}>
+        <span class="text-muted-foreground text-xs">streaming...</span>
       </Show>
     </Row>
   );
@@ -246,6 +304,28 @@ function EchoWithConsumeEventIterator() {
       </div>
     </Row>
   );
+}
+
+function EchoStreamedTest() {
+  const [running, setRunning] = createSignal(false);
+  const [prefix, setPrefix] = createSignal('msg');
+  const query = useQuery(() => client.echo_stream.liveOptions(prefix()));
+  return <Row label="echo_stream live(prefix())">
+      <button
+        class={running()
+          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
+        onClick={() => setRunning(!running())}
+      >
+        {running() ? 'Stop' : 'Start'}
+      </button>
+      <Show when={query.data}>
+        <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
+      </Show>
+      <Show when={query.isFetching}>
+        <span class="text-muted-foreground text-xs">streaming...</span>
+      </Show>
+    </Row>
 }
 
 function WatchTest() {

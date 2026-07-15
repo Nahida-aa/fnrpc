@@ -57,10 +57,10 @@ export class ProcedureUtils<TInput, TOutput, TError> {
     queryKey: DataTag<QueryKey, TOutput[], TError>;
     queryFn: (context: any) => Promise<TOutput[]>;
   } {
-    const queryKey = this.streamedKey(input as any, options);
+    // const queryKey = this.streamedKey(input as any, options);
 
     return {
-      queryKey,
+      queryKey: this.streamedKey(input as any, options),
       queryFn: serializableStreamedQuery(
         async (context) => {
           const output = await this.callClient(input, context.signal);
