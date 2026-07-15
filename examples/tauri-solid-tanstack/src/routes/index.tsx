@@ -125,6 +125,7 @@ function SubscriptionSection() {
       <h2 class="text-lg font-semibold border-b pb-1">Subscriptions</h2>
       <TickTest />
       <EchoTest />
+      <EchoWithConsumeEventIterator />
       <WatchTest />
     </section>
   );
@@ -174,6 +175,44 @@ function EchoTest() {
 
   createEffect(() => {
     if (!running()) { setMsgs([]); return; }
+
+    const ac = new AbortController();
+    const iter = fnrpc.echo_stream(prefix(), ac.signal);
+
+    (async () => {
+      for await (const v of iter) {
+        setMsgs(prev => [...prev, String(v)]);
+      }
+    })();
+
+    onCleanup(() => ac.abort());
+  });
+
+  return (
+    <Row label="echo_stream(prefix)">
+      <input class="border rounded px-2 py-0.5 bg-background text-sm w-24" value={prefix()} onInput={e => setPrefix(e.currentTarget.value)} />
+      <button
+        class={running()
+          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
+        onClick={() => setRunning(!running())}
+      >
+        {running() ? 'Stop' : 'Start'}
+      </button>
+      <div class="text-xs text-muted-foreground truncate max-w-60">
+        {msgs().join(', ')}
+      </div>
+    </Row>
+  );
+}
+
+function EchoWithConsumeEventIterator() {
+  const [prefix, setPrefix] = createSignal('msg');
+  const [msgs, setMsgs] = createSignal<string[]>([]);
+  const [running, setRunning] = createSignal(false);
+
+  createEffect(() => {
+    if (!running()) { setMsgs([]); return; }
     const iter = fnrpc.echo_stream(prefix());
     const cancel = consumeEventIterator(iter, {
       onEvent: v => setMsgs(prev => [...prev, String(v)]),
@@ -182,7 +221,7 @@ function EchoTest() {
   });
 
   return (
-    <Row label="echo_stream(prefix)">
+    <Row label="echo_stream (consumeEventIterator)">
       <input class="border rounded px-2 py-0.5 bg-background text-sm w-24" value={prefix()} onInput={e => setPrefix(e.currentTarget.value)} />
       <button
         class={running()
