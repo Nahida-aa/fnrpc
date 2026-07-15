@@ -14,3 +14,4 @@ export type {
   ProcedureWithKind,
   VoidIfInputNull,
 } from "./createClient";
+export { RpcError, isRpcError, safe } from "./error";

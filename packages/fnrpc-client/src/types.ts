@@ -9,7 +9,7 @@ export type Procedure = {
   kind: ProcedureKind;
   input: unknown;
   output: unknown;
-  error: unknown;
+  error: { code: string; message: string; data?: unknown };
 };
 
 export type Procedures = {

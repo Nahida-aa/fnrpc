@@ -22,7 +22,7 @@ pub async fn rpc_fn(
     router
         .dispatch(&ctx, &path, input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| serde_json::to_string(&e).unwrap())
 }
 
 #[tauri::command]
@@ -54,7 +54,7 @@ pub async fn rpc_sub(
                     }
                 }
                 Err(e) => {
-                    let _ = channel.send(format!("__error:{}", e));
+                    let _ = channel.send(format!("__error:{}", serde_json::to_string(&e).unwrap()));
                     break;
                 }
             }

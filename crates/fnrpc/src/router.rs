@@ -102,7 +102,7 @@ where
             .inner
             .subscribes
             .get(path)
-            .ok_or_else(|| RpcErr(format!("unknown subscribe path: {path}")))?;
+            .ok_or_else(|| RpcErr::not_found(format!("unknown subscribe path: {path}")))?;
         Ok(handler.call(ctx, input))
     }
 
@@ -163,6 +163,9 @@ where
             out.push('\n');
         }
 
+        // Named RpcError type (matches Rust's RpcErr struct)
+        out.push_str("export type RpcError = { code: string; message: string; data?: unknown };\n\n");
+
         // Build the Procedures interface
         out.push_str("export type Procedures = {\n");
         for (_, handler) in &self.inner.handlers {
@@ -170,7 +173,7 @@ where
             let o = handler.output_ts();
             let kind = handler.kind();
             out.push_str(&format!(
-                "  {}: {{ kind: \"{kind}\"; input: {}; output: {}; error: string }};\n",
+                "  {}: {{ kind: \"{kind}\"; input: {}; output: {}; error: RpcError }};\n",
                 handler.name(),
                 i.ts_ref,
                 o.ts_ref,
@@ -180,7 +183,7 @@ where
             let i = sub.input_ts();
             let o = sub.output_ts();
             out.push_str(&format!(
-                "  {}: {{ kind: \"subscribe\"; input: {}; output: {}; error: string }};\n",
+                "  {}: {{ kind: \"subscribe\"; input: {}; output: {}; error: RpcError }};\n",
                 sub.name(),
                 i.ts_ref,
                 o.ts_ref,
@@ -237,7 +240,7 @@ impl<Ctx: Send + Sync + 'static> FnService<Ctx> for RouterService<Ctx> {
         let handler = self
             .handlers
             .get(path)
-            .ok_or_else(|| RpcErr(format!("unknown path: {path}")))?;
+            .ok_or_else(|| RpcErr::not_found(format!("unknown path: {path}")))?;
         handler.call(ctx, input).await
     }
 }

@@ -1,9 +1,17 @@
 import type { ProcedureKind } from "./types";
 import { serialize, flattenForRust, safeStringify } from "./serializer";
+import { RpcError } from "./error";
 
-export const fetchTransport = (
-  config: { url: string },
-) => {
+function parseError(msg: string): RpcError {
+  try {
+    const parsed = JSON.parse(msg);
+    return RpcError.fromJson(parsed);
+  } catch {
+    return new RpcError("INTERNAL_SERVER_ERROR", msg);
+  }
+}
+
+export const fetchTransport = (config: { url: string }) => {
   return (
     path: string,
     input: unknown,
@@ -19,49 +27,63 @@ export const fetchTransport = (
         const url = `${config.url}/${path}?${params}`;
         const es = new EventSource(url);
 
-        const iterable: AsyncIterable<unknown> = {
-          [Symbol.asyncIterator]() {
-            let done = false;
-            const pending: Array<IteratorResult<unknown>> = [];
-            let resolveNext:
-              | ((r: IteratorResult<unknown>) => void)
-              | null = null;
+        let done = false;
+        const pending: Array<IteratorResult<unknown>> = [];
+        let resolveNext: ((r: IteratorResult<unknown>) => void) | null = null;
+        let rejectNext: ((err: unknown) => void) | null = null;
 
-            es.onmessage = (e) => {
-              if (done) return;
-              try {
-                const val = JSON.parse(e.data);
-                push({ done: false, value: val });
-              } catch {
-                // skip malformed data
-              }
-            };
-
-            es.onerror = () => {
-              done = true;
-              es.close();
-              push({ done: true, value: undefined as any });
-            };
-
-            function push(result: IteratorResult<unknown>) {
+        es.onmessage = (e) => {
+          if (done) return;
+          if (e.data.startsWith("__error:")) {
+            const err = parseError(e.data.slice(8));
+            done = true;
+            es.close();
+            if (rejectNext) {
+              rejectNext(err);
+              rejectNext = null;
+            }
+          } else {
+            try {
+              const val = JSON.parse(e.data);
               if (resolveNext) {
-                resolveNext(result);
+                resolveNext({ done: false, value: val });
                 resolveNext = null;
               } else {
-                pending.push(result);
+                pending.push({ done: false, value: val });
               }
+            } catch {
+              // skip malformed data
             }
+          }
+        };
 
-            if (signal) {
-              signal.addEventListener("abort", () => {
-                done = true;
-                es.close();
-                if (resolveNext) {
-                  resolveNext({ done: true, value: undefined as any });
-                }
-              }, { once: true });
-            }
+        es.onerror = () => {
+          done = true;
+          es.close();
+          const err = new RpcError("CONNECTION_ERROR", "EventSource connection failed");
+          if (rejectNext) {
+            rejectNext(err);
+            rejectNext = null;
+          }
+        };
 
+        if (signal) {
+          signal.addEventListener(
+            "abort",
+            () => {
+              done = true;
+              es.close();
+              if (resolveNext) {
+                resolveNext({ done: true, value: undefined as any });
+                resolveNext = null;
+              }
+            },
+            { once: true },
+          );
+        }
+
+        const iterable: AsyncIterable<unknown> = {
+          [Symbol.asyncIterator]() {
             return {
               next(): Promise<IteratorResult<unknown>> {
                 if (done) {
@@ -70,8 +92,9 @@ export const fetchTransport = (
                 if (pending.length > 0) {
                   return Promise.resolve(pending.shift()!);
                 }
-                return new Promise((res) => {
+                return new Promise((res, rej) => {
                   resolveNext = res;
+                  rejectNext = rej;
                 });
               },
               return(): Promise<IteratorResult<unknown>> {
@@ -79,6 +102,7 @@ export const fetchTransport = (
                 es.close();
                 if (resolveNext) {
                   resolveNext({ done: true, value: undefined as any });
+                  resolveNext = null;
                 }
                 return Promise.resolve({ done: true, value: undefined as any });
               },
@@ -88,7 +112,7 @@ export const fetchTransport = (
 
         es.onopen = () => resolve(iterable);
         es.onerror = () => {
-          reject(new Error("EventSource connection failed"));
+          reject(new RpcError("CONNECTION_ERROR", "EventSource connection failed"));
           es.close();
         };
       });
@@ -105,8 +129,14 @@ export const fetchTransport = (
         method: "GET",
         headers: { Accept: "application/json" },
         signal,
-      }).then((r) => {
-        if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+      }).then(async (r) => {
+        if (!r.ok) {
+          const json = await r.json().catch(() => null);
+          if (json && typeof json.code === "string") {
+            throw RpcError.fromJson(json);
+          }
+          throw new RpcError("INTERNAL_SERVER_ERROR", `Request failed: ${r.status}`);
+        }
         return r.json();
       });
     }
@@ -119,14 +149,20 @@ export const fetchTransport = (
       },
       body,
       signal,
-    }).then((r) => {
-      if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+    }).then(async (r) => {
+      if (!r.ok) {
+        const json = await r.json().catch(() => null);
+        if (json && typeof json.code === "string") {
+          throw RpcError.fromJson(json);
+        }
+        throw new RpcError("INTERNAL_SERVER_ERROR", `Request failed: ${r.status}`);
+      }
       return r.json();
     });
   };
 };
 
-export function consumeEventIterator<T, E = Error>(
+export function consumeEventIterator<T, E = RpcError>(
   iterable: AsyncIterable<T> | Promise<AsyncIterable<T>>,
   opts: {
     onEvent?: (value: T) => void;
@@ -148,7 +184,7 @@ export function consumeEventIterator<T, E = Error>(
       while (!cancelled) {
         const { done, value } = await iterator.next();
         if (done || cancelled) break;
-        opts.onEvent?.(value);
+        opts.onEvent?.(value as T);
       }
       if (!cancelled) {
         opts.onComplete?.();
@@ -167,10 +203,14 @@ export function consumeEventIterator<T, E = Error>(
   run();
 
   if (signal) {
-    signal.addEventListener("abort", () => {
-      cancelled = true;
-      iterator?.return?.();
-    }, { once: true });
+    signal.addEventListener(
+      "abort",
+      () => {
+        cancelled = true;
+        iterator?.return?.();
+      },
+      { once: true },
+    );
   }
 
   return () => {

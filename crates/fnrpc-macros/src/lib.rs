@@ -181,7 +181,7 @@ fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
         quote! {
             match #call {
                 Ok(val) => Ok(val),
-                Err(e) => Err(fnrpc::error::RpcErr(e.to_string())),
+                Err(e) => Err(fnrpc::error::RpcErr::internal(e.to_string())),
             }
         }
     } else {
@@ -440,7 +440,7 @@ fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
         quote! {
             Box::pin({
                 use ::futures::StreamExt;
-                #call.map(|__item| __item.map_err(|__e: _| fnrpc::error::RpcErr(__e.to_string())))
+                #call.map(|__item| __item.map_err(|__e: _| fnrpc::error::RpcErr::internal(__e.to_string())))
             })
         }
     } else {

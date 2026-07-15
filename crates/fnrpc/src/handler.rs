@@ -127,10 +127,11 @@ where
     }
 
     async fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr> {
-        let input: F::Input =
-            serde_json::from_value(input).map_err(|e| RpcErr(format!("deserialize input: {e}")))?;
+        let input: F::Input = serde_json::from_value(input)
+            .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?;
         let output = F::exec(ctx, input).await?;
-        Ok(serde_json::to_value(output).map_err(|e| RpcErr(format!("serialize output: {e}")))?)
+        Ok(serde_json::to_value(output)
+            .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
     }
 }
 
@@ -198,14 +199,15 @@ where
         let input = match serde_json::from_value(input) {
             Ok(v) => v,
             Err(e) => {
-                return Box::pin(futures::stream::once(futures::future::ready(Err(RpcErr(
-                    format!("deserialize input: {e}"),
-                )))));
+                return Box::pin(futures::stream::once(futures::future::ready(Err(
+                    RpcErr::bad_request(format!("deserialize input: {e}")),
+                ))));
             }
         };
         let stream = F::exec(ctx, input);
         Box::pin(stream.map(|item| match item {
-            Ok(v) => serde_json::to_value(v).map_err(|e| RpcErr(format!("serialize output: {e}"))),
+            Ok(v) => serde_json::to_value(v)
+                .map_err(|e| RpcErr::internal(format!("serialize output: {e}"))),
             Err(e) => Err(e),
         }))
     }

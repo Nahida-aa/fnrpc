@@ -54,7 +54,8 @@ async fn fnrpc_handle(
                         while let Some(item) = stream.next().await {
                             let event = match item {
                                 Ok(val) => Event::default().json_data(val).unwrap(),
-                                Err(e) => Event::default().data(format!("__error:{}", e)),
+                                Err(e) => Event::default()
+                                    .data(format!("__error:{}", serde_json::to_string(&e).unwrap())),
                             };
                             if tx.send(Ok(event)).await.is_err() {
                                 break;
@@ -68,7 +69,7 @@ async fn fnrpc_handle(
                 }
                 None => (
                     StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({ "error": format!("unknown path: {path}") })),
+                    Json(serde_json::json!({ "code": "NOT_FOUND", "message": format!("unknown path: {path}") })),
                 )
                     .into_response(),
             }
@@ -92,11 +93,14 @@ async fn fnrpc_handle(
 
             match state.router.dispatch(&ctx, &path, input).await {
                 Ok(val) => Json(val).into_response(),
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({ "error": e.to_string() })),
-                )
-                    .into_response(),
+                Err(e) => {
+                    let status = match e.code.as_str() {
+                        "BAD_REQUEST" => StatusCode::BAD_REQUEST,
+                        "NOT_FOUND" => StatusCode::NOT_FOUND,
+                        _ => StatusCode::INTERNAL_SERVER_ERROR,
+                    };
+                    (status, Json(e)).into_response()
+                }
             }
         }
         None => (

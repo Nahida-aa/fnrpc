@@ -5,28 +5,30 @@ export type User = {
 	name: string,
 	email: string,
 };
+export type RpcError = { code: string; message: string; data?: unknown };
+
 export type Procedures = {
-  add: { kind: "query"; input: [number, number]; output: number; error: string };
-  health_check: { kind: "query"; input: null; output: string; error: string };
-  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: string };
-  create_user: { kind: "mutate"; input: [string, string]; output: User; error: string };
-  greet: { kind: "query"; input: string; output: string; error: string };
-  get_user: { kind: "query"; input: number; output: User; error: string };
-  get_count: { kind: "query"; input: null; output: string; error: string };
-  tick: { kind: "subscribe"; input: bigint; output: bigint; error: string };
-  watch_status: { kind: "subscribe"; input: string; output: string; error: string };
-  echo_stream: { kind: "subscribe"; input: string; output: string; error: string };
+  get_count: { kind: "query"; input: null; output: string; error: RpcError };
+  get_user: { kind: "query"; input: number; output: User; error: RpcError };
+  create_user: { kind: "mutate"; input: [string, string]; output: User; error: RpcError };
+  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: RpcError };
+  add: { kind: "query"; input: [number, number]; output: number; error: RpcError };
+  health_check: { kind: "query"; input: null; output: string; error: RpcError };
+  greet: { kind: "query"; input: string; output: string; error: RpcError };
+  tick: { kind: "subscribe"; input: bigint; output: bigint; error: RpcError };
+  echo_stream: { kind: "subscribe"; input: string; output: string; error: RpcError };
+  watch_status: { kind: "subscribe"; input: string; output: string; error: RpcError };
 }
 
 export const __procedureKinds = {
+  get_count: "query",
+  get_user: "query",
+  create_user: "mutate",
+  divide: "query",
   add: "query",
   health_check: "query",
-  divide: "query",
-  create_user: "mutate",
   greet: "query",
-  get_user: "query",
-  get_count: "query",
   tick: "subscribe",
-  watch_status: "subscribe",
   echo_stream: "subscribe",
+  watch_status: "subscribe",
 } as const;
