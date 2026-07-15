@@ -199,17 +199,17 @@ export const client = createTanstackQueryUtils(fnrpc);
 import { useQuery, useMutation } from "@tanstack/react-query";
 
 // 查询
-const { data: user } = useQuery(client.getUser.queryOptions(42));
+const { data: user } = useQuery(client.get_user.queryOptions(42));
 
 // 变更
-const mutation = useMutation(client.createUser.mutationOptions());
+const mutation = useMutation(client.create_user.mutationOptions());
 mutation.mutate({ name: "Alice", email: "alice@example.com" });
 
 // Streamed — 累积流数据为数组
-const { data: updates } = useQuery(client.watchUser.streamedOptions(42));
+const { data: updates } = useQuery(client.watch_user.streamedOptions(42));
 
 // Live — 每个 chunk 实时更新 cache
-const { data: lastUpdate } = useQuery(client.watchUser.liveOptions(42));
+const { data: lastUpdate } = useQuery(client.watch_user.liveOptions(42));
 ```
 
 ### Solid
@@ -218,17 +218,17 @@ const { data: lastUpdate } = useQuery(client.watchUser.liveOptions(42));
 import { createQuery, createMutation } from "@tanstack/solid-query";
 
 // 查询
-const query = createQuery(() => client.getUser.queryOptions(42));
+const query = createQuery(() => client.get_user.queryOptions(42));
 
 // 变更
-const mutation = createMutation(() => client.createUser.mutationOptions());
+const mutation = createMutation(() => client.create_user.mutationOptions());
 mutation.mutate({ name: "Alice", email: "alice@example.com" });
 
 // Streamed
-const streamed = createQuery(() => client.watchUser.streamedOptions(42));
+const streamed = createQuery(() => client.watch_user.streamedOptions(42));
 
 // Live
-const live = createQuery(() => client.watchUser.liveOptions(42));
+const live = createQuery(() => client.watch_user.liveOptions(42));
 ```
 
 ## 包清单

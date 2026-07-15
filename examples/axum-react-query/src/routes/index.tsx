@@ -26,7 +26,7 @@ function IndexPage() {
 function QuerySection() {
   const greet = useQuery(client.greet.queryOptions("World"));
   const add = useQuery(client.add.queryOptions([3, 5]));
-  const getUser = useQuery(client.get_user.queryOptions(1));
+  const get_user = useQuery(client.get_user.queryOptions(1));
   const divide = useQuery(client.divide.queryOptions([10, 2]));
 
   return (
@@ -54,7 +54,7 @@ function QuerySection() {
           <tr>
             <td style={{ borderBottom: "1px solid #eee" }}>get_user</td>
             <td style={{ borderBottom: "1px solid #eee" }}>1</td>
-            <td style={{ borderBottom: "1px solid #eee" }}>{getUser.data ? JSON.stringify(getUser.data) : "loading..."}</td>
+            <td style={{ borderBottom: "1px solid #eee" }}>{get_user.data ? JSON.stringify(get_user.data) : "loading..."}</td>
           </tr>
           <tr>
             <td style={{ borderBottom: "1px solid #eee" }}>divide</td>
@@ -68,19 +68,19 @@ function QuerySection() {
 }
 
 function MutationSection() {
-  const createUser = useMutation(client.create_user.mutationOptions());
+  const create_user = useMutation(client.create_user.mutationOptions());
 
   return (
     <section>
       <h2>Mutations</h2>
       <button
-        onClick={() => createUser.mutate(["Bob", "bob@example.com"] )}
-        disabled={createUser.isPending}
+        onClick={() => create_user.mutate(["Bob", "bob@example.com"] )}
+        disabled={create_user.isPending}
       >
-        {createUser.isPending ? "Creating..." : "Create User"}
+        {create_user.isPending ? "Creating..." : "Create User"}
       </button>
-      {createUser.data && (
-        <pre style={{ marginTop: 8, fontSize: 12 }}>{JSON.stringify(createUser.data, null, 2)}</pre>
+      {create_user.data && (
+        <pre style={{ marginTop: 8, fontSize: 12 }}>{JSON.stringify(create_user.data, null, 2)}</pre>
       )}
     </section>
   );
