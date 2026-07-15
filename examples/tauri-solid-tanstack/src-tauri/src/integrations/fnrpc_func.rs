@@ -62,12 +62,12 @@ pub async fn reset_count() -> () {
 pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<Ctx> {
     fnrpc::router::RpcRouter::<Ctx>::new()
         .query(get_count)
+        .mutate(reset_count)
         .query(health_check)
         .query(crate::feat::demo::func::greet)
         .query(crate::feat::demo::func::add)
         .query(crate::feat::demo::func::get_user)
         .query(crate::feat::demo::func::divide)
-        .mutate(reset_count)
         .mutate(crate::feat::demo::func::create_user)
         .subscribe(crate::feat::demo::func::tick)
         .subscribe(crate::feat::demo::func::echo_stream)
