@@ -6,14 +6,27 @@ export type User = {
 	email: string,
 };
 export type Procedures = {
-  create_user: { kind: "mutate"; input: [string, string]; output: User; error: unknown };
-  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: unknown };
-  health_check: { kind: "query"; input: null; output: string; error: unknown };
   greet: { kind: "query"; input: string; output: string; error: unknown };
-  get_user: { kind: "query"; input: number; output: User; error: unknown };
   get_count: { kind: "query"; input: null; output: string; error: unknown };
+  health_check: { kind: "query"; input: null; output: string; error: unknown };
   add: { kind: "query"; input: [number, number]; output: number; error: unknown };
+  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: unknown };
+  create_user: { kind: "mutate"; input: [string, string]; output: User; error: unknown };
+  get_user: { kind: "query"; input: number; output: User; error: unknown };
   tick: { kind: "subscribe"; input: bigint; output: bigint; error: unknown };
   watch_status: { kind: "subscribe"; input: string; output: string; error: unknown };
   echo_stream: { kind: "subscribe"; input: string; output: string; error: unknown };
 }
+
+export const __procedureKinds = {
+  greet: "query",
+  get_count: "query",
+  health_check: "query",
+  add: "query",
+  divide: "query",
+  create_user: "mutate",
+  get_user: "query",
+  tick: "subscribe",
+  watch_status: "subscribe",
+  echo_stream: "subscribe",
+} as const;

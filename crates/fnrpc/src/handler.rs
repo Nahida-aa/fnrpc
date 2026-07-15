@@ -139,7 +139,7 @@ where
 /// Typed RPC subscribe trait.
 ///
 /// Implement this directly, or use the `#[rpc_subscribe]` proc macro.
-pub trait RpcSubscription<Ctx>: Send + Sync {
+pub trait RpcSubscribe<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type;
     type Output: Serialize + Type + 'static;
     const NAME: &'static str;
@@ -152,7 +152,7 @@ pub trait RpcSubscription<Ctx>: Send + Sync {
 }
 
 /// Object-safe erased subscribe handler stored in the router.
-pub trait ErasedSubscriptionHandler<Ctx>: Send + Sync {
+pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
     fn name(&self) -> &'static str;
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
@@ -164,12 +164,12 @@ pub trait ErasedSubscriptionHandler<Ctx>: Send + Sync {
     ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'a>>;
 }
 
-/// Blanket impl: any `RpcSubscription<Ctx>` becomes an `ErasedSubscriptionHandler<Ctx>`.
-impl<Ctx, F> ErasedSubscriptionHandler<Ctx> for F
+/// Blanket impl: any `RpcSubscribe<Ctx>` becomes an `ErasedSubscribeHandler<Ctx>`.
+impl<Ctx, F> ErasedSubscribeHandler<Ctx> for F
 where
-    F: RpcSubscription<Ctx> + Send + Sync,
+    F: RpcSubscribe<Ctx> + Send + Sync,
     Ctx: Send + Sync,
-    <F as RpcSubscription<Ctx>>::Output: 'static,
+    <F as RpcSubscribe<Ctx>>::Output: 'static,
 {
     fn name(&self) -> &'static str {
         F::NAME

@@ -462,7 +462,7 @@ fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;
 
-            impl fnrpc::handler::RpcSubscription<#ctx_ty> for #struct_name {
+            impl fnrpc::handler::RpcSubscribe<#ctx_ty> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
@@ -482,7 +482,7 @@ fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;
 
-            impl<T: Send + Sync + 'static> fnrpc::handler::RpcSubscription<T> for #struct_name {
+            impl<T: Send + Sync + 'static> fnrpc::handler::RpcSubscribe<T> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);

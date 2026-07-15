@@ -24,7 +24,7 @@ pub async fn rpc_fn(
 }
 
 #[tauri::command]
-pub async fn rpc_subscribe(
+pub async fn rpc_sub(
     router: tauri::State<'_, RpcRouter<Ctx>>,
     state: tauri::State<'_, AppState>,
     path: String,

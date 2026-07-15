@@ -7,7 +7,7 @@ use futures::stream::Stream;
 use serde_json::Value;
 
 use crate::error::RpcErr;
-use crate::handler::{ErasedHandler, ErasedSubscriptionHandler};
+use crate::handler::{ErasedHandler, ErasedSubscribeHandler};
 use crate::middleware::{FnLayer, FnService};
 
 pub struct RpcRouter<Ctx> {
@@ -16,7 +16,7 @@ pub struct RpcRouter<Ctx> {
 
 struct RpcRouterInner<Ctx> {
     handlers: HashMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>,
-    subscribes: HashMap<&'static str, Arc<dyn ErasedSubscriptionHandler<Ctx>>>,
+    subscribes: HashMap<&'static str, Arc<dyn ErasedSubscribeHandler<Ctx>>>,
     layers: Vec<Box<dyn FnLayer<Ctx>>>,
 }
 
@@ -53,7 +53,7 @@ where
     }
 
     /// Register a subscribe handler.
-    pub fn subscribe<H: ErasedSubscriptionHandler<Ctx> + 'static>(self, handler: H) -> Self {
+    pub fn subscribe<H: ErasedSubscribeHandler<Ctx> + 'static>(self, handler: H) -> Self {
         let name = handler.name();
         let mut inner = Arc::try_unwrap(self.inner)
             .unwrap_or_else(|_| unreachable!("consumed self => sole owner"));
@@ -87,7 +87,7 @@ where
     }
 
     /// Retrieve a subscribe handler by path (owned `Arc` for `'static` usage).
-    pub fn get_sub_handler(&self, path: &str) -> Option<Arc<dyn ErasedSubscriptionHandler<Ctx>>> {
+    pub fn get_sub_handler(&self, path: &str) -> Option<Arc<dyn ErasedSubscribeHandler<Ctx>>> {
         self.inner.subscribes.get(path).cloned()
     }
 
@@ -188,7 +188,35 @@ where
         }
         out.push_str("}\n");
 
+        out.push_str("\nexport const __procedureKinds = {\n");
+        for (_, handler) in &self.inner.handlers {
+            out.push_str(&format!(
+                "  {}: \"{}\",\n",
+                handler.name(),
+                handler.kind(),
+            ));
+        }
+        for (_, sub) in &self.inner.subscribes {
+            out.push_str(&format!(
+                "  {}: \"subscribe\",\n",
+                sub.name(),
+            ));
+        }
+        out.push_str("} as const;\n");
+
         out
+    }
+
+    /// Return the procedure kind for a given path: `"query"`, `"mutate"`, `"subscribe"`, or `None`.
+    pub fn get_procedure_kind(&self, path: &str) -> Option<&'static str> {
+        if self.inner.handlers.contains_key(path) {
+            // Handlers know their own kind ("query" or "mutate")
+            self.inner.handlers.get(path).map(|h| h.kind())
+        } else if self.inner.subscribes.contains_key(path) {
+            Some("subscribe")
+        } else {
+            None
+        }
     }
 
     /// Generate and write a TypeScript client file to disk.

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};
-use axum::response::sse::{Event, Sse};
-use axum::response::Json;
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Json};
 use axum::routing::get;
 use axum::Router;
 use fnrpc::router::RpcRouter;
@@ -23,74 +23,85 @@ struct AxumState {
     app_state: AppState,
 }
 
-async fn rpc_fn_axum(
+async fn fnrpc_handle(
     method: Method,
     State(state): State<AxumState>,
     Path(path): Path<String>,
     headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
     body: Option<axum::extract::Json<Value>>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let ctx = Ctx {
-        state: state.app_state,
-        headers,
-    };
+) -> axum::response::Response {
+    let kind = state.router.get_procedure_kind(&path);
 
-    let input = match method {
-        Method::GET => {
+    match kind {
+        Some("subscribe") => {
             let raw = params.get("input").cloned().unwrap_or_else(|| "null".into());
-            serde_json::from_str(&raw).unwrap_or(Value::Null)
-        }
-        Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
-        _ => Value::Null,
-    };
+            let input: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
 
-    match state.router.dispatch(&ctx, &path, input).await {
-        Ok(val) => Ok(Json(val)),
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
-        )),
-    }
-}
-
-async fn rpc_sub_axum(
-    State(state): State<AxumState>,
-    Path(path): Path<String>,
-    Query(params): Query<HashMap<String, String>>,
-) -> Sse<ReceiverStream<Result<Event, Infallible>>> {
-    let handler = state
-        .router
-        .get_sub_handler(&path)
-        .expect("unknown subscribe path");
-
-    let raw = params.get("input").cloned().unwrap_or_else(|| "null".into());
-    let input: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
-
-    let ctx = Ctx {
-        state: state.app_state,
-        headers: HeaderMap::new(),
-    };
-
-    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
-
-    tokio::spawn(async move {
-        let mut stream = handler.call(&ctx, input);
-        while let Some(item) = stream.next().await {
-            match item {
-                Ok(val) => {
-                    let data = match &val {
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
+            match state.router.get_sub_handler(&path) {
+                Some(handler) => {
+                    let ctx = Ctx {
+                        state: state.app_state,
+                        headers,
                     };
-                    let _ = tx.send(Ok(Event::default().data(data))).await;
+
+                    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
+
+                    tokio::spawn(async move {
+                        let mut stream = handler.call(&ctx, input);
+                        while let Some(item) = stream.next().await {
+                            let event = match item {
+                                Ok(val) => Event::default().json_data(val).unwrap(),
+                                Err(e) => Event::default().data(format!("__error:{}", e)),
+                            };
+                            if tx.send(Ok(event)).await.is_err() {
+                                break;
+                            }
+                        }
+                    });
+
+                    Sse::new(ReceiverStream::new(rx))
+                        .keep_alive(KeepAlive::default())
+                        .into_response()
                 }
-                Err(_) => break,
+                None => (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "error": format!("unknown path: {path}") })),
+                )
+                    .into_response(),
             }
         }
-    });
+        Some(_) => {
+            // query or mutate
+            let ctx = Ctx {
+                state: state.app_state,
+                headers,
+            };
 
-    Sse::new(ReceiverStream::new(rx))
+            let input = match method {
+                Method::GET => {
+                    let raw = params.get("input").cloned().unwrap_or_else(|| "null".into());
+                    serde_json::from_str(&raw).unwrap_or(Value::Null)
+                }
+                Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
+                _ => Value::Null,
+            };
+
+            match state.router.dispatch(&ctx, &path, input).await {
+                Ok(val) => Json(val).into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+                    .into_response(),
+            }
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("unknown path: {path}") })),
+        )
+            .into_response(),
+    }
 }
 
 pub fn build_axum_router(router: RpcRouter<Ctx>, app_state: AppState) -> Router {
@@ -102,8 +113,7 @@ pub fn build_axum_router(router: RpcRouter<Ctx>, app_state: AppState) -> Router 
     };
 
     Router::new()
-        .route("/fnrpc/{*path}", get(rpc_fn_axum).post(rpc_fn_axum))
-        .route("/fnrpc/sub/{*path}", get(rpc_sub_axum))
+        .route("/fnrpc/{*path}", get(fnrpc_handle).post(fnrpc_handle))
         .layer(cors)
         .with_state(state)
 }
