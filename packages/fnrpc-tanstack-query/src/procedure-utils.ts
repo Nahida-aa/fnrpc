@@ -1,7 +1,7 @@
 import type { Client } from "@fnrpc/client";
 import { traverseClient } from "@fnrpc/client";
 
-import type { DataTag, QueryKey } from "@tanstack/query-core";
+import type { DataTag, QueryKey, QueryObserverOptions, MutationObserverOptions } from "@tanstack/query-core";
 
 import type { MutationKey, ProcedureKey } from "./key";
 import { liveQuery } from "./live-query";
@@ -31,29 +31,36 @@ export class ProcedureUtils<TInput, TOutput, TError> {
     return [this.path, sanitizeVal(input)] as any;
   }
 
-  queryOptions(input: TInput): {
+  queryOptions<UInput = TInput>(
+    input: UInput extends undefined ? void : UInput,
+    opts?: Omit<QueryObserverOptions<TOutput, TError, TOutput, TOutput, QueryKey>, "queryKey" | "queryFn" | "initialData">,
+  ): {
     queryKey: ProcedureKey<TInput, TOutput>;
     queryFn: () => Promise<TOutput>;
-  } {
+  } & Omit<QueryObserverOptions<TOutput, TError, TOutput, TOutput, QueryKey>, "queryKey" | "queryFn" | "initialData"> {
     return {
-      queryKey: this.queryKey(input),
-      queryFn: () => this.callClient(input) as Promise<TOutput>,
-    };
+      queryKey: this.queryKey(input as any),
+      queryFn: () => this.callClient(input, undefined) as Promise<TOutput>,
+      ...opts,
+    } as any;
   }
 
   mutationKey(): MutationKey<TOutput> {
     return [this.path] as any;
   }
 
-  mutationOptions(): {
+  mutationOptions(
+    opts?: Omit<MutationObserverOptions<TOutput, TError, TInput, unknown>, "mutationKey" | "mutationFn">,
+  ): {
     mutationKey: MutationKey<TOutput>;
     mutationFn: (input: TInput) => Promise<TOutput>;
-  } {
+  } & Omit<MutationObserverOptions<TOutput, TError, TInput, unknown>, "mutationKey" | "mutationFn"> {
     return {
       mutationKey: this.mutationKey(),
       mutationFn: (input: TInput) =>
-        this.callClient(input) as Promise<TOutput>,
-    };
+        this.callClient(input, undefined) as Promise<TOutput>,
+      ...opts,
+    } as any;
   }
 
   streamedKey(
