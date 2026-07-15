@@ -2,8 +2,9 @@ use std::fmt;
 
 use serde::Serialize;
 use serde_json::Value;
+use specta::Type;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Type)]
 pub struct RpcErr {
     pub code: String,
     pub message: String,
