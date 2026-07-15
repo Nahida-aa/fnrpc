@@ -136,7 +136,7 @@ const user = await fnrpc.get_user(42);
 Rust functions with multiple params accept a tuple in TypeScript:
 
 ```typescript
-const user = await fnrpc.get_user([42, true]); // fn get_user(id: i64, include_deleted: bool)
+const add = await fnrpc.add([1, 2]); // fn add(a: i32, b: i32)
 ```
 
 For structured input, pass an object:
