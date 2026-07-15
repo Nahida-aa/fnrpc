@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "fnRPC client — transport-agnostic RPC client with Proxy-based typed API",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nahida-aa/fnrpc.git"
+  },
   "type": "module",
   "files": [
     "dist"

@@ -2,6 +2,9 @@
 name = "fnrpc-macros"
 version.workspace = true
 edition.workspace = true
+description = "Proc macros for fnrpc — attribute macros for defining typed RPC functions"
+license = "MIT"
+repository = "https://github.com/Nahida-aa/fnrpc"
 
 [lib]
 proc-macro = true
