@@ -35,11 +35,13 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
                 path,
                 input: input ?? null,
                 channel,
-              }).catch(() => {
+              }).catch((err: unknown) => {
+                console.error("[fnrpc] tauri subscribe invoke error:", err);
                 push({ done: true as const, value: undefined as any });
               });
             })
-            .catch(() => {
+            .catch((err: unknown) => {
+              console.error("[fnrpc] tauri subscribe getCore error:", err);
               push({ done: true as const, value: undefined as any });
             });
 
@@ -90,6 +92,10 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
           path,
           input: input ?? null,
         }),
-      );
+      )
+      .catch((err: unknown) => {
+        console.error("[fnrpc] tauri query/mutate invoke error:", err);
+        throw err;
+      });
   };
 }

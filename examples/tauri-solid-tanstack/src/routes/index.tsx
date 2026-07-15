@@ -138,7 +138,13 @@ function TickTest() {
     if (!running()) return;
     const iter = fnrpc.tick(BigInt(500));
     const cancel = consumeEventIterator(iter, {
-      onEvent: v => setCount(Number(v)),
+      onEvent: v => {
+        console.log('tick event', v)
+        setCount(Number(v))
+      },
+      onError: e => {
+        console.error('tick error', e)
+      }
     });
     onCleanup(() => cancel());
   });
