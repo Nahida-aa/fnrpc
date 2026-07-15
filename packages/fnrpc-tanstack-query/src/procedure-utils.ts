@@ -1,7 +1,7 @@
 import type { Client } from "@fnrpc/client";
 import { traverseClient } from "@fnrpc/client";
 
-import type { DataTag, QueryKey } from "@tanstack/query-core";
+import type { DataTag, QueryKey, QueryObserverOptions  } from "@tanstack/query-core";
 
 import type { MutationKey, ProcedureKey } from "./key";
 import { liveQuery } from "./live-query";
