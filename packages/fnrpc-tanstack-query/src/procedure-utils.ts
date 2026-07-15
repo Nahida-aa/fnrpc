@@ -1,12 +1,12 @@
 import type { Client } from "@fnrpc/client";
 import { traverseClient } from "@fnrpc/client";
 
-import type { DataTag, QueryKey, QueryObserverOptions  } from "@tanstack/query-core";
+import type { DataTag, QueryKey } from "@tanstack/query-core";
 
 import type { MutationKey, ProcedureKey } from "./key";
 import { liveQuery } from "./live-query";
 import { serializableStreamedQuery } from "./stream-query";
-import type { StreamedKeyOptions, StreamedOptionsIn } from "./types";
+import type { ExtraLiveOptions, ExtraStreamedOptions, StreamedKeyOptions } from "./types";
 
 function sanitizeVal(val: unknown): unknown {
   if (typeof val === "bigint") return `${val}n`;
@@ -65,13 +65,16 @@ export class ProcedureUtils<TInput, TOutput, TError> {
 
   streamedOptions<UInput = TInput>(
     input: UInput extends undefined ? void : UInput,
-    options?: StreamedOptionsIn,
+    options?: ExtraStreamedOptions<TOutput, TError>,
   ): {
     queryKey: DataTag<QueryKey, TOutput[], TError>;
     queryFn: (context: any) => Promise<TOutput[]>;
-  } {
+  } & ExtraStreamedOptions<TOutput, TError> {
+    const queryFnOpts = options?.queryFnOptions;
+    const tanstackOpts: Omit<ExtraStreamedOptions<TOutput, TError>, "queryFnOptions"> = options ?? {};
+
     return {
-      queryKey: this.streamedKey(input as any, options),
+      queryKey: this.streamedKey(input as any, { queryFnOptions: queryFnOpts }),
       queryFn: serializableStreamedQuery(
         async (context) => {
           const output = await this.callClient(input, context.signal);
@@ -80,9 +83,10 @@ export class ProcedureUtils<TInput, TOutput, TError> {
           }
           return output;
         },
-        options?.queryFnOptions,
+        queryFnOpts,
       ) as any,
-    };
+      ...tanstackOpts,
+    } as any;
   }
 
   liveKey(
@@ -93,14 +97,14 @@ export class ProcedureUtils<TInput, TOutput, TError> {
 
   liveOptions<UInput = TInput>(
     input: UInput extends undefined ? void : UInput,
+    options?: ExtraLiveOptions<TOutput, TError>,
   ): {
     queryKey: DataTag<QueryKey, TOutput, TError>;
     queryFn: (context: any) => Promise<TOutput>;
-  } {
-    const queryKey = this.liveKey(input as any);
-
+  } & ExtraLiveOptions<TOutput, TError> {
+    const extras = options ?? {};
     return {
-      queryKey,
+      queryKey: this.liveKey(input as any),
       queryFn: liveQuery(
         async (context) => {
           const output = await this.callClient(input, context.signal);
@@ -110,7 +114,8 @@ export class ProcedureUtils<TInput, TOutput, TError> {
           return output;
         },
       ) as any,
-    };
+      ...extras,
+    } as any;
   }
 
   private callClient(input: any, signal?: AbortSignal) {

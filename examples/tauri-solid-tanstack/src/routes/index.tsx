@@ -173,9 +173,9 @@ function TickTest() {
 
 function TickStreamedTest() {
   const [running, setRunning] = createSignal(false);
-  const query = useQuery(() => ({...client.tick.streamedOptions(500n, ), 
-    enabled: running(),
-  }));
+  const query = useQuery(() =>
+    client.tick.streamedOptions(500n, { enabled: running(), }),
+  );
 
   return (
     <Row label="tick streamed(500)">
@@ -201,12 +201,9 @@ function TickStreamedTest() {
 
 function TickLiveTest() {
   const [running, setRunning] = createSignal(false);
-  const query = useQuery(() => ({
-    ...client.tick.liveOptions(500n),
-    enabled: running(),
-    retry: true, // Infinite retry for more reliable streaming
-    // refetchInterval: undefined,
-  }));
+  const query = useQuery(() =>
+    client.tick.liveOptions(500n, { enabled: running(), retry: true }),
+  );
 
   return (
     <Row label="tick live(500)">
@@ -311,7 +308,9 @@ function EchoWithConsumeEventIterator() {
 function EchoStreamedTest() {
   const [running, setRunning] = createSignal(false);
   const [prefix, setPrefix] = createSignal('msg');
-  const query = useQuery(() => client.echo_stream.liveOptions(prefix()));
+  const query = useQuery(() => client.echo_stream.liveOptions(prefix(), {
+    enabled: running()
+  }));
   return <Row label="echo_stream live(prefix())">
       <button
         class={running()

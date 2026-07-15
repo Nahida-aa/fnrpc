@@ -1,4 +1,5 @@
 import type { Procedure, Procedures } from "@fnrpc/client";
+import type { QueryKey, QueryObserverOptions } from "@tanstack/query-core";
 
 import type { ProcedureUtils } from "./procedure-utils";
 import type { StreamedQueryOptions } from "./stream-query";
@@ -33,12 +34,18 @@ export type StreamedKeyOptions = {
   queryFnOptions?: StreamedQueryOptions;
 };
 
-export type StreamedOptionsIn = {
-  queryFnOptions?: StreamedQueryOptions;
-};
+export type ExtraStreamedOptions<TOutput, TError> =
+  Omit<
+    QueryObserverOptions<TOutput[], TError, TOutput[], TOutput[], QueryKey>,
+    "queryKey" | "queryFn" | "initialData" | "_defaulted" | "_optimisticResults"
+  > & {
+    queryFnOptions?: StreamedQueryOptions;
+  };
 
-export type LiveKeyOptions = Record<string, never>;
-
-export type LiveOptionsIn = Record<string, never>;
+export type ExtraLiveOptions<TOutput, TError> =
+  Omit<
+    QueryObserverOptions<TOutput, TError, TOutput, TOutput, QueryKey>,
+    "queryKey" | "queryFn" | "initialData" | "_defaulted" | "_optimisticResults"
+  >;
 
 export type { StreamedQueryOptions } from "./stream-query";

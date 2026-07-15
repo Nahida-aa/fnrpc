@@ -6,27 +6,27 @@ export type User = {
 	email: string,
 };
 export type Procedures = {
-  create_user: { kind: "mutate"; input: [string, string]; output: User; error: unknown };
-  get_user: { kind: "query"; input: number; output: User; error: unknown };
-  greet: { kind: "query"; input: string; output: string; error: unknown };
-  get_count: { kind: "query"; input: null; output: string; error: unknown };
-  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: unknown };
-  health_check: { kind: "query"; input: null; output: string; error: unknown };
-  add: { kind: "query"; input: [number, number]; output: number; error: unknown };
-  echo_stream: { kind: "subscribe"; input: string; output: string; error: unknown };
-  tick: { kind: "subscribe"; input: bigint; output: bigint; error: unknown };
-  watch_status: { kind: "subscribe"; input: string; output: string; error: unknown };
+  add: { kind: "query"; input: [number, number]; output: number; error: string };
+  health_check: { kind: "query"; input: null; output: string; error: string };
+  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: string };
+  create_user: { kind: "mutate"; input: [string, string]; output: User; error: string };
+  greet: { kind: "query"; input: string; output: string; error: string };
+  get_user: { kind: "query"; input: number; output: User; error: string };
+  get_count: { kind: "query"; input: null; output: string; error: string };
+  tick: { kind: "subscribe"; input: bigint; output: bigint; error: string };
+  watch_status: { kind: "subscribe"; input: string; output: string; error: string };
+  echo_stream: { kind: "subscribe"; input: string; output: string; error: string };
 }
 
 export const __procedureKinds = {
-  create_user: "mutate",
-  get_user: "query",
-  greet: "query",
-  get_count: "query",
-  divide: "query",
-  health_check: "query",
   add: "query",
-  echo_stream: "subscribe",
+  health_check: "query",
+  divide: "query",
+  create_user: "mutate",
+  greet: "query",
+  get_user: "query",
+  get_count: "query",
   tick: "subscribe",
   watch_status: "subscribe",
+  echo_stream: "subscribe",
 } as const;

@@ -170,7 +170,7 @@ where
             let o = handler.output_ts();
             let kind = handler.kind();
             out.push_str(&format!(
-                "  {}: {{ kind: \"{kind}\"; input: {}; output: {}; error: unknown }};\n",
+                "  {}: {{ kind: \"{kind}\"; input: {}; output: {}; error: string }};\n",
                 handler.name(),
                 i.ts_ref,
                 o.ts_ref,
@@ -180,7 +180,7 @@ where
             let i = sub.input_ts();
             let o = sub.output_ts();
             out.push_str(&format!(
-                "  {}: {{ kind: \"subscribe\"; input: {}; output: {}; error: unknown }};\n",
+                "  {}: {{ kind: \"subscribe\"; input: {}; output: {}; error: string }};\n",
                 sub.name(),
                 i.ts_ref,
                 o.ts_ref,
