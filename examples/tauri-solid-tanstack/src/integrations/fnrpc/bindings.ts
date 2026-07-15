@@ -13,29 +13,29 @@ export type User = {
 	email: string,
 };
 export type Procedures = {
+  add: { kind: "query"; input: [number, number]; output: number; error: RpcErr };
+  create_user: { kind: "mutate"; input: [string, string]; output: User; error: RpcErr };
+  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: RpcErr };
+  get_count: { kind: "query"; input: null; output: string; error: RpcErr };
+  get_user: { kind: "query"; input: number; output: User; error: RpcErr };
   greet: { kind: "query"; input: string; output: string; error: RpcErr };
   health_check: { kind: "query"; input: null; output: string; error: RpcErr };
-  divide: { kind: "query"; input: [number | null, number | null]; output: number | null; error: RpcErr };
   reset_count: { kind: "mutate"; input: null; output: null; error: RpcErr };
-  add: { kind: "query"; input: [number, number]; output: number; error: RpcErr };
-  get_user: { kind: "query"; input: number; output: User; error: RpcErr };
-  create_user: { kind: "mutate"; input: [string, string]; output: User; error: RpcErr };
-  get_count: { kind: "query"; input: null; output: string; error: RpcErr };
-  watch_status: { kind: "subscribe"; input: string; output: string; error: RpcErr };
-  tick: { kind: "subscribe"; input: bigint; output: bigint; error: RpcErr };
   echo_stream: { kind: "subscribe"; input: string; output: string; error: RpcErr };
+  tick: { kind: "subscribe"; input: bigint; output: bigint; error: RpcErr };
+  watch_status: { kind: "subscribe"; input: string; output: string; error: RpcErr };
 }
 
 export const __procedureKinds = {
+  add: "query",
+  create_user: "mutate",
+  divide: "query",
+  get_count: "query",
+  get_user: "query",
   greet: "query",
   health_check: "query",
-  divide: "query",
   reset_count: "mutate",
-  add: "query",
-  get_user: "query",
-  create_user: "mutate",
-  get_count: "query",
-  watch_status: "subscribe",
-  tick: "subscribe",
   echo_stream: "subscribe",
+  tick: "subscribe",
+  watch_status: "subscribe",
 } as const;

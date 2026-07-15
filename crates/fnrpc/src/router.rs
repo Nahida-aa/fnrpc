@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -12,8 +12,8 @@ pub struct RpcRouter<Ctx> {
 }
 
 pub(crate) struct RpcRouterInner<Ctx> {
-    pub(crate) handlers: HashMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>,
-    pub(crate) subscribes: HashMap<&'static str, Arc<dyn ErasedSubscribeHandler<Ctx>>>,
+    pub(crate) handlers: BTreeMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>,
+    pub(crate) subscribes: BTreeMap<&'static str, Arc<dyn ErasedSubscribeHandler<Ctx>>>,
     layers: Vec<Box<dyn FnLayer<Ctx>>>,
 }
 
@@ -32,8 +32,8 @@ where
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RpcRouterInner {
-                handlers: HashMap::new(),
-                subscribes: HashMap::new(),
+                handlers: BTreeMap::new(),
+                subscribes: BTreeMap::new(),
                 layers: Vec::new(),
             }),
         }
@@ -114,7 +114,7 @@ where
 
 /// Inner service that dispatches to handlers directly.
 struct RouterService<Ctx> {
-    handlers: HashMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>,
+    handlers: BTreeMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>,
 }
 
 #[async_trait::async_trait]

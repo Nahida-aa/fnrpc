@@ -42,10 +42,9 @@
 
 | Macro | Kind | What it generates |
 |---|---|---|
-| `#[rpc_query]` | attr | `struct Name__FnRpc` + `impl RpcFn<Ctx>` with `KIND = "query"` |
+| `#[rpc_query]` | attr | renames fn to `{fn}_impl`, generates `struct {fn}` + `impl RpcFn<Ctx>` with `KIND = "query"` |
 | `#[rpc_mutate]` | attr | same but `KIND = "mutate"` |
-| `#[rpc_subscribe]` | attr | `impl RpcSubscribe<Ctx>`, extracts `Stream<Item = T>` from return type |
-| `fnrpc_registry!` | invoke | `pub fn build_fn_rpc() -> RpcRouter<Ctx>` |
+| `#[rpc_subscribe]` | attr | renames fn to `{fn}_impl`, generates `struct {fn}` + `impl RpcSubscribe<Ctx>` |
 
 **Ctx inference**: first param `&T` → `Ctx = T`; otherwise `Ctx = ()` (generic impl over `T`).
 
@@ -56,12 +55,12 @@
 ## RpcRouter
 
 ```rust
-router
-    .route(MyQuery)
-    .route(MyMutation)
-    .subscribe(MySubscribe)
+RpcRouter::<Ctx>::new()
+    .query(my_query)
+    .mutate(my_mutate)
+    .subscribe(my_subscribe)
     .layer(HookLayer::new()) // last added = outermost
-    .layer(TracingLayer);
+    .layer(TracingLayer)
 ```
 
 - `dispatch(ctx, path, input)` — builds RouterService, wraps in layers, calls through
