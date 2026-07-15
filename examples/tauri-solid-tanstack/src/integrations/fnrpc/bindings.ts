@@ -22,6 +22,7 @@ export type Procedures = {
   health_check: { kind: "query"; method: "GET"; input: null; output: string; error: RpcErr };
   reset_count: { kind: "mutate"; method: "POST"; input: null; output: null; error: RpcErr };
   echo_stream: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
+  post_echo_stream: { kind: "subscribe"; method: "POST"; input: string; output: string; error: RpcErr };
   tick: { kind: "subscribe"; method: "GET"; input: bigint; output: bigint; error: RpcErr };
   watch_status: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
 }
@@ -36,6 +37,7 @@ export const __procedureMeta = {
   health_check: { kind: "query", method: "GET" },
   reset_count: { kind: "mutate", method: "POST" },
   echo_stream: { kind: "subscribe", method: "GET" },
+  post_echo_stream: { kind: "subscribe", method: "POST" },
   tick: { kind: "subscribe", method: "GET" },
   watch_status: { kind: "subscribe", method: "GET" },
 } as const;

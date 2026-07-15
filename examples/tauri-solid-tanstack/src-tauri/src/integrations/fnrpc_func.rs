@@ -1,4 +1,4 @@
-use crate::ctx::Ctx;
+use crate::{ctx::Ctx, feat::demo::func::post_echo_stream};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[fnrpc::rpc_query]
@@ -31,5 +31,6 @@ pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<Ctx> {
         .mutate(crate::feat::demo::func::create_user)
         .subscribe(crate::feat::demo::func::tick)
         .subscribe(crate::feat::demo::func::echo_stream)
+        .subscribe(post_echo_stream)
         .subscribe(crate::feat::demo::func::watch_status)
 }

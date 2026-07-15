@@ -132,7 +132,8 @@ function SubscriptionSection() {
       <TickLiveTest />
       <EchoTest />
       <EchoWithConsumeEventIterator />
-      <EchoStreamedTest />
+      <PostEchoLiveTest />
+      <PostPostEchoLiveTest />
       <WatchTest />
     </section>
   );
@@ -206,7 +207,7 @@ function TickStreamedTest() {
 function TickLiveTest() {
   const [running, setRunning] = createSignal(false);
   const query = useQuery(() =>
-    client.tick.liveOptions(500n, { enabled: running(), retry: true }),
+    client.tick.liveOptions(500n, { enabled: running(),  }),
   );
 
   return (
@@ -309,7 +310,7 @@ function EchoWithConsumeEventIterator() {
   );
 }
 
-function EchoStreamedTest() {
+function PostEchoLiveTest() {
   const [running, setRunning] = createSignal(false);
   const [prefix, setPrefix] = createSignal('msg');
   const query = useQuery(() => client.echo_stream.liveOptions(prefix(), {
@@ -324,7 +325,7 @@ function EchoStreamedTest() {
       >
         {running() ? 'Stop' : 'Start'}
       </button>
-      <Show when={query.data}>
+      <Show when={query.isSuccess}>
         <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
       </Show>
       <Show when={query.isFetching}>
@@ -332,7 +333,29 @@ function EchoStreamedTest() {
       </Show>
     </Row>
 }
-
+function PostPostEchoLiveTest() {
+  const [running, setRunning] = createSignal(false);
+  const [prefix, setPrefix] = createSignal('msg');
+  const query = useQuery(() => client.post_echo_stream.liveOptions(prefix(), {
+    enabled: running()
+  }));
+  return <Row label="post_echo_stream live(prefix())">
+      <button
+        class={running()
+          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
+        onClick={() => setRunning(!running())}
+      >
+        {running() ? 'Stop' : 'Start'}
+      </button>
+      <Show when={query.isSuccess}>
+        <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
+      </Show>
+      <Show when={query.isFetching}>
+        <span class="text-muted-foreground text-xs">streaming...</span>
+      </Show>
+    </Row>
+}
 function WatchTest() {
   const [key, setKey] = createSignal('demo');
   const [msgs, setMsgs] = createSignal<string[]>([]);

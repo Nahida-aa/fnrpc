@@ -66,6 +66,17 @@ pub fn echo_stream(prefix: String) -> impl futures::Stream<Item = String> {
     })
 }
 
+#[fnrpc::rpc_subscribe("post")]
+pub fn post_echo_stream(prefix: String) -> impl futures::Stream<Item = String> {
+    futures::stream::unfold(0u64, move |count| {
+        let prefix = prefix.clone();
+        async move {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            Some((format!("{prefix} #{count}"), count + 1))
+        }
+    })
+}
+
 #[fnrpc::rpc_subscribe]
 pub fn watch_status(ctx: &Ctx, key: String) -> impl futures::Stream<Item = String> {
     let app_dir = ctx.state.app_dir.clone();
