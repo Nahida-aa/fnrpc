@@ -35,6 +35,7 @@ function QuerySection() {
 
   const [name, setName] = createSignal('World');
   const greet = useQuery(() => client.greet.queryOptions(name()));
+ 
   // const greet = fnrpcHook.createQuery(() => ['greet', name()]);
 
 

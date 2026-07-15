@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::pin::Pin;
 use std::sync::Arc;
 
-use futures::stream::Stream;
 use serde_json::Value;
 
 use crate::error::RpcErr;
@@ -88,21 +86,6 @@ where
     /// Retrieve a subscribe handler by path (owned `Arc` for `'static` usage).
     pub fn get_sub_handler(&self, path: &str) -> Option<Arc<dyn ErasedSubscribeHandler<Ctx>>> {
         self.inner.subscribes.get(path).cloned()
-    }
-
-    /// Dispatch a subscribe by path, returning a stream of values.
-    pub fn dispatch_subscribe<'a>(
-        &'a self,
-        ctx: &'a Ctx,
-        path: &str,
-        input: Value,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'a>>, RpcErr> {
-        let handler = self
-            .inner
-            .subscribes
-            .get(path)
-            .ok_or_else(|| RpcErr::not_found(format!("unknown subscribe path: {path}")))?;
-        Ok(handler.call(ctx, input))
     }
 
     /// Return the procedure kind for a given path: `"query"`, `"mutate"`, `"subscribe"`, or `None`.

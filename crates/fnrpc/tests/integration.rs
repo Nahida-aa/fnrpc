@@ -215,9 +215,8 @@ fn sub_count_ctx(ctx: &AppCtx, input: u32) -> impl futures::Stream<Item = Result
 async fn test_subscribe() {
     let router = RpcRouter::<()>::new().subscribe(sub_count__FnRpc);
 
-    let stream = router
-        .dispatch_subscribe(&(), "sub_count", serde_json::json!(3))
-        .unwrap();
+    let handler = router.get_sub_handler("sub_count").unwrap();
+    let stream = handler.call(&(), serde_json::json!(3));
     let items: Vec<i32> = stream
         .map(|v| serde_json::from_value::<i32>(v.unwrap()).unwrap())
         .collect()
@@ -232,9 +231,8 @@ async fn test_subscribe_ctx() {
     };
     let router = RpcRouter::<AppCtx>::new().subscribe(sub_count_ctx__FnRpc);
 
-    let stream = router
-        .dispatch_subscribe(&ctx, "sub_count_ctx", serde_json::json!(2))
-        .unwrap();
+    let handler = router.get_sub_handler("sub_count_ctx").unwrap();
+    let stream = handler.call(&ctx, serde_json::json!(2));
     let items: Vec<String> = stream
         .map(|v| serde_json::from_value::<String>(v.unwrap()).unwrap())
         .collect()
@@ -245,11 +243,7 @@ async fn test_subscribe_ctx() {
 #[tokio::test]
 async fn test_subscribe_unknown_path() {
     let router = RpcRouter::<()>::new();
-    let err = router.dispatch_subscribe(&(), "nonexistent", serde_json::json!(null));
-    match err {
-        Err(e) => assert!(e.to_string().contains("unknown subscribe")),
-        Ok(_) => panic!("expected error"),
-    }
+    assert!(router.get_sub_handler("nonexistent").is_none());
 }
 
 // ── Multi-parameter tests ──────────────────────────────
