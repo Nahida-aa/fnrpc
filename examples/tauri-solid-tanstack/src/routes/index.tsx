@@ -36,6 +36,8 @@ function QuerySection() {
   const [name, setName] = createSignal('World');
   const greet = useQuery(() => client.greet.queryOptions(name()));
   // const greet = fnrpcHook.createQuery(() => ['greet', name()]);
+
+
   const [a, setA] = createSignal(1);
   const [b, setB] = createSignal(2);
 
@@ -174,7 +176,7 @@ function TickTest() {
 function TickStreamedTest() {
   const [running, setRunning] = createSignal(false);
   const query = useQuery(() =>
-    client.tick.streamedOptions(500n, { enabled: running(), }),
+    client.tick.streamedOptions(500n, { enabled: running() }),
   );
 
   return (

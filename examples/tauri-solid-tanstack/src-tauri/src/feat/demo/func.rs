@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use fnrpc::error::RpcErr;
 use crate::ctx::Ctx;
 
 
@@ -26,8 +27,8 @@ pub async fn get_user(id: u32) -> User {
 }
 
 #[fnrpc::rpc_query]
-pub async fn divide(a: f64, b: f64) -> Result<f64, String> {
-    if b == 0.0 { Err("cannot divide by zero".into()) } else { Ok(a / b) }
+pub async fn divide(a: f64, b: f64) -> Result<f64, RpcErr> {
+    if b == 0.0 { Err(RpcErr::bad_request("cannot divide by zero")) } else { Ok(a / b) }
 }
 
 #[fnrpc::rpc_mutate]

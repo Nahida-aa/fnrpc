@@ -100,6 +100,16 @@ pub fn fnrpc_registry(input: TokenStream) -> TokenStream {
     .into()
 }
 
+/// Check if `E` in `Result<T, E>` is `RpcErr`.
+fn is_rpc_err_type(arg: &syn::GenericArgument) -> bool {
+    if let syn::GenericArgument::Type(syn::Type::Path(type_path)) = arg {
+        if let Some(seg) = type_path.path.segments.last() {
+            return seg.ident == "RpcErr";
+        }
+    }
+    false
+}
+
 fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
     let fn_name = &input_fn.sig.ident;
@@ -127,24 +137,27 @@ fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
     };
 
     // --- Extract output type (auto-wrap non-Result in Ok) ---
-    let (output_ty, is_result_return) = match &input_fn.sig.output {
+    let (output_ty, is_result_return, is_rpc_err) = match &input_fn.sig.output {
         ReturnType::Type(_, ty) => {
             if let Type::Path(type_path) = ty.as_ref() {
                 let last_seg = type_path.path.segments.last().unwrap();
                 if last_seg.ident == "Result" {
                     if let PathArguments::AngleBracketed(args) = &last_seg.arguments {
                         match args.args.first().unwrap() {
-                            GenericArgument::Type(t) => (quote! { #t }, true),
+                            GenericArgument::Type(t) => {
+                                let is_rpc_err = args.args.len() > 1 && is_rpc_err_type(&args.args[1]);
+                                (quote! { #t }, true, is_rpc_err)
+                            }
                             _ => panic!("expected type in Result<T, E>"),
                         }
                     } else {
                         panic!("expected Result<T, E>");
                     }
                 } else {
-                    (quote! { #ty }, false)
+                    (quote! { #ty }, false, false)
                 }
             } else {
-                (quote! { #ty }, false)
+                (quote! { #ty }, false, false)
             }
         }
         ReturnType::Default => panic!("function must have a return type"),
@@ -178,10 +191,14 @@ fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
     };
 
     let exec_body = if is_result_return {
-        quote! {
-            match #call {
-                Ok(val) => Ok(val),
-                Err(e) => Err(fnrpc::error::RpcErr::internal(e.to_string())),
+        if is_rpc_err {
+            quote! { #call }
+        } else {
+            quote! {
+                match #call {
+                    Ok(val) => Ok(val),
+                    Err(e) => Err(fnrpc::error::RpcErr::internal(e.to_string())),
+                }
             }
         }
     } else {

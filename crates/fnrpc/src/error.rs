@@ -10,7 +10,7 @@ use specta::{
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RpcErr {
-    pub name: String,
+    pub name: &'static str,
     pub code: String,
     pub message: String,
     pub data: Option<Value>,
@@ -67,7 +67,7 @@ impl Type for RpcErr {
 impl RpcErr {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
-            name: "RpcErr".to_string(),
+            name: "RpcErr",
             code: code.into(),
             message: message.into(),
             data: None,

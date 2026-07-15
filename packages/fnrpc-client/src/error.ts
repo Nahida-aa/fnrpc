@@ -7,6 +7,12 @@ export class RpcError extends Error {
     super(message);
     this.code = code;
     this.data = data;
+    Object.defineProperty(this, "message", {
+      value: message,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
 
   static fromJson(json: { name?: string; code: string; message: string; data?: unknown }): RpcError {
