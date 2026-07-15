@@ -21,7 +21,7 @@ function IndexPage() {
 
 function QuerySection() {
   // const health = useQuery(() => client.health_check.queryOptions(null))
-  const get_count = useQuery(() => client.get_count.queryOptions(null))
+  const get_count = useQuery(() => client.get_count.queryOptions(null,))
   console.log(JSON.stringify("hello"))
   const health = useQuery(() =>({
     queryKey: ['health_check'],
