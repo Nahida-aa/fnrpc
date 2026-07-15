@@ -1,0 +1,19 @@
+[package]
+name = "fnrpc-axum"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fnrpc = { path = "../fnrpc" }
+axum = "0.8"
+serde_json = "1"
+futures = "0.3"
+tokio = { version = "1", features = ["sync"] }
+tokio-stream = "0.1"
+async-trait = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "rt"] }
+http-body-util = "0.1"
+tower = "0.5"
+serde = { version = "1", features = ["derive"] }

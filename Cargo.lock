@@ -1044,6 +1044,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fnrpc-axum"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "fnrpc",
+ "futures",
+ "http-body-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tower",
+]
+
+[[package]]
 name = "fnrpc-macros"
 version = "0.1.0"
 dependencies = [
@@ -1108,6 +1124,7 @@ checksum = "8b147ee9d1f6d097cef9ce628cd2ee62288d963e16fb287bd9286455b241382d"
 dependencies = [
  "futures-channel",
  "futures-core",
+ "futures-executor",
  "futures-io",
  "futures-sink",
  "futures-task",
@@ -3671,6 +3688,7 @@ dependencies = [
  "async-trait",
  "axum",
  "fnrpc",
+ "fnrpc-axum",
  "futures",
  "serde",
  "serde_json",
