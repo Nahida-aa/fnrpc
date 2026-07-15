@@ -2,21 +2,7 @@
 
 **Rust + TypeScript 全栈类型安全 RPC 框架，原生支持 Axum 和 Tauri。**
 
-Rust 中定义一次 RPC 函数，自动生成 TypeScript 类型。前端直接调用，全程类型安全——无需手动同步类型，无需在开发流程中嵌入代码生成步骤。
-
-```rust
-// Rust：一处定义
-#[rpc_query]
-async fn greet(ctx: &Ctx, name: String) -> String {
-    format!("Hello {name}!")
-}
-```
-
-```typescript
-// TypeScript：全类型推导
-const msg = await fnrpc.greet("world");
-//    ^? string
-```
+Rust 中定义一次 RPC 函数，自动生成 TypeScript 类型。前端直接调用，全程类型安全。
 
 ## 特性
 
@@ -32,16 +18,38 @@ const msg = await fnrpc.greet("world");
 ### 1. 定义 RPC
 
 ```rust
-use fnrpc::rpc_query;
+use fnrpc::{rpc_query, rpc_mutate, rpc_subscribe, RpcErr};
 
+// 单参数、无上下文
 #[rpc_query]
-async fn greet(name: String) -> String {
-    format!("Hello {name}!")
+async fn health_check() -> String {
+    "ok".into()
 }
 
+// 多参数查询，带上下文
 #[rpc_query]
-async fn add(a: i32, b: i32) -> i32 {
-    a + b
+async fn get_user(ctx: &Ctx, id: i64) -> Result<User, RpcErr> {
+    // ctx.db.query(...)
+    todo!()
+}
+
+// 变更 — 结构化入参
+#[derive(specta::Type, serde::Deserialize)]
+struct CreateUserInput {
+    name: String,
+    email: String,
+}
+
+#[rpc_mutate]
+async fn create_user(ctx: &Ctx, input: CreateUserInput) -> Result<User, RpcErr> {
+    // INSERT INTO users (name, email) ...
+    todo!()
+}
+
+// 订阅 — 同步函数，返回 Stream
+#[rpc_subscribe]
+fn watch_user(ctx: &Ctx, id: i64) -> Pin<Box<dyn Stream<Item = Result<UserUpdate, RpcErr>> + Send + '_>> {
+    // ...
 }
 ```
 
@@ -50,9 +58,14 @@ async fn add(a: i32, b: i32) -> i32 {
 ```rust
 use fnrpc::router::RpcRouter;
 
-let router = RpcRouter::<()>::new()
-    .query(greet)
-    .query(add);
+let router = RpcRouter::<Ctx>::new()
+    .query(health_check)
+    .query(get_user)
+    .mutate(create_user)
+    .subscribe(watch_user)
+    .layer(HookLayer::new()
+        .before(|ctx, path, input| tracing::info!("{path} invoked")))
+    .layer(TracingLayer);
 ```
 
 ### 3. 接入 Axum
@@ -63,11 +76,15 @@ use axum::Router;
 use fnrpc_axum::{FnrpcState, handle};
 
 Router::new()
-    .route("/fnrpc/{*path}", axum::routing::get(handle::<()>).post(handle::<()>))
+    .route("/fnrpc/{*path}", axum::routing::get(handle::<Ctx>).post(handle::<Ctx>))
     .with_state(Arc::new(FnrpcState {
         router: Arc::new(router),
-        ctx_from_headers: Arc::new(|_headers| ()),
-    }));
+        ctx_from_headers: Arc::new(|headers| Ctx {
+            db: db_pool.clone(),
+            user_id: extract_user_id(&headers),
+        }),
+    }))
+    .layer(cors);
 ```
 
 ### 4. 生成 TypeScript 类型
@@ -103,6 +120,109 @@ const transport = (() => {
 })();
 
 export const fnrpc = createClient<Procedures>(transport, __procedureKinds);
+```
+
+## 客户端调用
+
+### 单参数
+
+```typescript
+const user = await fnrpc.get_user(42);
+//        ^? User
+```
+
+### 多参数（元组入参）
+
+Rust 多参数函数在 TypeScript 中接受一个元组：
+
+```typescript
+const add = await fnrpc.add([1, 2]); // fn add(a: i32, b: i32)
+```
+
+结构化入参直接传对象：
+
+```typescript
+const created = await fnrpc.create_user({ name: "Alice", email: "alice@example.com" });
+```
+
+### 订阅（AsyncIterable）
+
+```typescript
+const stream = await fnrpc.watch_user(42);
+for await (const update of stream) {
+    console.log("user updated:", update);
+}
+```
+
+通过 `AbortSignal` 取消订阅：
+
+```typescript
+const controller = new AbortController();
+const stream = await fnrpc.watch_user(42, controller.signal);
+
+setTimeout(() => controller.abort(), 5000);
+```
+
+### 错误处理
+
+```typescript
+try {
+    await fnrpc.get_user(999);
+} catch (err) {
+    if (isRpcError(err)) {
+        // { code: "NOT_FOUND", message: "...", data: unknown }
+    }
+}
+```
+
+## TanStack Query 集成
+
+使用 `@fnrpc/tanstack-query` 为你的 RPC 创建类型安全的 query/mutation/stream 工具。
+
+### 初始化
+
+```typescript
+import { createTanstackQueryUtils } from "@fnrpc/tanstack-query";
+
+export const client = createTanstackQueryUtils(fnrpc);
+```
+
+### React
+
+```typescript
+import { useQuery, useMutation } from "@tanstack/react-query";
+
+// 查询
+const { data: user } = useQuery(client.getUser.queryOptions(42));
+
+// 变更
+const mutation = useMutation(client.createUser.mutationOptions());
+mutation.mutate({ name: "Alice", email: "alice@example.com" });
+
+// Streamed — 累积流数据为数组
+const { data: updates } = useQuery(client.watchUser.streamedOptions(42));
+
+// Live — 每个 chunk 实时更新 cache
+const { data: lastUpdate } = useQuery(client.watchUser.liveOptions(42));
+```
+
+### Solid
+
+```typescript
+import { createQuery, createMutation } from "@tanstack/solid-query";
+
+// 查询
+const query = createQuery(() => client.getUser.queryOptions(42));
+
+// 变更
+const mutation = createMutation(() => client.createUser.mutationOptions());
+mutation.mutate({ name: "Alice", email: "alice@example.com" });
+
+// Streamed
+const streamed = createQuery(() => client.watchUser.streamedOptions(42));
+
+// Live
+const live = createQuery(() => client.watchUser.liveOptions(42));
 ```
 
 ## 包清单

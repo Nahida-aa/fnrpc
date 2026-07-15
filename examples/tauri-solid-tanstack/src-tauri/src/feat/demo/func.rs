@@ -1,8 +1,7 @@
+use crate::ctx::Ctx;
+use fnrpc::error::RpcErr;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use fnrpc::error::RpcErr;
-use crate::ctx::Ctx;
-
 
 #[fnrpc::rpc_query]
 pub async fn greet(name: String) -> String {
@@ -23,17 +22,29 @@ pub struct User {
 
 #[fnrpc::rpc_query]
 pub async fn get_user(id: u32) -> User {
-    User { id, name: "Alice".into(), email: "alice@example.com".into() }
+    User {
+        id,
+        name: "Alice".into(),
+        email: "alice@example.com".into(),
+    }
 }
 
 #[fnrpc::rpc_query]
 pub async fn divide(a: f64, b: f64) -> Result<f64, RpcErr> {
-    if b == 0.0 { Err(RpcErr::bad_request("cannot divide by zero")) } else { Ok(a / b) }
+    if b == 0.0 {
+        Err(RpcErr::bad_request("cannot divide by zero"))
+    } else {
+        Ok(a / b)
+    }
 }
 
 #[fnrpc::rpc_mutate]
 pub async fn create_user(_ctx: &Ctx, name: String, email: String) -> User {
-    User { id: 42, name, email }
+    User {
+        id: 42,
+        name,
+        email,
+    }
 }
 
 #[fnrpc::rpc_subscribe]
@@ -64,4 +75,3 @@ pub fn watch_status(ctx: &Ctx, key: String) -> impl futures::Stream<Item = Strin
         Some((msg, (count + 1, key, app_dir)))
     })
 }
-

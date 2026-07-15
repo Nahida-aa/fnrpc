@@ -23,10 +23,12 @@ function QuerySection() {
   // const health = useQuery(() => client.health_check.queryOptions(null))
   const get_count = useQuery(() => client.get_count.queryOptions(null,))
   console.log(JSON.stringify("hello"))
+
   const health = useQuery(() =>({
     queryKey: ['health_check'],
     queryFn: () => fnrpc.health_check(),
   }))
+
   createEffect(() => {
     console.log(JSON.stringify(health.data))
   })
@@ -96,7 +98,6 @@ function MutationSection() {
   const [email, setEmail] = createSignal('bob@test.com');
   const mutate = useMutation(() => client.create_user.mutationOptions())
   // const mutate = fnrpcHook.createMutation(() => 'create_user');
-
   return (
     <section class="space-y-3">
       <h2 class="text-lg font-semibold border-b pb-1">Mutations</h2>
