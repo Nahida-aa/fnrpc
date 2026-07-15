@@ -1,11 +1,10 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use crate::ctx::Ctx;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[fnrpc::rpc_query]
 pub async fn health_check() -> &'static str {
     "ok"
 }
-
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 

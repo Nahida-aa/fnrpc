@@ -1,8 +1,9 @@
 [workspace]
 members = [
-    "crates/*"
+    "crates/*",
+    "examples/tauri-solid-tanstack/src-tauri"
 ]
-exclude = ["examples/*", "examples/tauri-solid-tanstack/src-tauri", ]
+default-members = ["crates/*"]
 resolver = "3"
 
 [workspace.dependencies]
