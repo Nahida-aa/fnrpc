@@ -110,6 +110,21 @@ where
         }
     }
 
+    /// Return the HTTP method for a given path: `"GET"` for query/subscribe, `"POST"` for mutate.
+    pub fn get_procedure_method(&self, path: &str) -> &'static str {
+        if self.inner.handlers.contains_key(path) {
+            let handler = self.inner.handlers.get(path).unwrap();
+            match handler.kind() {
+                "mutate" => "POST",
+                _ => "GET",
+            }
+        } else if self.inner.subscribes.contains_key(path) {
+            self.inner.subscribes.get(path).map(|s| s.method()).unwrap_or("GET")
+        } else {
+            "GET"
+        }
+    }
+
 }
 
 /// Inner service that dispatches to handlers directly.

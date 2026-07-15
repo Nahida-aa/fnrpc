@@ -15,5 +15,5 @@ pub fn rpc_mutate(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn rpc_subscribe(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    subscribe::rpc_subscribe_impl(item)
+    subscribe::rpc_subscribe_impl(_attr, item)
 }

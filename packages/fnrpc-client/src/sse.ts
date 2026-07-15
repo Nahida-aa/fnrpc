@@ -40,6 +40,8 @@ export interface SSEConnectOptions {
   url: string
   signal?: AbortSignal
   lastEventId?: string
+  body?: string
+  method?: "GET" | "POST"
 }
 
 export interface SSEResult {
@@ -55,7 +57,14 @@ export async function connectSSE(opts: SSEConnectOptions): Promise<SSEResult> {
     headers["Last-Event-ID"] = opts.lastEventId
   }
 
-  const response = await fetch(opts.url, { headers, signal: opts.signal })
+  const fetchOpts: RequestInit = { headers, signal: opts.signal }
+  if (opts.body) {
+    fetchOpts.method = opts.method || "POST"
+    fetchOpts.body = opts.body
+    headers["Content-Type"] = "application/json"
+  }
+
+  const response = await fetch(opts.url, fetchOpts)
 
   if (!response.ok) {
     throw new Error(`SSE connection failed: ${response.status}`)

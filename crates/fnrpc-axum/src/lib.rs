@@ -37,11 +37,16 @@ where
 
     match kind {
         Some("subscribe") => {
-            let raw = params
-                .get("input")
-                .cloned()
-                .unwrap_or_else(|| "null".into());
-            let input_raw: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+            let input_raw: Value = match method {
+                Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
+                _ => {
+                    let raw = params
+                        .get("input")
+                        .cloned()
+                        .unwrap_or_else(|| "null".into());
+                    serde_json::from_str(&raw).unwrap_or(Value::Null)
+                }
+            };
             let input = unpack_meta(&input_raw);
 
             match state.router.get_sub_handler(&path) {

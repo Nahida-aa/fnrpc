@@ -30,7 +30,13 @@ type Transport = (
   input: unknown,
   kind: ProcedureKind,
   signal?: AbortSignal,
+  method?: string,
 ) => Promise<unknown>;
+
+type ProcedureMeta = {
+  kind: ProcedureKind;
+  method: string;
+};
 
 const noop = () => {
   // noop
@@ -54,13 +60,13 @@ export function createProceduresProxy<T>(
 
 export function createClient<P extends Procedures>(
   transport: Transport,
-  kindMap: Record<string, ProcedureKind>,
+  metaMap: Record<string, ProcedureMeta>,
 ): Client<P> {
   return createProceduresProxy<Client<P>>(({ args, path }) => {
     const pathStr = path.join(".");
-    const kind = kindMap[pathStr];
-    if (!kind) throw new Error(`Unknown procedure: ${pathStr}`);
-    return transport(pathStr, args[0], kind, args[1]);
+    const meta = metaMap[pathStr];
+    if (!meta) throw new Error(`Unknown procedure: ${pathStr}`);
+    return transport(pathStr, args[0], meta.kind, args[1], meta.method);
   });
 }
 

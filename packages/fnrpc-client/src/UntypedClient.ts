@@ -22,9 +22,10 @@ export const fetchTransport = (config: { url: string }) => {
     input: unknown,
     kind: ProcedureKind,
     signal?: AbortSignal,
+    method?: string,
   ): Promise<unknown> => {
     if (kind === "subscribe") {
-      return createSSEIterable(config.url, path, input, signal)
+      return createSSEIterable(config.url, path, input, signal, (method || "GET") as "GET" | "POST")
     }
 
     // query / mutate
@@ -76,10 +77,20 @@ function createSSEIterable(
   path: string,
   input: unknown,
   signal?: AbortSignal,
+  method: "GET" | "POST" = "GET",
 ): Promise<AsyncIterable<unknown>> {
   const serialized = serialize(input)
-  const params = new URLSearchParams({ input: safeStringify(serialized) })
-  const url = `${baseUrl}/${path}?${params}`
+
+  let url: string
+  let body: string | undefined
+
+  if (method === "POST") {
+    body = safeStringify(flattenForRust(serialized))
+    url = `${baseUrl}/${path}`
+  } else {
+    const params = new URLSearchParams({ input: safeStringify(serialized) })
+    url = `${baseUrl}/${path}?${params}`
+  }
 
   let aborted = false
   if (signal) {
@@ -97,7 +108,7 @@ function createSSEIterable(
 
     while (!aborted && !closed) {
       try {
-        const { iterable, close } = await connectSSE({ url, signal, lastEventId })
+        const { iterable, close } = await connectSSE({ url, signal, lastEventId, body, method })
 
         retryDelay = 1000
 

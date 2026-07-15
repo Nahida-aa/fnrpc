@@ -60,8 +60,9 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
         let i = handler.input_ts();
         let o = handler.output_ts();
         let kind = handler.kind();
+        let method = if kind == "mutate" { "POST" } else { "GET" };
         out.push_str(&format!(
-            "  {}: {{ kind: \"{kind}\"; input: {}; output: {}; error: RpcErr }};\n",
+            "  {}: {{ kind: \"{kind}\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
             handler.name(),
             i.ts_ref,
             o.ts_ref,
@@ -70,8 +71,9 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
     for (_, sub) in &router.inner.subscribes {
         let i = sub.input_ts();
         let o = sub.output_ts();
+        let method = sub.method();
         out.push_str(&format!(
-            "  {}: {{ kind: \"subscribe\"; input: {}; output: {}; error: RpcErr }};\n",
+            "  {}: {{ kind: \"subscribe\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
             sub.name(),
             i.ts_ref,
             o.ts_ref,
@@ -79,17 +81,19 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
     }
     out.push_str("}\n");
 
-    out.push_str("\nexport const __procedureKinds = {\n");
+    out.push_str("\nexport const __procedureMeta = {\n");
     for (_, handler) in &router.inner.handlers {
+        let kind = handler.kind();
+        let method = if kind == "mutate" { "POST" } else { "GET" };
         out.push_str(&format!(
-            "  {}: \"{}\",\n",
+            "  {}: {{ kind: \"{kind}\", method: \"{method}\" }},\n",
             handler.name(),
-            handler.kind(),
         ));
     }
     for (_, sub) in &router.inner.subscribes {
+        let method = sub.method();
         out.push_str(&format!(
-            "  {}: \"subscribe\",\n",
+            "  {}: {{ kind: \"subscribe\", method: \"{method}\" }},\n",
             sub.name(),
         ));
     }

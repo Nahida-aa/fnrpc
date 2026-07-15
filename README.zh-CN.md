@@ -51,6 +51,12 @@ async fn create_user(ctx: &Ctx, input: CreateUserInput) -> Result<User, RpcErr> 
 fn watch_user(ctx: &Ctx, id: i64) -> Pin<Box<dyn Stream<Item = Result<UserUpdate, RpcErr>> + Send + '_>> {
     // ...
 }
+
+// POST 订阅 — input 放在 body 而非 URL query params
+#[rpc_subscribe("post")]
+fn large_stream(ctx: &Ctx, input: LargeInput) -> Pin<Box<dyn Stream<Item = Result<Output, RpcErr>> + Send + '_>> {
+    // ...
+}
 ```
 
 ### 2. 构建路由
@@ -107,7 +113,7 @@ fn main() {
 ```typescript
 import { createClient, fetchTransport, tauriTransport } from "@fnrpc/client";
 import type { Procedures } from "./bindings";
-import { __procedureKinds } from "./bindings";
+import { __procedureMeta } from "./bindings";
 import { isTauri } from "@tauri-apps/api/core";
 
 const transport = (() => {

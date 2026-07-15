@@ -5,6 +5,17 @@ use syn::{
     parse_macro_input,
 };
 
+fn parse_method_attr(attr: &TokenStream) -> &'static str {
+    let attr_str = attr.to_string().trim().to_string();
+    if attr_str.is_empty() {
+        "GET"
+    } else if attr_str == "post" || attr_str == "\"post\"" {
+        "POST"
+    } else {
+        panic!("unsupported subscribe method: {attr_str}, expected \"post\" or no arg");
+    }
+}
+
 /// Extract the Output type from a stream return type like `impl Stream<Item = T>` or
 /// `impl Stream<Item = Result<T, E>>`.  Returns `(Output_ts, is_result)`, where
 /// `is_result` indicates whether the stream item is already `Result<T, E>`.
@@ -91,13 +102,15 @@ fn extract_stream_output(return_type: &ReturnType) -> (proc_macro2::TokenStream,
     (quote! { #item_ty }, false)
 }
 
-pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
+pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
     let fn_name = &input_fn.sig.ident;
     let fn_vis = &input_fn.vis;
     let impl_fn_name = syn::Ident::new(&format!("{}_impl", fn_name), fn_name.span());
     let mut impl_fn = input_fn.clone();
     impl_fn.sig.ident = impl_fn_name.clone();
+
+    let method_str = parse_method_attr(&attr);
 
     // --- Analyse parameters (same as rpc_fn_impl) ---
     let params: Vec<&FnArg> = impl_fn.sig.inputs.iter().collect();
@@ -201,6 +214,7 @@ pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
+                const METHOD: &'static str = #method_str;
 
                 fn exec(
                     ctx: &#ctx_ty,
@@ -221,6 +235,7 @@ pub(crate) fn rpc_subscribe_impl(item: TokenStream) -> TokenStream {
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
+                const METHOD: &'static str = #method_str;
 
                 fn exec(
                     _ctx: &T,

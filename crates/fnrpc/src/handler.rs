@@ -145,6 +145,7 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
     type Output: Serialize + Type + 'static;
     const NAME: &'static str;
     const KIND: &'static str = "subscribe";
+    const METHOD: &'static str = "GET";
 
     fn exec(
         ctx: &Ctx,
@@ -155,6 +156,7 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
 /// Object-safe erased subscribe handler stored in the router.
 pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
     fn name(&self) -> &'static str;
+    fn method(&self) -> &'static str;
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
     fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
@@ -174,6 +176,10 @@ where
 {
     fn name(&self) -> &'static str {
         F::NAME
+    }
+
+    fn method(&self) -> &'static str {
+        F::METHOD
     }
 
     fn input_ts(&self) -> TsTypeInfo {
