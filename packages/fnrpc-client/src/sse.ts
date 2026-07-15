@@ -75,6 +75,10 @@ export async function connectSSE(opts: SSEConnectOptions): Promise<SSEResult> {
     .pipeThrough(createSSEDecoder())
     .getReader()
 
+  if (opts.signal) {
+    opts.signal.addEventListener("abort", () => { reader.cancel() }, { once: true })
+  }
+
   return {
     iterable: {
       [Symbol.asyncIterator]() {
