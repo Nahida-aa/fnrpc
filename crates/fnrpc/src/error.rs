@@ -29,7 +29,7 @@ impl Type for RpcErr {
                 ndt.module_path = Cow::Borrowed("fnrpc::error");
                 ndt.ty = Some(
                     Struct::named()
-                        .field("name", Field::new(DataType::Primitive(Primitive::str)))
+                        .field("name", Field::new(DataType::Reference(specta_typescript::define("\"RpcErr\""))))
                         .field("code", Field::new(DataType::Primitive(Primitive::str)))
                         .field(
                             "message",
