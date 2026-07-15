@@ -94,7 +94,7 @@ function createSSEIterable(
 
   let aborted = false
   if (signal) {
-    signal.addEventListener("abort", () => { aborted = true }, { once: true })
+    signal.addEventListener("abort", () => { aborted = true; closeStream?.() }, { once: true })
   }
 
   const pending: Array<IteratorResult<unknown>> = []
@@ -102,6 +102,7 @@ function createSSEIterable(
   let rejectNext: ((err: unknown) => void) | null = null
   let lastEventId: string | undefined
   let closed = false
+  let closeStream: (() => void) | undefined
 
   async function pump() {
     let retryDelay = 1000
@@ -109,6 +110,7 @@ function createSSEIterable(
     while (!aborted && !closed) {
       try {
         const { iterable, close } = await connectSSE({ url, signal, lastEventId, body, method })
+        closeStream = close
 
         retryDelay = 1000
 
@@ -176,6 +178,7 @@ function createSSEIterable(
         },
         return(): Promise<IteratorResult<unknown>> {
           closed = true
+          closeStream?.()
           if (resolveNext) {
             resolveNext({ done: true, value: undefined as any })
             resolveNext = null

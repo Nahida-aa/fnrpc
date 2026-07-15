@@ -336,8 +336,10 @@ function PostEchoLiveTest() {
 function PostPostEchoLiveTest() {
   const [running, setRunning] = createSignal(false);
   const [prefix, setPrefix] = createSignal('msg');
-  const query = useQuery(() => client.post_echo_stream.liveOptions(prefix(), {
-    enabled: running()
+  const query = useQuery(() => ({
+    ...client.post_echo_stream.liveOptions(prefix(), {
+    // enabled: running()
+  }), enabled: running()
   }));
   return <Row label="post_echo_stream live(prefix())">
       <button
