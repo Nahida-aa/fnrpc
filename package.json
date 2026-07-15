@@ -1,7 +1,17 @@
 {
   "name": "fnrpc-root",
+  "type": "module",
+  "private": true,
   "workspaces": [
     "packages/*",
     "examples/tauri-solid-tanstack"
   ],
+  "scripts": {
+    "build": "bun run --filter '@fnrpc/*' build",
+    "typecheck": "bun run --filter '@fnrpc/*' typecheck"
+  },
+  "devDependencies": {
+    "rolldown": "^1.0.0",
+    "typescript": "^7"
+  }
 }
