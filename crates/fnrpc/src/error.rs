@@ -1,14 +1,64 @@
+use std::borrow::Cow;
 use std::fmt;
 
 use serde::Serialize;
 use serde_json::Value;
-use specta::Type;
+use specta::{
+    Type, Types,
+    datatype::{DataType, Field, NamedDataType, Primitive, Struct},
+};
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RpcErr {
     pub code: String,
     pub message: String,
     pub data: Option<Value>,
+}
+
+impl Type for RpcErr {
+    fn definition(types: &mut Types) -> DataType {
+        DataType::Reference(NamedDataType::init_with_sentinel(
+            "fnrpc::error::RpcErr",
+            &[],
+            false,
+            false,
+            types,
+            |_types, ndt| {
+                ndt.name = Cow::Borrowed("RpcErr");
+                ndt.module_path = Cow::Borrowed("fnrpc::error");
+                ndt.ty = Some(
+                    Struct::named()
+                        .field("code", Field::new(DataType::Primitive(Primitive::str)))
+                        .field(
+                            "message",
+                            Field::new(DataType::Primitive(Primitive::str)),
+                        )
+                        .field(
+                            "data",
+                            Field::new(DataType::Nullable(Box::new(
+                                DataType::Reference(specta_typescript::define("unknown")),
+                            ))),
+                        )
+                        .build(),
+                );
+            },
+            |_types| {
+                Struct::named()
+                    .field("code", Field::new(DataType::Primitive(Primitive::str)))
+                    .field(
+                        "message",
+                        Field::new(DataType::Primitive(Primitive::str)),
+                    )
+                    .field(
+                        "data",
+                        Field::new(DataType::Nullable(Box::new(
+                            DataType::Reference(specta_typescript::define("unknown")),
+                        ))),
+                    )
+                    .build()
+            },
+        ))
+    }
 }
 
 impl RpcErr {
