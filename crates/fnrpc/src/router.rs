@@ -1,3 +1,5 @@
+//! The RPC router — collects handlers and dispatches calls.
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -7,6 +9,17 @@ use crate::error::RpcErr;
 use crate::handler::{ErasedHandler, ErasedSubscribeHandler};
 use crate::middleware::{FnLayer, FnService};
 
+/// A collection of RPC handlers organised by name.
+///
+/// # Example
+///
+/// ```ignore
+/// let router = RpcRouter::<Ctx>::new()
+///     .query(health_check)
+///     .mutate(create_user)
+///     .subscribe(watch_user)
+///     .layer(HookLayer::new().before(log_invoke));
+/// ```
 pub struct RpcRouter<Ctx> {
     pub(crate) inner: Arc<RpcRouterInner<Ctx>>,
 }
@@ -29,6 +42,7 @@ impl<Ctx> RpcRouter<Ctx>
 where
     Ctx: Send + Sync + 'static,
 {
+    /// Create an empty router.
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RpcRouterInner {
@@ -39,6 +53,10 @@ where
         }
     }
 
+    /// Register a handler by its [`ErasedHandler::name`].
+    ///
+    /// Normally you use the typed helpers [`query`](Self::query),
+    /// [`mutate`](Self::mutate), or [`subscribe`](Self::subscribe) instead.
     pub fn route<H: ErasedHandler<Ctx> + 'static>(self, handler: H) -> Self {
         let name = handler.name();
         let mut inner = Arc::try_unwrap(self.inner)
@@ -49,12 +67,12 @@ where
         }
     }
 
-    /// Alias for `route` — register a query handler.
+    /// Register a query handler (convenience for [`route`](Self::route)).
     pub fn query<H: ErasedHandler<Ctx> + 'static>(self, handler: H) -> Self {
         self.route(handler)
     }
 
-    /// Alias for `route` — register a mutate handler.
+    /// Register a mutate handler (convenience for [`route`](Self::route)).
     pub fn mutate<H: ErasedHandler<Ctx> + 'static>(self, handler: H) -> Self {
         self.route(handler)
     }
@@ -83,6 +101,10 @@ where
         }
     }
 
+    /// Dispatch a query/mutate call through the middleware stack.
+    ///
+    /// Returns `Ok(Value)` on success or `Err(RpcErr)` on failure.
+    /// For subscribe calls, use [`get_sub_handler`](Self::get_sub_handler) instead.
     pub async fn dispatch(&self, ctx: &Ctx, path: &str, input: Value) -> Result<Value, RpcErr> {
         let mut svc: Box<dyn FnService<Ctx>> = Box::new(RouterService {
             handlers: self.inner.handlers.clone(),
@@ -101,7 +123,6 @@ where
     /// Return the procedure kind for a given path: `"query"`, `"mutate"`, `"subscribe"`, or `None`.
     pub fn get_procedure_kind(&self, path: &str) -> Option<&'static str> {
         if self.inner.handlers.contains_key(path) {
-            // Handlers know their own kind ("query" or "mutate")
             self.inner.handlers.get(path).map(|h| h.kind())
         } else if self.inner.subscribes.contains_key(path) {
             Some("subscribe")

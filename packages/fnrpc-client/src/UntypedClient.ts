@@ -16,6 +16,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Create an HTTP fetch transport for fnrpc.
+ *
+ * - Queries: `GET /<path>?input=...`
+ * - Mutations: `POST /<path>` with JSON body
+ * - Subscriptions: SSE stream via [`createSSEIterable`]
+ *
+ * @example
+ * ```typescript
+ * const transport = fetchTransport({ url: "http://localhost:3000/fnrpc" });
+ * ```
+ */
 export const fetchTransport = (config: { url: string }) => {
   return (
     path: string,
@@ -201,6 +213,25 @@ function createSSEIterable(
   return Promise.resolve(iterable)
 }
 
+/**
+ * Consume an async iterable (SSE subscription) with callbacks.
+ *
+ * Useful when you want to subscribe to events with imperative lifecycle
+ * handlers instead of `for await`.
+ *
+ * @returns A cancel function to stop consuming.
+ *
+ * @example
+ * ```typescript
+ * const cancel = consumeEventIterator(fnrpc.events.onMessage(null), {
+ *   onEvent: (msg) => console.log("received", msg),
+ *   onError: (err) => console.error("error", err),
+ * });
+ *
+ * // later:
+ * cancel();
+ * ```
+ */
 export function consumeEventIterator<T, E = RpcError>(
   iterable: AsyncIterable<T> | Promise<AsyncIterable<T>>,
   opts: {

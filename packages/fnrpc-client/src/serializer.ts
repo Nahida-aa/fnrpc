@@ -1,7 +1,18 @@
+/**
+ * BigInt type ID — used in the `meta` array to tag BigInt-encoded paths.
+ * Must match `BIGINT_TYPE_ID` in the Rust `serializer.rs`.
+ */
 export const BIGINT = 0 as const;
 
 type MetaItem = [number, ...(string | number)[]];
 
+/**
+ * Serialised value with optional metadata envelopes.
+ *
+ * - `json`: the JSON-compatible value (BigInts converted to strings).
+ * - `meta`: an array of path + type-annotations for reconstructing
+ *   JS-specific types on the receiving end.
+ */
 export interface Serialized {
   json: unknown;
   meta: MetaItem[];
@@ -9,6 +20,13 @@ export interface Serialized {
 
 // ── Serialize ────────────────────────────────────────────
 
+/**
+ * Serialise a JavaScript value for transport, preserving JS-specific types
+ * (like `BigInt`) via a metadata envelope.
+ *
+ * BigInt values are converted to strings in the JSON payload and annotated
+ * in the `meta` array for server-side reconstruction.
+ */
 export function serialize(val: unknown): Serialized {
   const meta: MetaItem[] = [];
   const json = walk(val, [], meta);
@@ -43,6 +61,10 @@ function walk(
 
 // ── Deserialize ──────────────────────────────────────────
 
+/**
+ * Deserialise a `Serialized` value back to its original JS form,
+ * restoring BigInt strings to actual `BigInt` values.
+ */
 export function deserialize(input: Serialized): unknown {
   const { json, meta } = input;
   if (!meta || meta.length === 0) return json;
@@ -85,6 +107,13 @@ export function deserialize(input: Serialized): unknown {
 // ── Flatten meta into plain JSON for Rust (no meta support) ──
 // Converts BIGINT string values back to numbers for serde_json compat.
 
+/**
+ * Flatten a `Serialized` value for Rust backends that do not support
+ * the meta envelope protocol.
+ *
+ * BigInt strings are converted to JSON numbers (precision loss > 2^53,
+ * acceptable for `serde_json` deserialisation into u64/i64).
+ */
 export function flattenForRust(serialized: Serialized): unknown {
   const { json, meta } = serialized;
   if (!meta || meta.length === 0) return json;
@@ -116,8 +145,6 @@ export function flattenForRust(serialized: Serialized): unknown {
 
     switch (typeId) {
       case BIGINT:
-        // String → Number. Loses precision > 2^53, but Rust's serde_json
-        // expects a JSON number for u64/i64 fields.
         current[lastSeg] = Number(raw as string);
         break;
     }
@@ -128,6 +155,10 @@ export function flattenForRust(serialized: Serialized): unknown {
 
 // ── safeStringify (for places that need a direct JSON string) ──
 
+/**
+ * JSON.stringify with BigInt-to-number conversion.
+ * Safer than the default `JSON.stringify` which throws on BigInt values.
+ */
 export function safeStringify(val: unknown): string {
   return JSON.stringify(val, (_, v) =>
     typeof v === "bigint" ? Number(v) : v,

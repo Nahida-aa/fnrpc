@@ -1,3 +1,14 @@
+//! TypeScript code generation.
+//!
+//! Generates a `bindings.ts` file with:
+//!
+//! - All specta-exported type definitions
+//! - A `Procedures` interface for full type-safe client creation
+//! - A `__procedureMeta` runtime map with `{ kind, method }` per path
+//!
+//! Use [`generate_ts_client`] to get the string, or [`write_ts_client`]
+//! to write directly to disk.
+
 use std::path::Path;
 
 use specta::Type;
@@ -6,7 +17,13 @@ use specta::datatype::DataType;
 use crate::error::RpcErr;
 use crate::router::RpcRouter;
 
-/// Generate TypeScript type definitions and a Procedures interface.
+/// Generate TypeScript type definitions and a `Procedures` interface.
+///
+/// The output includes:
+///
+/// - All specta-exported type definitions for input/output types.
+/// - A `Procedures` type mapping each procedure name to its `{ kind, method, input, output, error }`.
+/// - A `__procedureMeta` const map used at runtime by the TS client for dispatch.
 pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
     router: &RpcRouter<Ctx>,
     _rpc_url: &str,
@@ -103,6 +120,13 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
 }
 
 /// Generate and write a TypeScript client file to disk.
+///
+/// Shortcut for calling [`generate_ts_client`] and writing the result
+/// with [`std::fs::write`].
+///
+/// # Errors
+///
+/// Returns `io::Error` if the file cannot be written.
 pub fn write_ts_client<Ctx: Send + Sync + 'static>(
     router: &RpcRouter<Ctx>,
     rpc_url: &str,

@@ -1,15 +1,29 @@
-// use std::borrow::Cow;
+//! Error type for fnrpc.
+//!
+//! [`RpcErr`] is the canonical error returned by all RPC handlers.
+//! It serialises to JSON and is mirrored as [`RpcError`] on the TS side.
+
 use std::fmt;
 
 use serde::Serialize;
 use serde_json::Value;
-use specta::{
-    Type,
-    // Types,
-    // datatype::{DataType, Field, NamedDataType, Primitive, Struct},
-};
-// use specta_typescript::Unknown;
+use specta::Type;
 
+/// An RPC error returned by any handler (query, mutate, subscribe).
+///
+/// Maps to [`RpcError`](https://docs.rs/fnrpc-client/latest/fnrpc_client/class.RpcError.html)
+/// in the TypeScript client.
+///
+/// # TS mirror
+///
+/// ```typescript
+/// class RpcError extends Error {
+///   name: "RpcErr";
+///   code: string;
+///   message: string;
+///   data: unknown;
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct RpcErr {
     pub name: &'static str,
@@ -19,55 +33,8 @@ pub struct RpcErr {
     pub data: Option<Value>,
 }
 
-// impl Type for RpcErr {
-//     fn definition(types: &mut Types) -> DataType {
-//         DataType::Reference(NamedDataType::init_with_sentinel(
-//             "fnrpc::error::RpcErr",
-//             &[],
-//             false,
-//             false,
-//             types,
-//             |_types, ndt| {
-//                 ndt.name = Cow::Borrowed("RpcErr");
-//                 ndt.module_path = Cow::Borrowed("fnrpc::error");
-//                 ndt.ty = Some(
-//                     Struct::named()
-//                         .field("name", Field::new(DataType::Reference(specta_typescript::define("\"RpcErr\""))))
-//                         .field("code", Field::new(DataType::Primitive(Primitive::str)))
-//                         .field(
-//                             "message",
-//                             Field::new(DataType::Primitive(Primitive::str)),
-//                         )
-//                         .field(
-//                             "data",
-//                             Field::new(DataType::Nullable(Box::new(
-//                                 DataType::Reference(specta_typescript::define("unknown")),
-//                             ))),
-//                         )
-//                         .build(),
-//                 );
-//             },
-//             |_types| {
-//                 Struct::named()
-//                     .field("name", Field::new(DataType::Primitive(Primitive::str)))
-//                     .field("code", Field::new(DataType::Primitive(Primitive::str)))
-//                     .field(
-//                         "message",
-//                         Field::new(DataType::Primitive(Primitive::str)),
-//                     )
-//                     .field(
-//                         "data",
-//                         Field::new(DataType::Nullable(Box::new(
-//                             DataType::Reference(specta_typescript::define("unknown")),
-//                         ))),
-//                     )
-//                     .build()
-//             },
-//         ))
-//     }
-// }
-
 impl RpcErr {
+    /// Create an error with any code and message.
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             name: "RpcErr",
@@ -77,19 +44,23 @@ impl RpcErr {
         }
     }
 
+    /// Attach arbitrary JSON data to this error.
     pub fn with_data(mut self, data: Value) -> Self {
         self.data = Some(data);
         self
     }
 
+    /// Shorthand for `RpcErr::new("INTERNAL_SERVER_ERROR", message)`.
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new("INTERNAL_SERVER_ERROR", message)
     }
 
+    /// Shorthand for `RpcErr::new("BAD_REQUEST", message)`.
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new("BAD_REQUEST", message)
     }
 
+    /// Shorthand for `RpcErr::new("NOT_FOUND", message)`.
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new("NOT_FOUND", message)
     }

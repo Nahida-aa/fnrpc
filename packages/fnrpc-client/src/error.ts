@@ -1,3 +1,12 @@
+/**
+ * An RPC error from the server.
+ *
+ * Mirrors the Rust `RpcErr` struct:
+ * - `name` is always `"RpcErr"`
+ * - `code` is a machine-readable error code (e.g. `"NOT_FOUND"`)
+ * - `message` is a human-readable description
+ * - `data` holds optional arbitrary JSON payload
+ */
 export class RpcError extends Error {
   override name = "RpcErr" as const;
   code: string;
@@ -15,18 +24,22 @@ export class RpcError extends Error {
     });
   }
 
+  /** Create an `RpcError` from a JSON object (as returned by the server). */
   static fromJson(json: { name?: string; code: string; message: string; data?: unknown }): RpcError {
     return new RpcError(json.code, json.message, json.data);
   }
 
+  /** Shorthand for a generic internal error. */
   static internal(message: string, data?: unknown): RpcError {
     return new RpcError("INTERNAL_SERVER_ERROR", message, data);
   }
 
+  /** Shorthand for a bad request error. */
   static badRequest(message: string, data?: unknown): RpcError {
     return new RpcError("BAD_REQUEST", message, data);
   }
 
+  /** Shorthand for a not-found error. */
   static notFound(message: string, data?: unknown): RpcError {
     return new RpcError("NOT_FOUND", message, data);
   }
@@ -36,10 +49,16 @@ export class RpcError extends Error {
   }
 }
 
+/** Type guard for [`RpcError`]. */
 export function isRpcError(err: unknown): err is RpcError {
   return err instanceof RpcError;
 }
 
+/**
+ * Wrap a promise to return a result tuple, converting any error to `RpcError`.
+ *
+ * @returns `{ ok: true, data }` on success, or `{ ok: false, error }` on failure.
+ */
 export async function safe<T>(
   promise: Promise<T>,
 ): Promise<{ ok: true; data: T } | { ok: false; error: RpcError }> {

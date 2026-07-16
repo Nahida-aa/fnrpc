@@ -1,3 +1,12 @@
+//! Server-side BigInt envelope unwrapping.
+//!
+//! On the client side, `BigInt` values are serialised as strings with
+//! an attached metadata envelope (`{ json, meta }`). This module
+//! reverses that transformation so Rust handlers receive the original
+//! numeric values.
+//!
+//! See also the TS [`serialize`](https://docs.rs/fnrpc-client/latest/fnrpc_client/fn.serialize.html) function.
+
 use serde_json::Value;
 
 /// BIGINT type ID — must match `BIGINT` constant in TS serializer.

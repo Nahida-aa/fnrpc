@@ -1,10 +1,36 @@
 import type { QueryFunction, QueryFunctionContext, QueryKey } from "@tanstack/query-core";
 
+/**
+ * Behaviour when a streamed query refetches.
+ *
+ * - `"reset"` — clear cached data and start fresh.
+ * - `"append"` — keep existing entries and append new ones.
+ * - `"replace"` — collect all entries in memory, then swap cache at the end.
+ */
 export interface StreamedQueryOptions {
   refetchMode?: "append" | "reset" | "replace";
+  /** Maximum number of chunks to retain (oldest are dropped). */
   maxChunks?: number;
 }
 
+/**
+ * Create a TanStack Query `queryFn` that collects `AsyncIterable` chunks
+ * into an array and progressively updates the cache.
+ *
+ * Use this for procedures that emit a stream of values you want to display
+ * as a list (e.g. log entries, search results).
+ *
+ * @example
+ * ```typescript
+ * const options = {
+ *   queryKey: fnrpc.events.streamedKey(undefined),
+ *   queryFn: serializableStreamedQuery(
+ *     ({ signal }) => fnrpc.events.subscribe(undefined, signal),
+ *     { refetchMode: "append" },
+ *   ),
+ * };
+ * ```
+ */
 export function serializableStreamedQuery<
   TQueryFnData = unknown,
   TQueryKey extends QueryKey = QueryKey,

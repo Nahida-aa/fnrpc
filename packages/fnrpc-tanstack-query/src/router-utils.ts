@@ -3,6 +3,21 @@ import type { Client, Procedures } from "@fnrpc/client";
 import { ProcedureUtils } from "./procedure-utils";
 import type { RouterUtils, RouterUtilsOptions } from "./types";
 
+/**
+ * Create a recursively-proxied router of [`ProcedureUtils`] instances.
+ *
+ * Each property access walks deeper into the proxy, building up the
+ * procedure path. When you call one of the leaf methods (e.g.
+ * `.queryKey(input)`), it delegates to a [`ProcedureUtils`] instance.
+ *
+ * @example
+ * ```typescript
+ * const fnrpc = createRouterUtils(client);
+ *
+ * // typed procedure key
+ * fnrpc.users.get.queryKey({ id: 1 });
+ * ```
+ */
 export function createRouterUtils<T extends Procedures>(
   client: Client<T>,
   _options?: RouterUtilsOptions<T>,

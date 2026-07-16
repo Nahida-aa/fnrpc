@@ -1,3 +1,16 @@
+//! Axum integration for fnrpc.
+//!
+//! Provides [`FnrpcState`] (Axum shared state) and [`handle`] (route handler)
+//! that dispatches fnrpc queries, mutations, and subscriptions over HTTP.
+//!
+//! # Route setup
+//!
+//! ```ignore
+//! Router::new()
+//!     .route("/fnrpc/{*path}", axum::routing::get(handle::<Ctx>).post(handle::<Ctx>))
+//!     .with_state(Arc::new(FnrpcState { router, ctx_from_headers }))
+//! ```
+
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -12,16 +25,29 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-/// Shared state for fnrpc axum integration.
+/// Shared state for the fnrpc Axum handler.
+///
+/// Holds the router and a way to construct the context from incoming request headers.
 pub struct FnrpcState<Ctx> {
     pub router: Arc<fnrpc::router::RpcRouter<Ctx>>,
+    /// Function that builds `Ctx` from the incoming HTTP headers.
+    ///
+    /// Useful for extracting auth tokens, user IDs, etc.
     pub ctx_from_headers: Arc<dyn Fn(HeaderMap) -> Ctx + Send + Sync>,
 }
 
 /// Axum handler for fnrpc requests.
 ///
-/// Handles both GET (query) and POST (query/mutate) requests,
-/// as well as SSE streaming for subscriptions.
+/// Mount this at a wildcard route (e.g. `"/fnrpc/{*path}"`) and register
+/// both GET and POST methods. The handler inspects the procedure metadata
+/// to determine dispatch:
+///
+/// - Subscribe: returns an SSE stream.
+/// - Query (GET): reads input from query params.
+/// - Mutate (POST): reads input from request body.
+///
+/// Subscribe procedures send SSE events with incrementing `id` fields
+/// for client-side reconnection support.
 pub async fn handle<Ctx>(
     method: Method,
     State(state): State<Arc<FnrpcState<Ctx>>>,

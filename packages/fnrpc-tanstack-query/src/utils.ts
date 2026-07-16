@@ -5,6 +5,11 @@ import type {
 import { traverseClient, getQueryKey } from "@fnrpc/client";
 import type * as tanstack from "@tanstack/query-core";
 
+/**
+ * Call a query procedure by string path.
+ *
+ * @internal
+ */
 export function callQuery<P extends Procedures, K extends keyof P & string>(
   client: Client<P>,
   path: K,
@@ -15,6 +20,11 @@ export function callQuery<P extends Procedures, K extends keyof P & string>(
   return proxy(input) as Promise<P[K]["output"]>;
 }
 
+/**
+ * Call a mutate procedure by string path.
+ *
+ * @internal
+ */
 export function callMutation<P extends Procedures, K extends keyof P & string>(
   client: Client<P>,
   path: K,
@@ -25,6 +35,16 @@ export function callMutation<P extends Procedures, K extends keyof P & string>(
   return proxy(input) as Promise<P[K]["output"]>;
 }
 
+/**
+ * Low-level utility functions for working with TanStack Query cache
+ * using procedure paths.
+ *
+ * Provides `fetch`, `prefetch`, `ensureData`, `invalidate`, `refetch`,
+ * `cancel`, `setData`, and `getData` — all keyed by procedure path + input.
+ *
+ * @deprecated Use [`createRouterUtils`] + [`ProcedureUtils`] instead,
+ * which provide a more ergonomic typed API.
+ */
 export function createUtils<P extends Procedures>(
   client: Client<P>,
   queryClient: tanstack.QueryClient,

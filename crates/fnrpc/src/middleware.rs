@@ -1,3 +1,10 @@
+//! Middleware system for fnrpc.
+//!
+//! - [`FnService`] — the core callable trait.
+//! - [`FnLayer`] — a composable middleware wrapper.
+//! - [`HookLayer`] — before/after hooks.
+//! - [`TracingLayer`] — structured logging (feature = `"tracing"`).
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -6,24 +13,25 @@ use serde_json::Value;
 use crate::error::RpcErr;
 
 /// Core service trait — call a method with JSON input, get JSON output.
+///
+/// This is the innermost unit of the middleware stack.
+/// The [`RpcRouter`](crate::router::RpcRouter) builds a chain of layers
+/// around a [`RouterService`](crate::router::RouterService) that dispatches
+/// to individual handlers.
 #[async_trait]
 pub trait FnService<Ctx>: Send + Sync {
     async fn call(&self, ctx: &Ctx, path: &str, input: Value) -> Result<Value, RpcErr>;
 }
 
-/// Blanket impl so `Box<dyn FnService<Ctx>>` works as a service.
-#[async_trait]
-impl<Ctx: Send + Sync> FnService<Ctx> for Box<dyn FnService<Ctx>> {
-    async fn call(&self, ctx: &Ctx, path: &str, input: Value) -> Result<Value, RpcErr> {
-        (**self).call(ctx, path, input).await
-    }
-}
-
 /// A composable middleware layer.
 ///
-/// ```ignore
-/// router.use(MyLayer);
-/// ```
+/// Wraps an inner [`FnService`] and returns a new service with
+/// additional behaviour (logging, auth, metrics, …).
+///
+/// # Ordering
+///
+/// Layers are applied LIFO — the last layer added to [`RpcRouter`](crate::router::RpcRouter)
+/// becomes the outermost (first to receive the call, last to produce the response).
 pub trait FnLayer<Ctx>: Send + Sync {
     fn layer(&self, inner: Box<dyn FnService<Ctx>>) -> Box<dyn FnService<Ctx>>;
 }
@@ -36,6 +44,22 @@ type BeforeHook<Ctx> =
 type AfterHook<Ctx> =
     Arc<dyn Fn(&Ctx, &str, &mut Result<Value, RpcErr>) + Send + Sync>;
 
+/// A convenience layer with before/after hooks.
+///
+/// # Example
+///
+/// ```ignore
+/// router.layer(
+///     HookLayer::new()
+///         .before(|ctx, path, input| {
+///             tracing::info!("calling {path}");
+///             Ok(())
+///         })
+///         .after(|ctx, path, result| {
+///             tracing::info!("{path} returned");
+///         }),
+/// );
+/// ```
 pub struct HookLayer<Ctx> {
     before: Option<BeforeHook<Ctx>>,
     after: Option<AfterHook<Ctx>>,
@@ -49,6 +73,9 @@ impl<Ctx> HookLayer<Ctx> {
         }
     }
 
+    /// Register a before-hook that runs before the inner service.
+    ///
+    /// The hook can mutate `input` and return `Err(RpcErr)` to short-circuit.
     pub fn before<F>(mut self, f: F) -> Self
     where
         F: Fn(&Ctx, &str, &mut Value) -> Result<(), RpcErr> + Send + Sync + 'static,
@@ -57,6 +84,9 @@ impl<Ctx> HookLayer<Ctx> {
         self
     }
 
+    /// Register an after-hook that runs after the inner service completes.
+    ///
+    /// The hook receives a mutable reference to the result (writable).
     pub fn after<F>(mut self, f: F) -> Self
     where
         F: Fn(&Ctx, &str, &mut Result<Value, RpcErr>) + Send + Sync + 'static,
@@ -98,6 +128,10 @@ impl<Ctx: Send + Sync + 'static> FnLayer<Ctx> for HookLayer<Ctx> {
 
 // ── Tracing layer (feature = "tracing") ───────────────────
 
+/// A logging layer that emits structured [`tracing`] events per call.
+///
+/// Logs path, input, output/error, and latency for every dispatched call.
+/// Only available with `feature = "tracing"`.
 #[cfg(feature = "tracing")]
 pub struct TracingLayer;
 

@@ -2,6 +2,11 @@ import type { ProcedureKind } from "./types";
 import { serialize, flattenForRust } from "./serializer";
 import { RpcError } from "./error";
 
+/**
+ * Minimal interface for the Tauri IPC module.
+ *
+ * Only the parts used by this transport are declared here.
+ */
 export interface TauriCore {
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
   Channel: new <T = unknown>() => { onmessage: ((msg: T) => void) | null };
@@ -16,6 +21,18 @@ function parseError(msg: string): RpcError {
   }
 }
 
+/**
+ * Create a transport that communicates via Tauri IPC (`invoke` + `Channel`).
+ *
+ * The factory takes a lazily-imported `@tauri-apps/api/core` module,
+ * which is resolved at runtime. This avoids bundling Tauri dependencies
+ * in non-Tauri environments.
+ *
+ * @example
+ * ```typescript
+ * const transport = tauriTransport(() => import("@tauri-apps/api/core"));
+ * ```
+ */
 export function tauriTransport(getCore: () => Promise<TauriCore>) {
   return (
     path: string,

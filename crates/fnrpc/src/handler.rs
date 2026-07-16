@@ -1,3 +1,8 @@
+//! Handler traits for RPC functions.
+//!
+//! - [`RpcFn`] / [`ErasedHandler`] for query & mutate.
+//! - [`RpcSubscribe`] / [`ErasedSubscribeHandler`] for subscriptions.
+
 use std::pin::Pin;
 
 use async_trait::async_trait;
@@ -12,6 +17,9 @@ use specta::datatype::{DataType, Primitive, Reference};
 use crate::error::RpcErr;
 
 /// TypeScript type reference info for a single type (input or output).
+///
+/// Produced by [`type_ts`] and used during codegen to determine the
+/// TypeScript type name for a given Rust type.
 #[derive(Debug, Clone)]
 pub struct TsTypeInfo {
     /// TypeScript type reference name (e.g. `"HealthCheckOutput"`) or inline expression.
@@ -72,20 +80,39 @@ fn type_ts<T: Type>() -> TsTypeInfo {
 }
 
 /// Object-safe erased handler stored in the router.
+///
+/// Blanket-implemented for all [`RpcFn<Ctx>`] types.
+/// The router uses this trait to dispatch calls without knowing
+/// the concrete input/output types at compile time.
 #[async_trait]
 pub trait ErasedHandler<Ctx>: Send + Sync {
+    /// Procedure name (matches the original Rust function name).
     fn name(&self) -> &'static str;
+    /// Procedure kind — `"query"` or `"mutate"`.
     fn kind(&self) -> &'static str;
+    /// TypeScript type reference for the input.
     fn input_ts(&self) -> TsTypeInfo;
+    /// TypeScript type reference for the output.
     fn output_ts(&self) -> TsTypeInfo;
-    /// Populate a shared type registry and collect top-level input/output DataTypes.
+    /// Populate a shared specta type registry with this handler's types.
     fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
+    /// Dispatch a JSON-serialised call, returning a JSON value.
     async fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr>;
 }
 
 /// Typed RPC function trait.
 ///
-/// Implement this directly, or use the `#[rpc_query]` / `#[rpc_mutate]` proc macros.
+/// Implement this directly, or use the [`#[rpc_query]`] / [`#[rpc_mutate]`] proc macros.
+///
+/// # Associated types
+///
+/// - `Input`: deserialised from JSON; must implement [`DeserializeOwned`] + [`Type`].
+/// - `Output`: serialised to JSON; must implement [`Serialize`] + [`Type`].
+///
+/// # Constants
+///
+/// - `NAME`: maps to the procedure path in the router.
+/// - `KIND`: `"query"` (default) or `"mutate"`.
 #[async_trait]
 pub trait RpcFn<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type;
@@ -93,6 +120,7 @@ pub trait RpcFn<Ctx>: Send + Sync {
     const NAME: &'static str;
     const KIND: &'static str = "query";
 
+    /// Execute the RPC.
     async fn exec(ctx: &Ctx, input: Self::Input) -> Result<Self::Output, RpcErr>;
 }
 
@@ -139,7 +167,15 @@ where
 
 /// Typed RPC subscribe trait.
 ///
-/// Implement this directly, or use the `#[rpc_subscribe]` proc macro.
+/// Implement this directly, or use the [`#[rpc_subscribe]`] proc macro.
+///
+/// Unlike [`RpcFn`], this trait is **sync** — it returns a `Stream` directly
+/// rather than an async block. The stream itself can contain async work.
+///
+/// # Constants
+///
+/// - `METHOD`: HTTP method — `"GET"` (default) or `"POST"` when
+///   `#[rpc_subscribe("post")]` is used.
 pub trait RpcSubscribe<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type;
     type Output: Serialize + Type + 'static;
@@ -147,6 +183,7 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
     const KIND: &'static str = "subscribe";
     const METHOD: &'static str = "GET";
 
+    /// Create a stream that yields items for this subscription.
     fn exec(
         ctx: &Ctx,
         input: Self::Input,
@@ -154,12 +191,16 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
 }
 
 /// Object-safe erased subscribe handler stored in the router.
+///
+/// Blanket-implemented for all [`RpcSubscribe<Ctx>`] types.
 pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
     fn name(&self) -> &'static str;
+    /// HTTP method for this subscription — `"GET"` or `"POST"`.
     fn method(&self) -> &'static str;
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
     fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
+    /// Dispatch a subscription, returning a JSON-value stream.
     fn call<'a>(
         &'a self,
         ctx: &'a Ctx,
