@@ -2,7 +2,7 @@
   "name": "axum-react-query",
   "private": true,
   "type": "module",
-    "imports": {
+  "imports": {
     "#/*": "./src/*"
   },
   "scripts": {
