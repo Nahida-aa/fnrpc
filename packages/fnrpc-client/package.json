@@ -1,6 +1,6 @@
 {
   "name": "@fnrpc/client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "fnRPC client — transport-agnostic RPC client with Proxy-based typed API",
   "license": "MIT",
   "repository": {
