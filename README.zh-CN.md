@@ -125,7 +125,7 @@ const transport = (() => {
   return fetchTransport({ url: "http://localhost:19110/fnrpc" });
 })();
 
-export const fnrpc = createClient<Procedures>(transport, __procedureKinds);
+export const fnrpc = createClient<Procedures>(transport, __procedureMeta);
 ```
 
 ## 客户端调用

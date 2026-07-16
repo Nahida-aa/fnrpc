@@ -10,6 +10,10 @@ resolver = "3"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+description = "Rust functions power your API — TypeScript types generated automatically via specta. A single router serves both Axum (HTTP SSE) and Tauri (IPC). Frontend calls `client.my_rpc(input)` directly; subscriptions return AsyncIterable. TanStack Query integration built in."
+license = "MIT"
+keywords = ["rpc", "typescript", "tauri", "axum", "specta"]
+categories = ["asynchronous", "network-programming"]
 
 [workspace.dependencies]
 async-trait = "0.1"
