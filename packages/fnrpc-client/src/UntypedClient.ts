@@ -93,8 +93,17 @@ function createSSEIterable(
 
   let aborted = false
   if (signal) {
-    signal.addEventListener("abort", () => { 
-      aborted = true; closeStream?.() }, { once: true })
+    signal.addEventListener("abort", () => {
+      aborted = true
+      closeStream?.()
+      if (rejectNext) {
+        rejectNext((signal as AbortSignal).reason)
+        rejectNext = null
+      } else if (resolveNext) {
+        resolveNext({ done: true, value: undefined as any })
+        resolveNext = null
+      }
+    }, { once: true })
   }
 
   const pending: Array<IteratorResult<unknown>> = []
@@ -236,7 +245,6 @@ export function consumeEventIterator<T, E = RpcError>(
     signal.addEventListener(
       "abort",
       () => {
-        
         cancelled = true
         iterator?.return?.()
       },
