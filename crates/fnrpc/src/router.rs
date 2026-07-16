@@ -91,7 +91,49 @@ where
     /// Attach a middleware layer.
     ///
     /// Similar to Hono's `.use()`, TanStack Start's `.middleware()`,
-    /// or Tower's `.layer()`. The last call becomes the outermost layer.
+    /// or Tower's `.layer()`.
+    ///
+    /// # Ordering
+    ///
+    /// Layers compose LIFO — the last layer added is the outermost
+    /// (first to intercept the call, last to produce the response).
+    ///
+    /// # Scope
+    ///
+    /// Middleware only applies to **query and mutate** procedures
+    /// dispatched via [`dispatch`](Self::dispatch). Subscribe handlers
+    /// bypass the middleware stack — they are looked up directly via
+    /// [`get_sub_handler`](Self::get_sub_handler).
+    ///
+    /// # JSON-level interface
+    ///
+    /// Layers receive the raw JSON [`Value`](serde_json::Value) input/output,
+    /// not the deserialised procedure types. This keeps them transport-agnostic.
+    /// A before-hook can mutate the input; an after-hook can inspect or rewrite
+    /// the result.
+    ///
+    /// # Short-circuiting
+    ///
+    /// A before-hook may return `Err(RpcErr)` to abort the call immediately
+    /// without invoking the inner service.
+    ///
+    /// # Built-in layers
+    ///
+    /// - [`HookLayer`] — before/after hooks via closures
+    /// - [`TracingLayer`] — structured tracing (feature = `"tracing"`)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// router
+    ///     .layer(HookLayer::new()
+    ///         .before(|ctx, path, input| {
+    ///             tracing::info!("{path} called");
+    ///             Ok(())
+    ///         })
+    ///     )
+    ///     .layer(TracingLayer);
+    /// ```
     pub fn layer<L: FnLayer<Ctx> + 'static>(self, layer: L) -> Self {
         let mut inner = Arc::try_unwrap(self.inner)
             .unwrap_or_else(|_| unreachable!("consumed self => sole owner"));

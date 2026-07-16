@@ -119,7 +119,10 @@ function MutationSection() {
         <input class="border rounded px-2 py-0.5 bg-background text-sm" value={email()} onInput={e => setEmail(e.currentTarget.value)} placeholder="email" />
         <button
           class="bg-primary text-primary-foreground px-3 py-1 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
-          onClick={() => mutate.mutate([name(), email()])}
+          onClick={() => mutate.mutate({
+            name: name(),
+            email: email(),
+          })}
           disabled={mutate.isPending}
         >
           {mutate.isPending ? 'Saving...' : 'Create'}

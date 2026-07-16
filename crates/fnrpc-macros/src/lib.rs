@@ -24,12 +24,86 @@ use proc_macro::TokenStream;
 /// - `Result<T, E>` (non-RpcErr) → `E` wrapped in `RpcErr::internal`.
 /// - `T` (no Result) → wrapped in `Ok(T)`.
 ///
-/// # Example
+/// # Examples
+///
+/// The shortest way — no input, trivial return:
 ///
 /// ```ignore
 /// #[rpc_query]
 /// async fn health_check() -> &'static str {
 ///     "ok"
+/// }
+/// ```
+///
+/// 64-bit integers (`u64`/`i64`) in parameters or return values are
+/// automatically serialized as BigInt on the JavaScript side:
+///
+/// ```ignore
+/// #[rpc_query]
+/// async fn fib(n: u64) -> u64 {
+///     // ...
+/// }
+/// ```
+///
+/// Plain error message — any non-`RpcErr` error is wrapped in
+/// [`RpcErr::internal`](fnrpc::error::RpcErr::internal) via `.to_string()`:
+///
+/// ```ignore
+/// #[rpc_query]
+/// async fn divide(a: i32, b: i32) -> Result<i32, String> {
+///     if b == 0 {
+///         return Err("division by zero".into());
+///     }
+///     Ok(a / b)
+/// }
+/// ```
+///
+/// Custom error code — return `Result<T, RpcErr>` with a convenience
+/// constructor like [`RpcErr::bad_request`](fnrpc::error::RpcErr::bad_request):
+///
+/// ```ignore
+/// #[rpc_query]
+/// async fn divide2(a: i32, b: i32) -> Result<i32, RpcErr> {
+///     if b == 0 {
+///         return Err(RpcErr::bad_request("cannot divide by zero"));
+///     }
+///     Ok(a / b)
+/// }
+/// ```
+///
+/// Multiple parameters — the macro wraps them into a tuple input type:
+///
+/// ```ignore
+/// #[rpc_query]
+/// async fn add(a: i64, b: i64) -> i64 {
+///     a + b
+/// }
+/// ```
+///
+/// Shared context (`&Ctx`) — access app state:
+///
+/// ```ignore
+/// #[rpc_query]
+/// async fn count_users(db: &Database) -> u64 {
+///     db.users().await.len() as u64
+/// }
+/// ```
+///
+/// The expanded form is equivalent to writing the `RpcFn` impl yourself:
+///
+/// ```ignore
+/// struct health_check;
+///
+/// #[async_trait::async_trait]
+/// impl<T: Send + Sync + 'static> RpcFn<T> for health_check {
+///     type Input = ();
+///     type Output = &'static str;
+///     const NAME: &'static str = "health_check";
+///     const KIND: &'static str = "query";
+///
+///     async fn exec(_ctx: &T, _input: ()) -> Result<Self::Output, RpcErr> {
+///         Ok("ok")
+///     }
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -41,6 +115,8 @@ pub fn rpc_query(_attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Same semantics as [`rpc_query`], but produces `KIND = "mutate"`.
 /// The transport sends input as `POST` body instead of URL query params.
+///
+/// See [`rpc_query`] for examples — all apply identically.
 #[proc_macro_attribute]
 pub fn rpc_mutate(_attr: TokenStream, item: TokenStream) -> TokenStream {
     query::rpc_fn_impl("mutate", item)

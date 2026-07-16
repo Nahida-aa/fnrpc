@@ -38,12 +38,18 @@ pub async fn divide(a: f64, b: f64) -> Result<f64, RpcErr> {
     }
 }
 
+#[derive(specta::Type, serde::Deserialize)]
+pub struct CreateUserInput {
+    name: String,
+    email: String,
+}
+
 #[fnrpc::rpc_mutate]
-pub async fn create_user(name: String, email: String) -> User {
+pub async fn create_user(input: CreateUserInput) -> User {
     User {
         id: 42,
-        name,
-        email,
+        name: input.name,
+        email: input.email,
     }
 }
 
