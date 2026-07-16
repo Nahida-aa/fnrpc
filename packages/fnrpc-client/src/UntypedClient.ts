@@ -79,7 +79,6 @@ function createSSEIterable(
   signal?: AbortSignal,
   method: "GET" | "POST" = "GET",
 ): Promise<AsyncIterable<unknown>> {
-  console.log('[UntypedClient] createSSEIterable signal=', signal, 'type=', typeof signal)
   const serialized = serialize(input)
   let url: string
   let body: string | undefined
@@ -95,7 +94,6 @@ function createSSEIterable(
   let aborted = false
   if (signal) {
     signal.addEventListener("abort", () => { 
-      console.log('signal abort listener fired!')
       aborted = true; closeStream?.() }, { once: true })
   }
 

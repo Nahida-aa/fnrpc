@@ -9,7 +9,6 @@ export function liveQuery<
   ) => Promise<AsyncIterable<TQueryFnData>>,
 ): QueryFunction<TQueryFnData, TQueryKey> {
   return async (context) => {
-    console.log('liveOptions context.signal:', context?.signal);
     const stream = await queryFn(context);
     let last: { chunk: TQueryFnData } | undefined;
 

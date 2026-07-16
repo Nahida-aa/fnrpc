@@ -1,5 +1,6 @@
 import { Button } from '#/components/ui/button.tsx';
 import {  fnrpc, client } from '#/integrations/fnrpc/client.ts';
+import { queryClient } from '#/integrations/tanstack-query/provider.ts';
 import { consumeEventIterator } from '@fnrpc/client';
 import { CreateQueryResult, useMutation, useQuery, UseQueryOptions } from '@tanstack/solid-query';
 import { createFileRoute } from '@tanstack/solid-router';
@@ -22,9 +23,12 @@ function IndexPage() {
 
 function QuerySection() {
   // const health = useQuery(() => client.health_check.queryOptions(null))
-  const get_count = useQuery(() => client.get_count.queryOptions(null,))
+  const [enabled, setEnabled] = createSignal(false);
+  const get_count = useQuery(() => client.get_count.queryOptions(null, {
+    enabled: enabled(),
+    refetchInterval: 3000,
+  }))
   console.log(JSON.stringify("hello"))
-  const [greet_enabled, setGreetEnabled] = createSignal(false);
   const health = useQuery(() =>({
     queryKey: ['health_check'],
     queryFn: () => fnrpc.health_check(),
@@ -38,7 +42,7 @@ function QuerySection() {
 
   const [name, setName] = createSignal('World');
   const greet = useQuery(() => client.greet.queryOptions(name(), {
-    enabled: greet_enabled(),
+
   }));
  
   // const greet = fnrpcHook.createQuery(() => ['greet', name()]);
@@ -61,6 +65,9 @@ function QuerySection() {
     <section class="space-y-3">
       <h2 class="text-lg font-semibold border-b pb-1">Queries</h2>
       <Row label="get_count()">
+             <Button onClick={() => setEnabled(!enabled())}>
+          {enabled() ? 'Disable' : 'Enable'}
+        </Button>
         <QueryResult query={get_count} />
       </Row>
       <Row label="health_check()">
@@ -70,9 +77,7 @@ function QuerySection() {
 
       <Row label="greet(name)">
         <input class="border rounded px-2 py-0.5 bg-background text-sm" value={name()} onInput={e => setName(e.currentTarget.value)} />
-        <Button onClick={() => setGreetEnabled(!greet_enabled())}>
-          {greet_enabled() ? 'Disable' : 'Enable'}
-        </Button>
+   
         <QueryResult query={greet} />
       </Row>
 
@@ -139,6 +144,7 @@ function SubscriptionSection() {
       <TickLiveTest />
       <EchoTest />
       <EchoWithConsumeEventIterator />
+      <EchoManualAbortTanstackQuery />
       <PostEchoLiveTest />
       <PostPostEchoLiveTest />
       <WatchTest />
@@ -188,17 +194,14 @@ function TickStreamedTest() {
   const query = useQuery(() =>
     client.tick.streamedOptions(500n, { enabled: running() }),
   );
-
+    const cancel = () => {
+    queryClient.cancelQueries({
+      queryKey: client.tick.streamedKey(500n),
+    })
+  }
   return (
     <Row label="tick streamed(500)">
-      <button
-        class={running()
-          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
-          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
-        onClick={() => setRunning(!running())}
-      >
-        {running() ? 'Stop' : 'Start'}
-      </button>
+      <RunButton running={running()} setRunning={setRunning} cancel={cancel} />
       <Show when={query.isSuccess}>
         <span class="font-mono text-xs truncate max-w-60">
           {query.data!.join(', ')}
@@ -216,17 +219,14 @@ function TickLiveTest() {
   const query = useQuery(() =>
     client.tick.liveOptions(500n, { enabled: running(),  }),
   );
-
+  const cancel = () => {
+    queryClient.cancelQueries({
+      queryKey: client.tick.liveKey(500n),
+    })
+  }
   return (
     <Row label="tick live(500)">
-      <button
-        class={running()
-          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
-          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
-        onClick={() => setRunning(!running())}
-      >
-        {running() ? 'Stop' : 'Start'}
-      </button>
+      <RunButton running={running()} setRunning={setRunning} cancel={cancel} />
       <Show when={query.isSuccess}>
         <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
       </Show>
@@ -236,6 +236,7 @@ function TickLiveTest() {
     </Row>
   );
 }
+
 
 function EchoTest() {
   const [prefix, setPrefix] = createSignal('msg');
@@ -316,6 +317,95 @@ function EchoWithConsumeEventIterator() {
     </Row>
   );
 }
+function RunButton(props: { running: boolean; setRunning: (v: boolean) => void
+  cancel: () => void
+ }) {
+  return <button
+      class={props.running
+        ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
+        : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
+      onClick={() => {
+        if (props.running) {
+          props.setRunning(false);
+          props.cancel();
+          return
+        } 
+        props.setRunning(true);
+      }}
+    >
+      {props.running ? 'Stop' : 'Start'}
+    </button>
+}
+function EchoManualAbortTanstackQuery() {
+
+  const [running, setRunning] = createSignal(false);
+  const [prefix, setPrefix] = createSignal('msg');
+  const [qContext, setQContext] = createSignal<any>(null);
+   const [controller, setController] = createSignal<AbortController | null>(null);
+
+  createEffect(() => {
+    if (running()) {
+      setController(new AbortController());
+    } else {
+      controller()?.abort();
+      // setController(null);
+    }
+  });
+  const query = useQuery(() => ({
+    queryKey: ['echo_stream', prefix(), 'manual_live'],
+    queryFn: async (context) => {
+      const currentController = new AbortController()
+      setController(currentController);
+      console.log('echo_stream manual_live queryFn currentController:', controller());
+      // if (!controller()) return null;
+      console.log('echo_stream manual_live queryFn signal:', context.signal);
+      let lastChunk: string | undefined = undefined;
+      lastChunk = 'unknown';
+      // 模拟等待
+      // for (const i of Array.from({ length: 100 }, (_, i) => i)) {
+      //   console.log(context.signal.aborted, controller()?.signal.aborted, );
+      //   if (context.signal.aborted) {
+      //     break
+      //   }
+      //   await new Promise(resolve => setTimeout(resolve, 1000*1));
+      // }
+      const iter = await fnrpc.echo_stream(prefix(), context.signal)
+      for await (const data of iter) {
+        // setQContext(context);
+        // console.log(context);
+        if (context.signal.aborted) {
+          console.log('context.signal.aborted, breaking loop');
+          break};  // 手动检查，提前退出
+        // if (controller()?.signal.aborted) {
+        //   console.log('currentController.signal.aborted, breaking loop');
+        //   break;
+        // }
+        lastChunk = data;
+        context.client.setQueryData(context.queryKey, data);
+      }
+      return lastChunk as unknown as string
+    },
+    enabled: running(),
+  }))
+  const cancel = () => {
+    queryClient.cancelQueries({
+      queryKey: ['echo_stream', prefix(), 'manual_live'],
+    })
+  }
+  return <Row label="echo_stream manual_live)">
+    <input class="border rounded px-2 py-0.5 bg-background text-sm w-24" value={prefix()} onInput={e => setPrefix(e.currentTarget.value)} />
+    <RunButton running={running()} setRunning={setRunning} cancel={cancel} />
+    <Show when={query.isSuccess}>
+      <span class="font-mono text-sm">Value: {query.data!}</span>
+    </Show>
+    <pre>
+      {JSON.stringify(qContext)}
+    </pre>
+    <Show when={query.isFetching}>
+      <span class="text-muted-foreground text-xs">streaming...</span>
+    </Show>
+  </Row>
+}
 
 function PostEchoLiveTest() {
   const [running, setRunning] = createSignal(false);
@@ -323,16 +413,14 @@ function PostEchoLiveTest() {
   const query = useQuery(() => client.echo_stream.liveOptions(prefix(), {
     enabled: running()
   }));
+  const cancel = () => {
+    queryClient.cancelQueries({
+      queryKey: client.echo_stream.liveKey(prefix()),
+    })
+  }
   return <Row label="echo_stream live(prefix())">
     <input class="border rounded px-2 py-0.5 bg-background text-sm w-24" value={prefix()} onInput={e => setPrefix(e.currentTarget.value)} />
-      <button
-        class={running()
-          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
-          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
-        onClick={() => setRunning(!running())}
-      >
-        {running() ? 'Stop' : 'Start'}
-      </button>
+    <RunButton running={running()} setRunning={setRunning} cancel={cancel} />
       <Show when={query.isSuccess}>
         <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
       </Show>
@@ -349,16 +437,14 @@ function PostPostEchoLiveTest() {
     // enabled: running()
   }), enabled: running()
   }));
+  const cancel = () => {
+    queryClient.cancelQueries({
+      queryKey: client.post_echo_stream.liveKey(prefix()),
+    })
+  }
   return <Row label="post_echo_stream live(prefix())">
     <input class="border rounded px-2 py-0.5 bg-background text-sm w-24" value={prefix()} onInput={e => setPrefix(e.currentTarget.value)} />
-      <button
-        class={running()
-          ? 'bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700'
-          : 'bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700'}
-        onClick={() => setRunning(!running())}
-      >
-        {running() ? 'Stop' : 'Start'}
-      </button>
+    <RunButton running={running()} setRunning={setRunning} cancel={cancel} />
       <Show when={query.isSuccess}>
         <span class="font-mono text-sm">Value: {query.data!.toString()}</span>
       </Show>

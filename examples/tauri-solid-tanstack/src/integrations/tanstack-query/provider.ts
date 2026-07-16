@@ -20,3 +20,5 @@ export const getQueryClient = () => {
 		return browserQueryClient;
 	}
 };
+
+export const queryClient = getQueryClient();
