@@ -51,10 +51,13 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
     // Collect types into a shared type registry
     let mut types = specta::Types::default();
     RpcErr::definition(&mut types);
-    for (_, handler) in &router.inner.handlers {
-        handler.populate_types(&mut types, &mut vec![]);
+    {
+        let handlers = router.handlers.read().unwrap();
+        for (_, handler) in handlers.iter() {
+            handler.populate_types(&mut types, &mut vec![]);
+        }
     }
-    for (_, sub) in &router.inner.subscribes {
+    for (_, sub) in router.subscribes.iter() {
         sub.populate_types(&mut types, &mut vec![]);
     }
 
@@ -73,19 +76,22 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
 
     // Build the Procedures interface
     out.push_str("export type Procedures = {\n");
-    for (_, handler) in &router.inner.handlers {
-        let i = handler.input_ts();
-        let o = handler.output_ts();
-        let kind = handler.kind();
-        let method = if kind == "mutate" { "POST" } else { "GET" };
-        out.push_str(&format!(
-            "  {}: {{ kind: \"{kind}\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
-            handler.name(),
-            i.ts_ref,
-            o.ts_ref,
-        ));
+    {
+        let handlers = router.handlers.read().unwrap();
+        for (_, handler) in handlers.iter() {
+            let i = handler.input_ts();
+            let o = handler.output_ts();
+            let kind = handler.kind();
+            let method = if kind == "mutate" { "POST" } else { "GET" };
+            out.push_str(&format!(
+                "  {}: {{ kind: \"{kind}\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
+                handler.name(),
+                i.ts_ref,
+                o.ts_ref,
+            ));
+        }
     }
-    for (_, sub) in &router.inner.subscribes {
+    for (_, sub) in router.subscribes.iter() {
         let i = sub.input_ts();
         let o = sub.output_ts();
         let method = sub.method();
@@ -99,15 +105,18 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
     out.push_str("}\n");
 
     out.push_str("\nexport const __procedureMeta = {\n");
-    for (_, handler) in &router.inner.handlers {
-        let kind = handler.kind();
-        let method = if kind == "mutate" { "POST" } else { "GET" };
-        out.push_str(&format!(
-            "  {}: {{ kind: \"{kind}\", method: \"{method}\" }},\n",
-            handler.name(),
-        ));
+    {
+        let handlers = router.handlers.read().unwrap();
+        for (_, handler) in handlers.iter() {
+            let kind = handler.kind();
+            let method = if kind == "mutate" { "POST" } else { "GET" };
+            out.push_str(&format!(
+                "  {}: {{ kind: \"{kind}\", method: \"{method}\" }},\n",
+                handler.name(),
+            ));
+        }
     }
-    for (_, sub) in &router.inner.subscribes {
+    for (_, sub) in router.subscribes.iter() {
         let method = sub.method();
         out.push_str(&format!(
             "  {}: {{ kind: \"subscribe\", method: \"{method}\" }},\n",

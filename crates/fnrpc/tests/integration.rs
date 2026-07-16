@@ -1,9 +1,10 @@
 use fnrpc::error::RpcErr;
 use fnrpc::handler::RpcFn;
-use fnrpc::router::RpcRouter;
+use fnrpc::router::RpcRouterBuilder;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::pin::Pin;
 
 // --- Test types ---
 
@@ -96,7 +97,7 @@ async fn macro_ctx_greet(ctx: &AppCtx, input: GreetInput) -> Result<GreetOutput,
 
 #[tokio::test]
 async fn test_manual_rpc() {
-    let router = RpcRouter::<()>::new().route(Greet);
+    let router = RpcRouterBuilder::<()>::new().route(Greet).build();
 
     let input = serde_json::json!({ "name": "world" });
 
@@ -115,7 +116,7 @@ async fn test_manual_rpc() {
 
 #[tokio::test]
 async fn test_ctx_rpc() {
-    let router = RpcRouter::<AppCtx>::new().route(CtxGreet);
+    let router = RpcRouterBuilder::<AppCtx>::new().route(CtxGreet).build();
 
     let ctx = AppCtx {
         prefix: "yo ".to_string(),
@@ -129,7 +130,7 @@ async fn test_ctx_rpc() {
 
 #[tokio::test]
 async fn test_macro_rpc() {
-    let router = RpcRouter::<()>::new().route(macro_greet);
+    let router = RpcRouterBuilder::<()>::new().route(macro_greet).build();
 
     let input = serde_json::json!({ "name": "world" });
 
@@ -162,7 +163,7 @@ async fn test_macro_mutate_kind() {
 
 #[tokio::test]
 async fn test_macro_health_no_ctx() {
-    let router = RpcRouter::<()>::new().route(macro_health);
+    let router = RpcRouterBuilder::<()>::new().route(macro_health).build();
     let result = router
         .dispatch(&(), "macro_health", serde_json::json!(null))
         .await
@@ -172,7 +173,9 @@ async fn test_macro_health_no_ctx() {
 
 #[tokio::test]
 async fn test_macro_health_with_ctx() {
-    let router = RpcRouter::<()>::new().route(macro_health_ctx);
+    let router = RpcRouterBuilder::<()>::new()
+        .route(macro_health_ctx)
+        .build();
     let result = router
         .dispatch(&(), "macro_health_ctx", serde_json::json!(null))
         .await
@@ -182,7 +185,9 @@ async fn test_macro_health_with_ctx() {
 
 #[tokio::test]
 async fn test_macro_ctx_rpc() {
-    let router = RpcRouter::<AppCtx>::new().route(macro_ctx_greet);
+    let router = RpcRouterBuilder::<AppCtx>::new()
+        .route(macro_ctx_greet)
+        .build();
 
     let ctx = AppCtx {
         prefix: "yo ".to_string(),
@@ -205,15 +210,18 @@ fn sub_count(input: u32) -> impl futures::Stream<Item = u32> {
 }
 
 #[fnrpc::rpc_subscribe]
-fn sub_count_ctx(ctx: &AppCtx, input: u32) -> impl futures::Stream<Item = Result<String, String>> {
+fn sub_count_ctx(
+    ctx: &AppCtx,
+    input: u32,
+) -> Pin<Box<dyn futures::Stream<Item = Result<String, String>> + Send + 'static>> {
     let prefix = ctx.prefix.clone();
     let items: Vec<_> = (1..=input).map(|n| Ok(format!("{prefix}{n}"))).collect();
-    futures::stream::iter(items)
+    Box::pin(futures::stream::iter(items))
 }
 
 #[tokio::test]
 async fn test_subscribe() {
-    let router = RpcRouter::<()>::new().subscribe(sub_count);
+    let router = RpcRouterBuilder::<()>::new().subscribe(sub_count).build();
 
     let handler = router.get_sub_handler("sub_count").unwrap();
     let stream = handler.call(&(), serde_json::json!(3));
@@ -229,7 +237,9 @@ async fn test_subscribe_ctx() {
     let ctx = AppCtx {
         prefix: "n".to_string(),
     };
-    let router = RpcRouter::<AppCtx>::new().subscribe(sub_count_ctx);
+    let router = RpcRouterBuilder::<AppCtx>::new()
+        .subscribe(sub_count_ctx)
+        .build();
 
     let handler = router.get_sub_handler("sub_count_ctx").unwrap();
     let stream = handler.call(&ctx, serde_json::json!(2));
@@ -242,7 +252,7 @@ async fn test_subscribe_ctx() {
 
 #[tokio::test]
 async fn test_subscribe_unknown_path() {
-    let router = RpcRouter::<()>::new();
+    let router = RpcRouterBuilder::<()>::new().build();
     assert!(router.get_sub_handler("nonexistent").is_none());
 }
 
@@ -260,7 +270,7 @@ async fn multi_param_ctx(ctx: &AppCtx, a: i32, b: i32) -> String {
 
 #[tokio::test]
 async fn test_multi_param() {
-    let router = RpcRouter::<()>::new().route(multi_param);
+    let router = RpcRouterBuilder::<()>::new().route(multi_param).build();
 
     let input = serde_json::json!([1, 2, "hello"]);
     let result = router.dispatch(&(), "multi_param", input).await.unwrap();
@@ -272,7 +282,9 @@ async fn test_multi_param_ctx() {
     let ctx = AppCtx {
         prefix: "x".to_string(),
     };
-    let router = RpcRouter::<AppCtx>::new().route(multi_param_ctx);
+    let router = RpcRouterBuilder::<AppCtx>::new()
+        .route(multi_param_ctx)
+        .build();
 
     let input = serde_json::json!([3, 4]);
     let result = router
@@ -299,33 +311,32 @@ async fn test_multi_param_ts_info() {
 
 // ── Middleware tests ──────────────────────────────────────
 
-use fnrpc::middleware::{FnLayer, HookLayer};
+use fnrpc::middleware::{FnLayer, FnService, HookLayer};
 
 /// Layer that prepends "layered:" to the output string.
 struct PrefixLayer;
 
-impl FnLayer<()> for PrefixLayer {
-    fn layer(
-        &self,
-        inner: Box<dyn fnrpc::middleware::FnService<()>>,
-    ) -> Box<dyn fnrpc::middleware::FnService<()>> {
-        Box::new(PrefixService { inner })
+impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnLayer<Ctx, S> for PrefixLayer {
+    type Service = PrefixService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        PrefixService { inner }
     }
 }
 
-struct PrefixService {
-    inner: Box<dyn fnrpc::middleware::FnService<()>>,
+struct PrefixService<S> {
+    inner: S,
 }
 
-#[async_trait::async_trait]
-impl fnrpc::middleware::FnService<()> for PrefixService {
+impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for PrefixService<S> {
     async fn call(
         &self,
-        ctx: &(),
+        ctx: &Ctx,
         path: &str,
         input: serde_json::Value,
+        extensions: &mut http::Extensions,
     ) -> Result<serde_json::Value, fnrpc::error::RpcErr> {
-        let result = self.inner.call(ctx, path, input).await?;
+        let result = self.inner.call(ctx, path, input, extensions).await?;
         let s = result.as_str().unwrap_or("");
         Ok(serde_json::json!(format!("layered:{s}")))
     }
@@ -333,9 +344,10 @@ impl fnrpc::middleware::FnService<()> for PrefixService {
 
 #[tokio::test]
 async fn test_custom_layer() {
-    let router = RpcRouter::<()>::new()
+    let router = RpcRouterBuilder::<()>::new()
         .route(macro_health)
-        .layer(PrefixLayer);
+        .layer(PrefixLayer)
+        .build();
 
     let result = router
         .dispatch(&(), "macro_health", serde_json::json!(null))
@@ -348,18 +360,21 @@ async fn test_custom_layer() {
 async fn test_hook_layer() {
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let log_clone = log.clone();
-    let router = RpcRouter::<()>::new().route(macro_health).layer(
-        HookLayer::new()
-            .before(move |_ctx, path, _input| {
-                log_clone.lock().unwrap().push(format!("before:{path}"));
-                Ok(())
-            })
-            .after(move |_ctx, _path, result| {
-                if let Ok(val) = result {
-                    *val = serde_json::json!("hooked");
-                }
-            }),
-    );
+    let router = RpcRouterBuilder::<()>::new()
+        .route(macro_health)
+        .layer(
+            HookLayer::new()
+                .before(move |_ctx, path, _input| {
+                    log_clone.lock().unwrap().push(format!("before:{path}"));
+                    Ok(())
+                })
+                .after(move |_ctx, _path, result| {
+                    if let Ok(val) = result {
+                        *val = serde_json::json!("hooked");
+                    }
+                }),
+        )
+        .build();
 
     let result = router
         .dispatch(&(), "macro_health", serde_json::json!(null))
@@ -371,14 +386,15 @@ async fn test_hook_layer() {
 
 #[tokio::test]
 async fn test_multiple_layers() {
-    let router = RpcRouter::<()>::new()
+    let router = RpcRouterBuilder::<()>::new()
         .route(macro_health)
         .layer(PrefixLayer)
         .layer(HookLayer::new().after(|_ctx, _path, result| {
             if let Ok(val) = result {
                 *val = serde_json::json!("wrapped");
             }
-        }));
+        }))
+        .build();
 
     // HookLayer (last added) is outermost, so after-hook runs after PrefixLayer
     let result = router
@@ -389,10 +405,48 @@ async fn test_multiple_layers() {
 }
 
 #[tokio::test]
-async fn test_ts_client() {
-    let router = RpcRouter::<()>::new()
+async fn test_layer_fn() {
+    let router = RpcRouterBuilder::<()>::new()
         .route(Greet)
-        .route(multi_param);
+        .layer_fn(|inner, ctx, path, input, extensions| {
+            Box::pin(async move {
+                let result = inner.call(ctx, path, input, extensions).await;
+                result.map(|v| serde_json::json!({ "wrapped": v }))
+            })
+        })
+        .build();
+
+    let result = router
+        .dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" }))
+        .await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap()["wrapped"]["message"], "hello fnrpc");
+}
+
+#[tokio::test]
+async fn test_layer_fn_short_circuit() {
+    let router = RpcRouterBuilder::<()>::new()
+        .route(Greet)
+        .layer_fn(|_inner, _ctx, _path, _input, _extensions| {
+            Box::pin(async move {
+                Err(RpcErr::new("BLOCKED", "short-circuited"))
+            })
+        })
+        .build();
+
+    let result = router
+        .dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" }))
+        .await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "BLOCKED");
+}
+
+#[tokio::test]
+async fn test_ts_client() {
+    let router = RpcRouterBuilder::<()>::new()
+        .route(Greet)
+        .route(multi_param)
+        .build();
 
     let client = fnrpc::codegen::generate_ts_client(&router, "/rpc");
     assert!(client.contains("greet"), "should contain method name");

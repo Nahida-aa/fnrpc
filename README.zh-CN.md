@@ -62,16 +62,17 @@ fn large_stream(ctx: &Ctx, input: LargeInput) -> Pin<Box<dyn Stream<Item = Resul
 ### 2. 构建路由
 
 ```rust
-use fnrpc::router::RpcRouter;
+use fnrpc::router::RpcRouterBuilder;
 
-let router = RpcRouter::<Ctx>::new()
+let router = RpcRouterBuilder::<Ctx>::new()
     .query(health_check)
     .query(get_user)
     .mutate(create_user)
     .subscribe(watch_user)
     .layer(HookLayer::new()
         .before(|ctx, path, input| tracing::info!("{path} invoked")))
-    .layer(TracingLayer);
+    .layer(TracingLayer)
+    .build();
 ```
 
 ### 3. 接入 Axum

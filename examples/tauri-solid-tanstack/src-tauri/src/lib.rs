@@ -28,8 +28,7 @@ pub async fn run_axum() {
     let app_state = ctx::AppState {
         app_dir: std::path::PathBuf::from("."),
     };
-    let fnrpc_router =
-        integrations::fnrpc_func::build_fn_rpc_router().layer(fnrpc::middleware::TracingLayer);
+    let fnrpc_router = integrations::fnrpc_func::build_fn_rpc_router();
 
     let router = integrations::fnrpc_axum::build_axum_router(fnrpc_router, app_state);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:19110")

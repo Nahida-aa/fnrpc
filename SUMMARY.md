@@ -55,15 +55,16 @@
 ## RpcRouter
 
 ```rust
-RpcRouter::<Ctx>::new()
+RpcRouterBuilder::<Ctx>::new()
     .query(my_query)
     .mutate(my_mutate)
     .subscribe(my_subscribe)
     .layer(HookLayer::new()) // last added = outermost
     .layer(TracingLayer)
+    .build()
 ```
 
-- `dispatch(ctx, path, input)` — builds RouterService, wraps in layers, calls through
+- `dispatch(ctx, path, input)` — calls through the monomorphized middleware chain (zero allocation per call inside the chain).
 - `get_sub_handler(path)` — returns `Arc<dyn ErasedSubscribeHandler>` for subscribe streams
 - `codegen::generate_ts_client(router, url)` → TS bindings string
 - `codegen::write_ts_client(router, url, path)` — write bindings to disk
@@ -77,7 +78,9 @@ RpcRouter::<Ctx>::new()
 
 ## Middleware
 
-- **`FnLayer<Ctx>`** — `layer(inner: Box<dyn FnService>) -> Box<dyn FnService>`
+- **`FnLayer<Ctx, S>`** — `layer(inner: S) -> Self::Service` (generic over inner, associated output type)
+- **`FnService<Ctx>`** — RPIT-based trait (zero `Box::pin` in monomorphized chain)
+- **`ErasedFnService<Ctx>`** — dyn wrapper for storage in `Arc` (single `Box::pin` at boundary)
 - **`HookLayer`** — `before(f)` / `after(f)` closures
 - **`TracingLayer`** — `feature = "tracing"`, logs path/input/output/latency
 - Layer ordering: last added = outermost (first to process, last to respond)

@@ -1,70 +1,73 @@
 //! The RPC router — collects handlers and dispatches calls.
+//!
+//! Use [`RpcRouterBuilder`] to register handlers and middleware, then
+//! [`build`](RpcRouterBuilder::build) to get a stored [`RpcRouter`].
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::future::Future;
+use std::marker::PhantomData;
+use std::pin::Pin;
+use std::sync::{Arc, RwLock};
 
+use http::Extensions;
 use serde_json::Value;
 
 use crate::error::RpcErr;
 use crate::handler::{ErasedHandler, ErasedSubscribeHandler};
-use crate::middleware::{FnLayer, FnService};
+use crate::middleware::{ErasedFnService, FnLayer, FnService, LayerFnService};
 
-/// A collection of RPC handlers organised by name.
+// ── RpcRouterBuilder (concrete, monomorphized chain) ─────
+
+/// Builder for an [`RpcRouter`].
+///
+/// Registers [`query`](RpcRouterBuilder::query),
+/// [`mutate`](RpcRouterBuilder::mutate), and
+/// [`subscribe`](RpcRouterBuilder::subscribe) handlers, then wraps the
+/// chain with [`layer`](RpcRouterBuilder::layer). Call
+/// [`build`](RpcRouterBuilder::build) to produce a type-erased
+/// [`RpcRouter`] ready for dispatch.
 ///
 /// # Example
 ///
 /// ```ignore
-/// let router = RpcRouter::<Ctx>::new()
+/// let router = RpcRouterBuilder::<AppCtx>::new()
 ///     .query(health_check)
 ///     .mutate(create_user)
 ///     .subscribe(watch_user)
-///     .layer(HookLayer::new().before(log_invoke));
+///     .layer(HookLayer::new().before(log_invoke))
+///     .build();
 /// ```
-pub struct RpcRouter<Ctx> {
-    pub(crate) inner: Arc<RpcRouterInner<Ctx>>,
+pub struct RpcRouterBuilder<Ctx, S = RouterService<Ctx>> {
+    service: S,
+    handlers: Arc<RwLock<BTreeMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>>>,
+    subscribes: BTreeMap<&'static str, Arc<dyn ErasedSubscribeHandler<Ctx>>>,
 }
 
-pub(crate) struct RpcRouterInner<Ctx> {
-    pub(crate) handlers: BTreeMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>,
-    pub(crate) subscribes: BTreeMap<&'static str, Arc<dyn ErasedSubscribeHandler<Ctx>>>,
-    layers: Vec<Box<dyn FnLayer<Ctx>>>,
-}
+// ── Construction + handler registration ──────────────────
 
-impl<Ctx> Clone for RpcRouter<Ctx> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<Ctx> RpcRouter<Ctx>
-where
-    Ctx: Send + Sync + 'static,
-{
-    /// Create an empty router.
+impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
+    /// Create an empty router builder.
     pub fn new() -> Self {
+        let handlers = Arc::new(RwLock::new(BTreeMap::new()));
         Self {
-            inner: Arc::new(RpcRouterInner {
-                handlers: BTreeMap::new(),
-                subscribes: BTreeMap::new(),
-                layers: Vec::new(),
-            }),
+            service: RouterService {
+                handlers: handlers.clone(),
+            },
+            handlers,
+            subscribes: BTreeMap::new(),
         }
     }
+}
 
+impl<Ctx: Send + Sync + 'static, S: FnService<Ctx> + 'static> RpcRouterBuilder<Ctx, S> {
     /// Register a handler by its [`ErasedHandler::name`].
     ///
     /// Normally you use the typed helpers [`query`](Self::query),
     /// [`mutate`](Self::mutate), or [`subscribe`](Self::subscribe) instead.
     pub fn route<H: ErasedHandler<Ctx> + 'static>(self, handler: H) -> Self {
         let name = handler.name();
-        let mut inner = Arc::try_unwrap(self.inner)
-            .unwrap_or_else(|_| unreachable!("consumed self => sole owner"));
-        inner.handlers.insert(name, Arc::new(handler));
-        Self {
-            inner: Arc::new(inner),
-        }
+        self.handlers.write().unwrap().insert(name, Arc::new(handler));
+        self
     }
 
     /// Register a query handler (convenience for [`route`](Self::route)).
@@ -78,14 +81,10 @@ where
     }
 
     /// Register a subscribe handler.
-    pub fn subscribe<H: ErasedSubscribeHandler<Ctx> + 'static>(self, handler: H) -> Self {
+    pub fn subscribe<H: ErasedSubscribeHandler<Ctx> + 'static>(mut self, handler: H) -> Self {
         let name = handler.name();
-        let mut inner = Arc::try_unwrap(self.inner)
-            .unwrap_or_else(|_| unreachable!("consumed self => sole owner"));
-        inner.subscribes.insert(name, Arc::new(handler));
-        Self {
-            inner: Arc::new(inner),
-        }
+        self.subscribes.insert(name, Arc::new(handler));
+        self
     }
 
     /// Attach a middleware layer.
@@ -101,9 +100,9 @@ where
     /// # Scope
     ///
     /// Middleware only applies to **query and mutate** procedures
-    /// dispatched via [`dispatch`](Self::dispatch). Subscribe handlers
+    /// dispatched via [`dispatch`](RpcRouter::dispatch). Subscribe handlers
     /// bypass the middleware stack — they are looked up directly via
-    /// [`get_sub_handler`](Self::get_sub_handler).
+    /// [`get_sub_handler`](RpcRouter::get_sub_handler).
     ///
     /// # JSON-level interface
     ///
@@ -125,48 +124,172 @@ where
     /// # Example
     ///
     /// ```ignore
-    /// router
+    /// RpcRouterBuilder::new()
+    ///     .query(health)
     ///     .layer(HookLayer::new()
     ///         .before(|ctx, path, input| {
     ///             tracing::info!("{path} called");
     ///             Ok(())
     ///         })
     ///     )
-    ///     .layer(TracingLayer);
+    ///     .layer(TracingLayer)
+    ///     .build();
     /// ```
-    pub fn layer<L: FnLayer<Ctx> + 'static>(self, layer: L) -> Self {
-        let mut inner = Arc::try_unwrap(self.inner)
-            .unwrap_or_else(|_| unreachable!("consumed self => sole owner"));
-        inner.layers.push(Box::new(layer));
-        Self {
-            inner: Arc::new(inner),
+    pub fn layer<L: FnLayer<Ctx, S> + 'static>(self, layer: L) -> RpcRouterBuilder<Ctx, L::Service> {
+        RpcRouterBuilder {
+            service: layer.layer(self.service),
+            handlers: self.handlers,
+            subscribes: self.subscribes,
         }
     }
 
+    /// Attach a middleware layer from a closure.
+    ///
+    /// A lighter-weight alternative to [`layer`](Self::layer) — no need to
+    /// define a struct + implement [`FnLayer`]. The closure receives
+    /// `(&S, &Ctx, &str, Value, &mut Extensions)` and must return a
+    /// `Pin<Box<dyn Future + Send + '_>>`.  Wrap the body in
+    /// `Box::pin(async move { ... })`.
+    ///
+    /// Each call allocates one `Box::pin` for the returned future — matching
+    /// xitca-web's `BoxedServiceObject` boundary cost.  For **zero-allocation**
+    /// middleware implement [`FnLayer`] directly.
+    ///
+    /// # Example — auth guard
+    ///
+    /// ```ignore
+    /// RpcRouterBuilder::<MyCtx>::new()
+    ///     .route(protected_handler)
+    ///     .layer_fn(|inner, ctx, path, input, extensions| {
+    ///         Box::pin(async move {
+    ///             if !ctx.is_authenticated() {
+    ///                 return Err(RpcErr::new("UNAUTHORIZED", "login required"));
+    ///             }
+    ///             inner.call(ctx, path, input, extensions).await
+    ///         })
+    ///     })
+    ///     .build();
+    /// ```
+    pub fn layer_fn<F>(self, func: F) -> RpcRouterBuilder<Ctx, LayerFnService<Ctx, S, F>>
+    where
+        F: for<'a> Fn(&'a S, &'a Ctx, &'a str, Value, &'a mut Extensions)
+                -> Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + Send + 'a>>
+            + Send + Sync + 'static,
+    {
+        RpcRouterBuilder {
+            service: LayerFnService {
+                inner: self.service,
+                func,
+                _marker: PhantomData,
+            },
+            handlers: self.handlers,
+            subscribes: self.subscribes,
+        }
+    }
+
+    /// Finalize the middleware chain and produce a type-erased [`RpcRouter`].
+    ///
+    /// After this call the concrete service type `S` is erased behind
+    /// `Arc<dyn ErasedFnService<Ctx>>`, making the router cheap to clone and
+    /// store in Axum state.
+    pub fn build(self) -> RpcRouter<Ctx>
+    where
+        S: Send + Sync + 'static,
+    {
+        RpcRouter {
+            inner: Arc::new(self.service) as Arc<dyn ErasedFnService<Ctx>>,
+            subscribes: Arc::new(self.subscribes),
+            handlers: self.handlers,
+        }
+    }
+}
+
+// ── RpcRouter (type-erased, stored in Axum state) ────────
+
+/// A collection of RPC handlers organised by name.
+///
+/// Produced by [`RpcRouterBuilder::build`]. This type is concrete and
+/// storeable (no generic middleware-chain parameter leaking into public API).
+///
+/// # Dispatch
+///
+/// ```ignore
+/// router.dispatch(&ctx, "health", input).await
+/// ```
+pub struct RpcRouter<Ctx> {
+    inner: Arc<dyn ErasedFnService<Ctx>>,
+    pub(crate) subscribes: Arc<BTreeMap<&'static str, Arc<dyn ErasedSubscribeHandler<Ctx>>>>,
+    pub(crate) handlers: Arc<RwLock<BTreeMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>>>,
+}
+
+impl<Ctx> Clone for RpcRouter<Ctx> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            subscribes: self.subscribes.clone(),
+            handlers: self.handlers.clone(),
+        }
+    }
+}
+
+impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     /// Dispatch a query/mutate call through the middleware stack.
     ///
     /// Returns `Ok(Value)` on success or `Err(RpcErr)` on failure.
     /// For subscribe calls, use [`get_sub_handler`](Self::get_sub_handler) instead.
     pub async fn dispatch(&self, ctx: &Ctx, path: &str, input: Value) -> Result<Value, RpcErr> {
-        let mut svc: Box<dyn FnService<Ctx>> = Box::new(RouterService {
-            handlers: self.inner.handlers.clone(),
-        });
-        for layer in self.inner.layers.iter() {
-            svc = layer.layer(svc);
+        let mut extensions = Extensions::new();
+        self.inner
+            .call(ctx, path, input, &mut extensions)
+            .await
+    }
+
+    /// Dispatch a query/mutate call and return a [`Send`] future.
+    ///
+    /// Required by multi-threaded runtimes (Axum, Tower, etc.) that
+    /// demand the dispatched future be [`Send`].
+    ///
+    /// # Safety
+    ///
+    /// This is safe when `Ctx: Send + Sync + 'static` because every
+    /// service stored in the router is `Send + Sync + 'static`, and its
+    /// call future captures only `&self` (which is Send) and `&Ctx` (which
+    /// is Send).  If a custom [`ErasedFnService`] implementation ever
+    /// produced a non-`Send` future this would be undefined behaviour.
+    ///
+    /// All framework-internal implementations (`RouterService`,
+    /// `HookService`, `TracingService`, `LayerFnService`, etc.) produce
+    /// `Send` futures.
+    pub async fn dispatch_send(
+        &self,
+        ctx: &Ctx,
+        path: &str,
+        input: Value,
+    ) -> Result<Value, RpcErr> {
+        let mut extensions = Extensions::new();
+        let fut = self.inner.call(ctx, path, input, &mut extensions);
+        // SAFETY: see doc — the erased service is Send+Sync+'static,
+        // producing a transitively Send future when Ctx is Send+Sync.
+        unsafe {
+            std::mem::transmute::<
+                Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + '_>>,
+                Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + Send + '_>>,
+            >(fut)
         }
-        svc.call(ctx, path, input).await
+        .await
     }
 
     /// Retrieve a subscribe handler by path (owned `Arc` for `'static` usage).
     pub fn get_sub_handler(&self, path: &str) -> Option<Arc<dyn ErasedSubscribeHandler<Ctx>>> {
-        self.inner.subscribes.get(path).cloned()
+        self.subscribes.get(path).cloned()
     }
 
     /// Return the procedure kind for a given path: `"query"`, `"mutate"`, `"subscribe"`, or `None`.
     pub fn get_procedure_kind(&self, path: &str) -> Option<&'static str> {
-        if self.inner.handlers.contains_key(path) {
-            self.inner.handlers.get(path).map(|h| h.kind())
-        } else if self.inner.subscribes.contains_key(path) {
+        let handlers = self.handlers.read().unwrap();
+        if let Some(h) = handlers.get(path) {
+            Some(h.kind())
+        } else if self.subscribes.contains_key(path) {
             Some("subscribe")
         } else {
             None
@@ -175,32 +298,45 @@ where
 
     /// Return the HTTP method for a given path: `"GET"` for query/subscribe, `"POST"` for mutate.
     pub fn get_procedure_method(&self, path: &str) -> &'static str {
-        if self.inner.handlers.contains_key(path) {
-            let handler = self.inner.handlers.get(path).unwrap();
+        let handlers = self.handlers.read().unwrap();
+        if let Some(handler) = handlers.get(path) {
             match handler.kind() {
                 "mutate" => "POST",
                 _ => "GET",
             }
-        } else if self.inner.subscribes.contains_key(path) {
-            self.inner.subscribes.get(path).map(|s| s.method()).unwrap_or("GET")
+        } else if let Some(s) = self.subscribes.get(path) {
+            s.method()
         } else {
             "GET"
         }
     }
-
 }
+
+// ── RouterService (inner dispatcher) ─────────────────────
 
 /// Inner service that dispatches to handlers directly.
-struct RouterService<Ctx> {
-    handlers: BTreeMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>,
+///
+/// This is the default service type for [`RpcRouterBuilder`] and is not
+/// intended for direct use.
+#[doc(hidden)]
+pub struct RouterService<Ctx> {
+    pub(crate) handlers: Arc<RwLock<BTreeMap<&'static str, Arc<dyn ErasedHandler<Ctx>>>>>,
 }
 
-#[async_trait::async_trait]
 impl<Ctx: Send + Sync + 'static> FnService<Ctx> for RouterService<Ctx> {
-    async fn call(&self, ctx: &Ctx, path: &str, input: Value) -> Result<Value, RpcErr> {
+    async fn call(
+        &self,
+        ctx: &Ctx,
+        path: &str,
+        input: Value,
+        _extensions: &mut Extensions,
+    ) -> Result<Value, RpcErr> {
         let handler = self
             .handlers
+            .read()
+            .unwrap()
             .get(path)
+            .cloned()
             .ok_or_else(|| RpcErr::not_found(format!("unknown path: {path}")))?;
         handler.call(ctx, input).await
     }

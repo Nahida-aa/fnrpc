@@ -22,8 +22,6 @@ use axum::response::{IntoResponse, Json};
 use fnrpc::serializer::unpack_meta;
 use futures::StreamExt;
 use serde_json::Value;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 
 /// Shared state for the fnrpc Axum handler.
 ///
@@ -79,32 +77,26 @@ where
                 Some(handler) => {
                     let ctx = (state.ctx_from_headers)(headers);
 
-                    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(32);
-
-                    tokio::spawn(async move {
-                        let mut stream = handler.call(&ctx, input);
-                        let mut event_id = 0u64;
-                        while let Some(item) = stream.next().await {
-                            event_id += 1;
-                            let event = match item {
-                                Ok(val) => Event::default()
-                                    .id(event_id.to_string())
-                                    .json_data(val)
-                                    .unwrap(),
-                                Err(e) => Event::default()
-                                    .id(event_id.to_string())
-                                    .data(format!(
-                                        "__error:{}",
-                                        serde_json::to_string(&e).unwrap()
-                                    )),
-                            };
-                            if tx.send(Ok(event)).await.is_err() {
-                                break;
-                            }
-                        }
+                    let stream = handler.call(&ctx, input);
+                    let mut event_id = 0u64;
+                    let sse = stream.map(move |item| {
+                        event_id += 1;
+                        let event = match item {
+                            Ok(val) => Event::default()
+                                .id(event_id.to_string())
+                                .json_data(val)
+                                .unwrap(),
+                            Err(e) => Event::default()
+                                .id(event_id.to_string())
+                                .data(format!(
+                                    "__error:{}",
+                                    serde_json::to_string(&e).unwrap()
+                                )),
+                        };
+                        Ok::<_, Infallible>(event)
                     });
 
-                    Sse::new(ReceiverStream::new(rx))
+                    Sse::new(sse)
                         .keep_alive(KeepAlive::default())
                         .into_response()
                 }
@@ -134,7 +126,7 @@ where
             };
             let input = unpack_meta(&input_raw);
 
-            match state.router.dispatch(&ctx, &path, input).await {
+            match state.router.dispatch_send(&ctx, &path, input).await {
                 Ok(val) => Json(val).into_response(),
                 Err(e) => {
                     let status = match e.code.as_str() {

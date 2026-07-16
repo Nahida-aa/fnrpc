@@ -11,8 +11,6 @@ fnrpc = { version = "0.2.0", path = "../fnrpc" }
 axum = "0.8"
 serde_json = "1"
 futures = "0.3"
-tokio = { version = "1", features = ["sync"] }
-tokio-stream = "0.1"
 async-trait = { workspace = true }
 
 [dev-dependencies]

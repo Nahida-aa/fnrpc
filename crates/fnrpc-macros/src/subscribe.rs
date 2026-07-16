@@ -219,7 +219,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 fn exec(
                     ctx: &#ctx_ty,
                     input: Self::Input,
-                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + '_>> {
+                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + 'static>> {
                     #exec_body
                 }
             }
@@ -240,7 +240,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 fn exec(
                     _ctx: &T,
                     input: Self::Input,
-                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + '_>> {
+                ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + 'static>> {
                     #exec_body
                 }
             }

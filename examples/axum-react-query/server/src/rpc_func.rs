@@ -90,7 +90,7 @@ pub fn watch_status(ctx: &Ctx, key: String) -> impl futures::Stream<Item = Strin
 }
 
 pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<Ctx> {
-    fnrpc::router::RpcRouter::<Ctx>::new()
+    fnrpc::router::RpcRouterBuilder::<Ctx>::new()
         .query(greet)
         .query(add)
         .query(get_user)
@@ -100,4 +100,5 @@ pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<Ctx> {
         .subscribe(echo_stream)
         .subscribe(post_echo_stream)
         .subscribe(watch_status)
+        .build()
 }

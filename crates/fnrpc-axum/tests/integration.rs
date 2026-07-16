@@ -41,7 +41,7 @@ async fn test_query_get() {
         }
     }
 
-    let router = fnrpc::router::RpcRouter::<()>::new().query(Greet);
+    let router = fnrpc::router::RpcRouterBuilder::<()>::new().query(Greet).build();
     let app = test_router(router, |_headers| ());
 
     let response = app
@@ -75,7 +75,7 @@ async fn test_query_post() {
         }
     }
 
-    let router = fnrpc::router::RpcRouter::<()>::new().query(Add);
+    let router = fnrpc::router::RpcRouterBuilder::<()>::new().query(Add).build();
     let app = test_router(router, |_headers| ());
 
     let response = app
@@ -98,7 +98,7 @@ async fn test_query_post() {
 
 #[tokio::test]
 async fn test_not_found() {
-    let router = fnrpc::router::RpcRouter::<()>::new();
+    let router = fnrpc::router::RpcRouterBuilder::<()>::new().build();
     let app = test_router(router, |_headers| ());
 
     let response = app
@@ -129,13 +129,13 @@ async fn test_subscribe() {
         fn exec(
             _ctx: &(),
             input: u32,
-        ) -> Pin<Box<dyn futures::Stream<Item = Result<u32, RpcErr>> + Send + '_>>
+        ) -> Pin<Box<dyn futures::Stream<Item = Result<u32, RpcErr>> + Send + 'static>>
         {
             Box::pin(futures::stream::iter((1..=input).map(|n| Ok(n))))
         }
     }
 
-    let router = fnrpc::router::RpcRouter::<()>::new().subscribe(Tick);
+    let router = fnrpc::router::RpcRouterBuilder::<()>::new().subscribe(Tick).build();
     let app = test_router(router, |_headers| ());
 
     let response = app
@@ -171,7 +171,7 @@ async fn test_with_context() {
         }
     }
 
-    let router = fnrpc::router::RpcRouter::<MyCtx>::new().query(CtxGreet);
+    let router = fnrpc::router::RpcRouterBuilder::<MyCtx>::new().query(CtxGreet).build();
     let app = test_router(router, |_headers| MyCtx {
         prefix: "yo ".to_string(),
     });

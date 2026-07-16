@@ -172,6 +172,11 @@ where
 /// Unlike [`RpcFn`], this trait is **sync** — it returns a `Stream` directly
 /// rather than an async block. The stream itself can contain async work.
 ///
+/// The returned stream must not borrow `ctx` — it is `'static`. If the
+/// stream needs data from `Ctx`, clone it inside the function body before
+/// constructing the stream. This avoids a per-event mpsc channel in the
+/// transport layer.
+///
 /// # Constants
 ///
 /// - `METHOD`: HTTP method — `"GET"` (default) or `"POST"` when
@@ -184,10 +189,12 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
     const METHOD: &'static str = "GET";
 
     /// Create a stream that yields items for this subscription.
+    ///
+    /// Must return a `'static` stream (no borrowing from `ctx`).
     fn exec(
         ctx: &Ctx,
         input: Self::Input,
-    ) -> Pin<Box<dyn Stream<Item = Result<Self::Output, RpcErr>> + Send + '_>>;
+    ) -> Pin<Box<dyn Stream<Item = Result<Self::Output, RpcErr>> + Send + 'static>>;
 }
 
 /// Object-safe erased subscribe handler stored in the router.
@@ -200,12 +207,12 @@ pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
     fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
-    /// Dispatch a subscription, returning a JSON-value stream.
-    fn call<'a>(
-        &'a self,
-        ctx: &'a Ctx,
+    /// Dispatch a subscription, returning a `'static` JSON-value stream.
+    fn call(
+        &self,
+        ctx: &Ctx,
         input: Value,
-    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'static>>;
 }
 
 /// Blanket impl: any `RpcSubscribe<Ctx>` becomes an `ErasedSubscribeHandler<Ctx>`.
@@ -238,11 +245,11 @@ where
         top_level.push(output);
     }
 
-    fn call<'a>(
-        &'a self,
-        ctx: &'a Ctx,
+    fn call(
+        &self,
+        ctx: &Ctx,
         input: Value,
-    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'static>> {
         let input = match serde_json::from_value(input) {
             Ok(v) => v,
             Err(e) => {

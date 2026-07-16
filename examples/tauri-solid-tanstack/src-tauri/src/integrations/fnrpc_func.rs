@@ -20,7 +20,7 @@ pub async fn reset_count() -> () {
 }
 
 pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<Ctx> {
-    fnrpc::router::RpcRouter::<Ctx>::new()
+    fnrpc::router::RpcRouterBuilder::<Ctx>::new()
         .query(get_count)
         .mutate(reset_count)
         .query(health_check)
@@ -33,4 +33,6 @@ pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<Ctx> {
         .subscribe(crate::feat::demo::func::echo_stream)
         .subscribe(post_echo_stream)
         .subscribe(crate::feat::demo::func::watch_status)
+        .layer(fnrpc::middleware::TracingLayer)
+        .build()
 }
