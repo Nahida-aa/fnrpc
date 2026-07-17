@@ -189,17 +189,63 @@ fn run_fnrpc_web(concurrency_levels: &[usize], duration: Duration) {
     let _ = server.wait();
 }
 
+fn run_xitca_web(concurrency_levels: &[usize], duration: Duration) {
+    let port = find_free_port();
+
+    let mut server = Command::new("target/release/xitca_web_server")
+        .arg(port.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to start xitca-web server");
+
+    wait_for_server(port, Duration::from_secs(5));
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    rt.block_on(async {
+        run_scenario(
+            &format!("http://127.0.0.1:{port}/noop-json"),
+            "xitca-web/noop_json",
+            concurrency_levels,
+            duration,
+        ).await;
+        run_scenario(
+            &format!("http://127.0.0.1:{port}/noop-raw"),
+            "xitca-web/noop_raw",
+            concurrency_levels,
+            duration,
+        ).await;
+    });
+
+    let _ = server.kill();
+    let _ = server.wait();
+}
+
+fn build_server(name: &str) {
+    eprintln!("Building {name}...");
+    let status = Command::new("cargo")
+        .args(["build", "--release", "-p", "benches", "--bin", name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect(&format!("failed to build {name}"));
+    assert!(status.success(), "build failed");
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let framework = args.get(1).map(|s| s.as_str()).unwrap_or_else(|| {
-        eprintln!("Usage: latency [fnrpc-web|all] [max_concurrency] [duration_secs]");
+        eprintln!("Usage: latency [fnrpc-web|xitca-web|all] [max_concurrency] [duration_secs]");
         eprintln!("  Measures RPS, latency percentiles, and error rate at increasing concurrency levels");
         std::process::exit(1);
     });
     let max_concurrency: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1000);
     let duration_secs: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(2);
 
-    // Ramp-up concurrency levels: 1, 10, 50, 100, 200, 500, 1000, ...
     let mut levels = vec![1, 10, 50, 100];
     let mut c = 200;
     while c <= max_concurrency {
@@ -212,23 +258,26 @@ fn main() {
 
     let duration = Duration::from_secs(duration_secs);
 
-    eprintln!("Building fnrpc_web_server...");
-    let status = Command::new("cargo")
-        .args(["build", "--release", "-p", "benches", "--bin", "fnrpc_web_server"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .expect("failed to build fnrpc_web_server");
-    assert!(status.success(), "build failed");
-
     match framework {
         "fnrpc-web" => {
-            println!("fnrpc-web 并发基准测试 (每级 {duration_secs} 秒)");
+            build_server("fnrpc_web_server");
+            println!("fnrpc-web (每级 {duration_secs} 秒)");
             run_fnrpc_web(&levels, duration);
         }
+        "xitca-web" => {
+            build_server("xitca_web_server");
+            println!("xitca-web (每级 {duration_secs} 秒)");
+            run_xitca_web(&levels, duration);
+        }
         "all" => {
-            println!("fnrpc-web 并发基准测试 (每级 {duration_secs} 秒)");
+            build_server("fnrpc_web_server");
+            build_server("xitca_web_server");
+            println!();
+            println!("=== fnrpc-web (每级 {duration_secs} 秒) ===");
             run_fnrpc_web(&levels, duration);
+            println!();
+            println!("=== xitca-web (每级 {duration_secs} 秒) ===");
+            run_xitca_web(&levels, duration);
         }
         _ => {
             eprintln!("Unknown framework: {framework}");

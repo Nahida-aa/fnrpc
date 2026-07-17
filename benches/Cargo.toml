@@ -87,3 +87,7 @@ path = "src/bin/dhat_compare.rs"
 name = "latency"
 path = "src/bin/latency.rs"
 required-features = ["reqwest"]
+
+[[bin]]
+name = "xitca_web_server"
+path = "src/bin/xitca_web_server.rs"
