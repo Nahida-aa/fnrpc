@@ -249,6 +249,9 @@ fn main() {
         ("/noop-json", "noop_json", false, b""),
         ("/noop-raw", "noop_raw", false, b""),
         ("/echo", "echo_small", true, br#""hello""#),
+        ("/medium", "echo_medium", true, medium_body),
+        ("/large", "echo_large", true, large_body),
+        ("/in?key=fnrpc", "lookup", false, b""),
     ];
 
     match framework {
