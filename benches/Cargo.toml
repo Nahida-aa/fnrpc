@@ -82,3 +82,8 @@ path = "src/bin/dhat_analyze.rs"
 [[bin]]
 name = "dhat_compare"
 path = "src/bin/dhat_compare.rs"
+
+[[bin]]
+name = "latency"
+path = "src/bin/latency.rs"
+required-features = ["reqwest"]
