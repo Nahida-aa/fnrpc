@@ -16,20 +16,28 @@ const BIGINT_TYPE_ID: u64 = 0;
 /// unwrap it by applying all meta transformations and return the plain `json`.
 ///
 /// If `input` is a plain value (no envelope), return it unchanged.
-pub fn unpack_meta(input: &Value) -> Value {
-    let obj = match input {
-        Value::Object(obj) => obj,
-        _ => return input.clone(),
+///
+/// Takes ownership of `input` to avoid an unconditional clone on the common path.
+pub fn unpack_meta(input: Value) -> Value {
+    let Value::Object(obj) = input else {
+        // Plain value (not an envelope) — no clone needed since we own it
+        return input;
     };
 
     let json = match obj.get("json") {
         Some(json) => json,
-        None => return input.clone(),
+        None => {
+            // Object without "json" field — return as-is
+            return Value::Object(obj);
+        }
     };
 
     let meta = match obj.get("meta") {
         Some(Value::Array(meta)) => meta,
-        _ => return json.clone(),
+        _ => {
+            // Has "json" but no valid "meta" — return the json value
+            return json.clone();
+        }
     };
 
     let mut result = json.clone();
@@ -148,18 +156,20 @@ mod tests {
     #[test]
     fn test_plain_passthrough() {
         let input = json!({ "name": "hello" });
-        assert_eq!(unpack_meta(&input), input);
+        let expected = input.clone();
+        assert_eq!(unpack_meta(input), expected);
     }
 
     #[test]
     fn test_null_input() {
-        assert_eq!(unpack_meta(&Value::Null), Value::Null);
+        assert_eq!(unpack_meta(Value::Null), Value::Null);
     }
 
     #[test]
     fn test_number_input() {
         let input = json!(42);
-        assert_eq!(unpack_meta(&input), input);
+        let expected = input.clone();
+        assert_eq!(unpack_meta(input), expected);
     }
 
     #[test]
@@ -169,7 +179,7 @@ mod tests {
             "json": { "value": "500" },
             "meta": [[0, "value"]]
         });
-        let result = unpack_meta(&input);
+        let result = unpack_meta(input);
         assert_eq!(result, json!({ "value": 500 }));
     }
 
@@ -179,7 +189,7 @@ mod tests {
             "json": { "a": { "b": "42" } },
             "meta": [[0, "a", "b"]]
         });
-        let result = unpack_meta(&input);
+        let result = unpack_meta(input);
         assert_eq!(result, json!({ "a": { "b": 42 } }));
     }
 
@@ -190,21 +200,22 @@ mod tests {
             "json": "500",
             "meta": [[0]]
         });
-        let result = unpack_meta(&input);
+        let result = unpack_meta(input);
         assert_eq!(result, json!(500));
     }
 
     #[test]
     fn test_no_envelope() {
         let input = json!({ "value": "500" });
-        assert_eq!(unpack_meta(&input), input);
+        let expected = input.clone();
+        assert_eq!(unpack_meta(input), expected);
     }
 
     #[test]
     fn test_no_meta() {
         let input = json!({ "json": { "value": "500" } });
         // No meta → return json as-is
-        let result = unpack_meta(&input);
+        let result = unpack_meta(input);
         assert_eq!(result, json!({ "value": "500" }));
     }
 }

@@ -19,6 +19,10 @@ pub struct FnrpcConfig<Ctx> {
     pub ctx_from_headers: Arc<dyn Fn(&HeaderMap) -> Ctx + Send + Sync>,
 }
 
+/// Build a JSON response from a `Value`.
+///
+/// Prefer [`json_response_bytes`] when you already have serialized bytes
+/// (e.g. from [`ErasedHandler::call_bytes`](fnrpc::handler::ErasedHandler::call_bytes)).
 fn json_response(status: StatusCode, body: Value) -> Response<ResponseBody> {
     let mut res = if body.is_null() {
         Response::new(ResponseBody::bytes(Bytes::from_static(b"null")))
@@ -32,22 +36,93 @@ fn json_response(status: StatusCode, body: Value) -> Response<ResponseBody> {
     res
 }
 
+/// Build a JSON response from pre-serialized bytes.
+///
+/// Bypasses the intermediate `Value` allocation that [`json_response`] requires.
+/// For the `b"null"` case, uses a static `Bytes` to avoid any allocation.
+fn json_response_bytes(status: StatusCode, body: Vec<u8>) -> Response<ResponseBody> {
+    let mut res = if body == b"null" {
+        Response::new(ResponseBody::bytes(Bytes::from_static(b"null")))
+    } else {
+        Response::new(ResponseBody::bytes(Bytes::from(body)))
+    };
+    *res.status_mut() = status;
+    res.headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    res
+}
+
 fn rpc_err_to_response(e: fnrpc::error::RpcErr) -> Response<ResponseBody> {
     let status = match e.code.as_str() {
         "BAD_REQUEST" => StatusCode::BAD_REQUEST,
         "NOT_FOUND" => StatusCode::NOT_FOUND,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    json_response(status, serde_json::to_value(e).unwrap_or_default())
+    // Serialize directly to bytes, bypassing Value intermediate
+    let body = serde_json::to_vec(&e).unwrap_or_default();
+    let mut res = Response::new(ResponseBody::bytes(Bytes::from(body)));
+    *res.status_mut() = status;
+    res.headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    res
 }
 
 fn extract_input(query_str: &str) -> Value {
-    for (k, v) in url::form_urlencoded::parse(query_str.as_bytes()) {
-        if k == "input" {
-            return serde_json::from_str(&v).unwrap_or(Value::Null);
+    // Fast path: scan for "input=" without allocating a parser.
+    // URL-decode the value manually (handles %xx and + → space).
+    let mut remaining = query_str;
+    loop {
+        let Some(eq_pos) = remaining.find("input=") else { break };
+        let after_eq = &remaining[eq_pos + 6..];
+        let end = after_eq.find('&').unwrap_or(after_eq.len());
+        let raw = &after_eq[..end];
+        if !raw.is_empty() {
+            // Percent-decode the raw value
+            let decoded: String = percent_decode(raw);
+            if let Ok(val) = serde_json::from_str(&decoded) {
+                return val;
+            }
+        }
+        remaining = &after_eq[end..];
+        if remaining.is_empty() {
+            break;
+        }
+        if end < after_eq.len() {
+            // skip past '&'
+            remaining = &remaining[1..];
         }
     }
     Value::Null
+}
+
+/// Minimal percent-decoding for query string values.
+fn percent_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'+' => result.push(' '),
+            b'%' => {
+                let hi = bytes.next().and_then(|c| hex_val(c));
+                let lo = bytes.next().and_then(|c| hex_val(c));
+                match (hi, lo) {
+                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
+                    _ => result.push('%'),
+                }
+            }
+            _ => result.push(b as char),
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn input_from_body(buf: &[u8]) -> Value {
@@ -95,12 +170,17 @@ where
 /// Uses [`get_handler`](RpcRouter::get_handler) + direct handler call —
 /// bypasses the middleware stack and saves one `Box::pin` allocation
 /// vs [`dispatch_send`](RpcRouter::dispatch_send).
-pub async fn handle<Ctx>(
+///
+/// Uses [`call_bytes`](fnrpc::handler::ErasedHandler::call_bytes) to
+/// avoid the intermediate `Value` allocation.
+pub async fn handle<Ctx, B>(
     config: &FnrpcConfig<Ctx>,
-    mut req: Request<RequestExt<RequestBody>>,
+    mut req: Request<B>,
 ) -> Response<ResponseBody>
 where
     Ctx: Send + Sync + 'static,
+    B: BodyExt + Unpin,
+    B::Data: AsRef<[u8]>,
 {
     let method = req.method().clone();
 
@@ -129,13 +209,13 @@ where
     } else {
         extract_input(req.uri().query().unwrap_or(""))
     };
-    let input = unpack_meta(&input_raw);
+    let input = unpack_meta(input_raw);
     let ctx = (config.ctx_from_headers)(req.headers());
 
     // Radix-tree lookup — no path clone needed
     if let Some(handler) = config.router.get_handler(path) {
-        match handler.call(&ctx, input) {
-            Ok(val) => json_response(StatusCode::OK, val),
+        match handler.call_bytes(&ctx, input) {
+            Ok(bytes) => json_response_bytes(StatusCode::OK, bytes),
             Err(e) => rpc_err_to_response(e),
         }
     } else if let Some(handler) = config.router.get_sub_handler(path) {

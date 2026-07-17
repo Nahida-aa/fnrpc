@@ -3,6 +3,7 @@
 //! - [`RpcFn`] / [`ErasedHandler`] for query & mutate.
 //! - [`RpcSubscribe`] / [`ErasedSubscribeHandler`] for subscriptions.
 
+use std::any::TypeId;
 use std::pin::Pin;
 
 use futures::StreamExt;
@@ -89,6 +90,10 @@ fn type_ts<T: Type>() -> TsTypeInfo {
 /// allocation per call at the `dyn` boundary.  Inside that one allocation
 /// the [`RpcFn::exec`] future is stored inline (no second `Box::pin`),
 /// saving ~1 B per dispatch vs the old `#[async_trait]` approach.
+///
+/// The [`call_bytes`](ErasedHandler::call_bytes) method returns serialized
+/// JSON bytes directly, avoiding the intermediate [`Value`] allocation
+/// that [`call`](ErasedHandler::call) requires.
 pub trait ErasedHandler<Ctx>: Send + Sync {
     /// Procedure name (matches the original Rust function name).
     fn name(&self) -> &'static str;
@@ -100,8 +105,17 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
     fn output_ts(&self) -> TsTypeInfo;
     /// Populate a shared specta type registry with this handler's types.
     fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
-    /// Dispatch a call, returning a JSON value (zero allocation).
+    /// Dispatch a call, returning a JSON value.
     fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr>;
+    /// Dispatch a call, returning serialized JSON bytes directly.
+    ///
+    /// Default implementation calls [`call`](Self::call) and then
+    /// serializes the result. Override in blanket impls to bypass
+    /// the intermediate `Value` allocation.
+    fn call_bytes(&self, ctx: &Ctx, input: Value) -> Result<Vec<u8>, RpcErr> {
+        self.call(ctx, input)
+            .and_then(|v| serde_json::to_vec(&v).map_err(|e| RpcErr::internal(format!("serialize: {e}"))))
+    }
 }
 
 /// Typed RPC function trait.
@@ -124,8 +138,8 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
 /// no hidden `Box::pin`.  The concrete future type is known at compile time
 /// and stored inline inside [`ErasedHandler::call`]'s single `Box::pin`.
 pub trait RpcFn<Ctx>: Send + Sync {
-    type Input: DeserializeOwned + Type;
-    type Output: Serialize + Type;
+    type Input: DeserializeOwned + Type + 'static;
+    type Output: Serialize + Type + 'static;
     const NAME: &'static str;
     const KIND: &'static str = "query";
 
@@ -165,12 +179,37 @@ where
     }
 
     fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr> {
-        let input: F::Input = serde_json::from_value(input)
-            .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?;
+        let input = if is_unit_type::<F::Input>() {
+            unsafe { std::mem::zeroed() }
+        } else {
+            serde_json::from_value(input)
+                .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
+        };
         let output = F::exec(ctx, input)?;
         Ok(serde_json::to_value(output)
             .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
     }
+
+    fn call_bytes(&self, ctx: &Ctx, input: Value) -> Result<Vec<u8>, RpcErr> {
+        let input = if is_unit_type::<F::Input>() {
+            unsafe { std::mem::zeroed() }
+        } else {
+            serde_json::from_value(input)
+                .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
+        };
+        let output = F::exec(ctx, input)?;
+        serde_json::to_vec(&output)
+            .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))
+    }
+}
+
+// ── Helper: detect unit input type ──────────────────────────
+
+/// Check at compile time whether `T` is `()` (unit).
+/// Used to skip `serde_json::from_value` for unit inputs.
+#[inline(always)]
+fn is_unit_type<T: 'static>() -> bool {
+    TypeId::of::<T>() == TypeId::of::<()>()
 }
 
 // ── Subscription traits ────────────────────────────────────

@@ -73,7 +73,7 @@ pub async fn dispatch<Ctx: Send + Sync + 'static>(
         Ok(body) => body.0,
         Err(_) => extract_input(query_str),
     };
-    let input = unpack_meta(&input_raw);
+    let input = unpack_meta(input_raw);
 
     // Fast path: direct handler call
     if let Some(handler) = state.router.get_handler(path) {

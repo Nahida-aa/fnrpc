@@ -35,45 +35,49 @@ fn make_get_req(uri: &str) -> Request<RequestBody> {
     req
 }
 
-pub(crate) async fn run(label: &str, n: usize) {
+pub(crate) async fn bench(n: usize) {
     let config = FnrpcConfig {
         router: RpcRouterBuilder::<()>::new().query(Noop).query(Echo).build(),
         ctx_from_headers: Arc::new(|_| ()),
     };
 
-    // — fnrpc-web/noop —
+    // — noop (GET) —
     let _p = Profiler::new_heap();
     for _ in 0..n {
         let req = make_get_req("/noop?input=null");
         let _ = handle(&config, req).await;
     }
     let s = HeapStats::get();
-    eprintln!("{label}/noop: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+    eprintln!("fnrpc-web/noop: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
+    // dhat writes dhat-heap.json on Profiler drop, so copy after drop
+    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-noop.json");
 
-    // — fnrpc-web/echo —
+    // — echo (GET) —
     let _p = Profiler::new_heap();
     for _ in 0..n {
         let req = make_get_req(r#"/echo?input=%22hello%22"#);
         let _ = handle(&config, req).await;
     }
     let s = HeapStats::get();
-    eprintln!("{label}/echo: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+    eprintln!("fnrpc-web/echo: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
+    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-echo.json");
 
-    // — fnrpc-web/not_found —
+    // — not_found —
     let _p = Profiler::new_heap();
     for _ in 0..n {
         let req = make_get_req("/nonexistent");
         let _ = handle(&config, req).await;
     }
     let s = HeapStats::get();
-    eprintln!("{label}/not_found: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+    eprintln!("fnrpc-web/not_found: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
+    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-notfound.json");
 }

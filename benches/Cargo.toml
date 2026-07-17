@@ -66,3 +66,19 @@ path = "src/bin/dhat_dispatch.rs"
 [[bin]]
 name = "dhat_server"
 path = "src/bin/dhat_server.rs"
+
+[[bin]]
+name = "body_bench"
+path = "src/bin/body_bench.rs"
+
+[[bin]]
+name = "fnrpc_web_server"
+path = "src/bin/fnrpc_web_server.rs"
+
+[[bin]]
+name = "dhat_analyze"
+path = "src/bin/dhat_analyze.rs"
+
+[[bin]]
+name = "dhat_compare"
+path = "src/bin/dhat_compare.rs"

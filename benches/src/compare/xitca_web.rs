@@ -47,25 +47,26 @@ fn make_get_req(uri: &str) -> http::Request<RequestExt<RequestBody>> {
         .unwrap()
 }
 
-pub(crate) async fn run(label: &str, n: usize) {
+pub(crate) async fn bench(n: usize) {
     let app = App::new()
         .at("/", get(fn_service(handler_noop)))
         .at("/echo", post(fn_service(handler_echo)));
     let svc = app.finish().call(()).await.unwrap();
 
-    // — plain/noop (GET) —
+    // — noop (GET) —
     let _p = Profiler::new_heap();
     for _ in 0..n {
         let req = make_get_req("/");
         let _ = svc.call(req).await.unwrap();
     }
     let s = HeapStats::get();
-    eprintln!("{label}/noop: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+    eprintln!("xitca-web/noop: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
+    let _ = std::fs::copy("dhat-heap.json", "dhat-xitca-web-noop.json");
 
-    // — plain/echo (POST) —
+    // — echo (POST) —
     let body_data = br#""hello""#;
     let _p = Profiler::new_heap();
     for _ in 0..n {
@@ -74,8 +75,9 @@ pub(crate) async fn run(label: &str, n: usize) {
         let _ = svc.call(req).await.unwrap();
     }
     let s = HeapStats::get();
-    eprintln!("{label}/echo: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+    eprintln!("xitca-web/echo: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
+    let _ = std::fs::copy("dhat-heap.json", "dhat-xitca-web-echo.json");
 }

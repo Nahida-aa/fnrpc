@@ -71,7 +71,7 @@ where
         Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
         _ => extract_input(uri.query().unwrap_or("")),
     };
-    let input = unpack_meta(&input_raw);
+    let input = unpack_meta(input_raw);
 
     // Fast path: direct handler call
     if let Some(handler) = state.router.get_handler(&path) {

@@ -18,7 +18,7 @@ pub async fn rpc_fn(
         state: state.inner().clone(),
         headers: HeaderMap::new(),
     };
-    let input = unpack_meta(&input);
+    let input = unpack_meta(input);
     router
         .dispatch(&ctx, &path, input)
         .await
@@ -37,7 +37,7 @@ pub async fn rpc_sub(
         .get_sub_handler(&path)
         .ok_or_else(|| format!("unknown subscription path: {path}"))?;
     let state = state.inner().clone();
-    let input = unpack_meta(&input);
+    let input = unpack_meta(input);
 
     tokio::spawn(async move {
         let ctx = Ctx { state, headers: HeaderMap::new() };
