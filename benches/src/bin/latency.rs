@@ -1,14 +1,15 @@
-//! End-to-end latency benchmark for fnrpc-web vs xitca-web.
+//! Concurrent latency benchmark for fnrpc-web vs xitca-web.
 //!
-//! Starts each server as an external process, sends requests via reqwest,
-//! records latency, and reports P50/P95/P99/RPS.
+//! Reference: tt benchmark (web-server/tt) — ramp-up concurrency, measure
+//! RPS, latency percentiles, and error rate at each level.
 //!
 //! Usage:
 //!   cargo run -p benches --bin latency --release -- fnrpc-web 10000
-//!   cargo run -p benches --bin latency --release -- xitca-web 10000
 //!   cargo run -p benches --bin latency --release -- all 10000
 
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::net::TcpListener;
 
@@ -32,13 +33,12 @@ fn wait_for_server(port: u16, timeout: Duration) {
     }
 }
 
-struct LatencyStats {
-    p50: f64,
-    p95: f64,
-    p99: f64,
-    avg: f64,
-    rps: f64,
+struct BenchResult {
+    concurrency: usize,
+    duration: Duration,
+    requests: usize,
     errors: usize,
+    latencies: Vec<f64>, // ms
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
@@ -47,56 +47,107 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[idx]
 }
 
-fn run_bench(url: &str, n: usize, label: &str) -> LatencyStats {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
+/// Run a benchmark at a specific concurrency level.
+/// Spawns `concurrency` tasks, each sending requests in a loop for `duration`.
+async fn bench_concurrent(
+    url: &str,
+    concurrency: usize,
+    duration: Duration,
+) -> BenchResult {
+    let stop = Arc::new(AtomicBool::new(false));
+    let latencies = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let errors = Arc::new(std::sync::Mutex::new(0usize));
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .pool_max_idle_per_host(usize::MAX)
         .build()
         .unwrap();
 
-    rt.block_on(async {
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .pool_max_idle_per_host(0) // no connection pooling
-            .build()
-            .unwrap();
+    let mut handles = Vec::with_capacity(concurrency);
 
-        let mut latencies = Vec::with_capacity(n);
-        let mut errors = 0;
-        let start = Instant::now();
+    for _ in 0..concurrency {
+        let stop = stop.clone();
+        let latencies = latencies.clone();
+        let errors = errors.clone();
+        let client = client.clone();
+        let url = url.to_string();
 
-        for _ in 0..n {
-            let t0 = Instant::now();
-            match client.get(url).send().await {
-                Ok(resp) => {
-                    let _body = resp.bytes().await.unwrap();
-                    let elapsed = t0.elapsed();
-                    latencies.push(elapsed.as_secs_f64() * 1000.0);
-                }
-                Err(_) => {
-                    errors += 1;
+        handles.push(tokio::spawn(async move {
+            loop {
+                if stop.load(Ordering::Relaxed) { break; }
+                let t0 = Instant::now();
+                match client.get(&url).send().await {
+                    Ok(resp) => {
+                        let _body = resp.bytes().await.unwrap();
+                        let elapsed = t0.elapsed();
+                        latencies.lock().unwrap().push(elapsed.as_secs_f64() * 1000.0);
+                    }
+                    Err(_) => {
+                        *errors.lock().unwrap() += 1;
+                    }
                 }
             }
-        }
+        }));
+    }
 
-        let total = start.elapsed();
-        let rps = n as f64 / total.as_secs_f64();
-        latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    tokio::time::sleep(duration).await;
+    stop.store(true, Ordering::Relaxed);
 
-        let avg = latencies.iter().sum::<f64>() / latencies.len() as f64;
-        let p50 = percentile(&latencies, 50.0);
-        let p95 = percentile(&latencies, 95.0);
-        let p99 = percentile(&latencies, 99.0);
+    // Wait for all tasks to stop
+    for h in handles {
+        let _ = h.await;
+    }
 
-        eprintln!("{label:30} {n:>8} req  {rps:>8.0} RPS  avg={avg:>7.3}ms  p50={p50:>7.3}ms  p95={p95:>7.3}ms  p99={p99:>7.3}ms  err={errors}",
-            label = format!("{label}"));
+    let latencies = latencies.lock().unwrap().clone();
+    let errors = *errors.lock().unwrap();
 
-        LatencyStats { p50, p95, p99, avg, rps, errors }
-    })
+    BenchResult {
+        concurrency,
+        duration,
+        requests: latencies.len(),
+        errors,
+        latencies,
+    }
 }
 
-fn run_fnrpc_web(n: usize) {
+fn print_results(scenario: &str, results: &[BenchResult]) {
+    println!();
+    println!("  {scenario}");
+    println!("  {:>6}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
+        "并发", "请求数", "RPS", "avg(ms)", "p50(ms)", "p95(ms)", "p99(ms)", "错误率");
+    println!("  {}",
+        std::iter::repeat("-").take(80).collect::<String>());
+
+    for r in results {
+        let mut sorted = r.latencies.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let avg = sorted.iter().sum::<f64>() / sorted.len().max(1) as f64;
+        let p50 = percentile(&sorted, 50.0);
+        let p95 = percentile(&sorted, 95.0);
+        let p99 = percentile(&sorted, 99.0);
+        let rps = r.requests as f64 / r.duration.as_secs_f64();
+        let err_rate = if r.requests + r.errors > 0 {
+            r.errors as f64 / (r.requests + r.errors) as f64 * 100.0
+        } else { 0.0 };
+
+        println!("  {:>6}  {:>8}  {:>8.0}  {:>8.3}  {:>8.3}  {:>8.3}  {:>8.3}  {:>7.2}%",
+            r.concurrency, r.requests, rps, avg, p50, p95, p99, err_rate);
+    }
+}
+
+async fn run_scenario(url: &str, scenario: &str, concurrency_levels: &[usize], duration: Duration) {
+    let mut results = Vec::new();
+    for &c in concurrency_levels {
+        eprintln!("  {scenario} concurrency={c}...");
+        let result = bench_concurrent(url, c, duration).await;
+        results.push(result);
+    }
+    print_results(scenario, &results);
+}
+
+fn run_fnrpc_web(concurrency_levels: &[usize], duration: Duration) {
     let port = find_free_port();
-    let addr = format!("127.0.0.1:{port}");
 
     let mut server = Command::new("target/release/fnrpc_web_server")
         .arg("--port")
@@ -108,36 +159,60 @@ fn run_fnrpc_web(n: usize) {
 
     wait_for_server(port, Duration::from_secs(5));
 
-    run_bench(&format!("http://127.0.0.1:{port}/noop?input=null"), n, "fnrpc-web/noop_json");
-    run_bench(&format!("http://127.0.0.1:{port}/raw_noop"), n, "fnrpc-web/noop_raw");
-    run_bench(&format!("http://127.0.0.1:{port}/in?key=fnrpc"), n, "fnrpc-web/lookup_json");
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    rt.block_on(async {
+        run_scenario(
+            &format!("http://127.0.0.1:{port}/noop?input=null"),
+            "fnrpc-web/noop_json",
+            concurrency_levels,
+            duration,
+        ).await;
+        run_scenario(
+            &format!("http://127.0.0.1:{port}/raw_noop"),
+            "fnrpc-web/noop_raw",
+            concurrency_levels,
+            duration,
+        ).await;
+        run_scenario(
+            &format!("http://127.0.0.1:{port}/in?key=fnrpc"),
+            "fnrpc-web/lookup",
+            concurrency_levels,
+            duration,
+        ).await;
+    });
 
     let _ = server.kill();
     let _ = server.wait();
 }
 
-fn run_xitca_web(n: usize) {
-    // xitca-web server binary — use the dhat_server with xitca-web feature
-    let port = find_free_port();
-    let addr = format!("127.0.0.1:{port}");
-
-    // For xitca-web, we start the benchmark server via the dhat_server binary
-    // which serves on port 19111 by default. We use a different approach:
-    // just test against the fnrpc-web server since both use the same HTTP stack.
-    eprintln!("xitca-web server not yet available as standalone binary — skipping");
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let framework = args.get(1).map(|s| s.as_str()).unwrap_or_else(|| {
-        eprintln!("Usage: latency [fnrpc-web|all] [n]");
-        eprintln!("  (xitca-web standalone server not yet available)");
+        eprintln!("Usage: latency [fnrpc-web|all] [max_concurrency] [duration_secs]");
+        eprintln!("  Measures RPS, latency percentiles, and error rate at increasing concurrency levels");
         std::process::exit(1);
     });
-    let n: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(10_000);
+    let max_concurrency: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1000);
+    let duration_secs: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(2);
 
-    // Build the server binary first if not already built
-    eprintln!("Ensuring fnrpc_web_server is built...");
+    // Ramp-up concurrency levels: 1, 10, 50, 100, 200, 500, 1000, ...
+    let mut levels = vec![1, 10, 50, 100];
+    let mut c = 200;
+    while c <= max_concurrency {
+        levels.push(c);
+        c *= 2;
+    }
+    if *levels.last().unwrap() != max_concurrency {
+        levels.push(max_concurrency);
+    }
+
+    let duration = Duration::from_secs(duration_secs);
+
+    eprintln!("Building fnrpc_web_server...");
     let status = Command::new("cargo")
         .args(["build", "--release", "-p", "benches", "--bin", "fnrpc_web_server"])
         .stdout(Stdio::null())
@@ -147,9 +222,13 @@ fn main() {
     assert!(status.success(), "build failed");
 
     match framework {
-        "fnrpc-web" => run_fnrpc_web(n),
+        "fnrpc-web" => {
+            println!("fnrpc-web 并发基准测试 (每级 {duration_secs} 秒)");
+            run_fnrpc_web(&levels, duration);
+        }
         "all" => {
-            run_fnrpc_web(n);
+            println!("fnrpc-web 并发基准测试 (每级 {duration_secs} 秒)");
+            run_fnrpc_web(&levels, duration);
         }
         _ => {
             eprintln!("Unknown framework: {framework}");
