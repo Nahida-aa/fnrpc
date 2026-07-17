@@ -162,29 +162,29 @@ async fn run_scenario(
 }
 
 fn run_framework(
-    name: &str, binary: &str, port: u16,
+    name: &str, binary: &str,
     concurrency_levels: &[usize], duration: Duration,
-    endpoints: &[(&str, &str, bool, &[u8])], // (path, label, is_post, body)
+    endpoints: &[(&str, &str, bool, &[u8])],
 ) {
-    let mut server = if name == "xitca-web" {
-        Command::new(binary).arg(port.to_string())
-            .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-    } else {
-        Command::new(binary).arg("--port").arg(port.to_string())
-            .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-    };
-    let mut server = server.expect(&format!("failed to start {name} server"));
-
-    wait_for_server(port, Duration::from_secs(5));
-    let server_pid = server.id();
-    let baseline_mem = read_memory_kb(server_pid);
-    eprintln!("  {name} baseline memory: {} MB", baseline_mem / 1024);
-
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all().build().unwrap();
 
     rt.block_on(async {
         for (path, label, is_post, body) in endpoints {
+            let port = find_free_port();
+            let mut server = if name == "xitca-web" {
+                Command::new(binary).arg(port.to_string())
+                    .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+            } else {
+                Command::new(binary).arg("--port").arg(port.to_string())
+                    .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+            };
+            let mut server = server.expect(&format!("failed to start {name} server"));
+            wait_for_server(port, Duration::from_secs(5));
+            let server_pid = server.id();
+            let baseline_mem = read_memory_kb(server_pid);
+            eprintln!("  {name}/{label} baseline: {} MB", baseline_mem / 1024);
+
             let req = if *is_post {
                 Req::Post(format!("http://127.0.0.1:{port}{path}"), body.to_vec())
             } else {
@@ -192,11 +192,11 @@ fn run_framework(
             };
             run_scenario(&req, &format!("{name}/{label}"),
                 concurrency_levels, duration, server_pid, baseline_mem).await;
+
+            let _ = server.kill();
+            let _ = server.wait();
         }
     });
-
-    let _ = server.kill();
-    let _ = server.wait();
 }
 
 fn build_server(name: &str) {
@@ -259,23 +259,23 @@ fn main() {
             build_server("fnrpc_web_server");
             println!("fnrpc-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("fnrpc-web", "target/release/fnrpc_web_server",
-                find_free_port(), &levels, duration, fnrpc_endpoints);
+                &levels, duration, fnrpc_endpoints);
         }
         "xitca-web" => {
             build_server("xitca_web_server");
             println!("xitca-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("xitca-web", "target/release/xitca_web_server",
-                find_free_port(), &levels, duration, xitca_endpoints);
+                &levels, duration, xitca_endpoints);
         }
         "all" => {
             build_server("fnrpc_web_server");
             build_server("xitca_web_server");
             println!("fnrpc-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("fnrpc-web", "target/release/fnrpc_web_server",
-                find_free_port(), &levels, duration, fnrpc_endpoints);
+                &levels, duration, fnrpc_endpoints);
             println!("\nxitca-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("xitca-web", "target/release/xitca_web_server",
-                find_free_port(), &levels, duration, xitca_endpoints);
+                &levels, duration, xitca_endpoints);
         }
         _ => { eprintln!("Unknown: {framework}"); std::process::exit(1); }
     }
