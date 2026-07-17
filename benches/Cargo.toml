@@ -12,6 +12,7 @@ axum-plain = []
 actix-web = ["dep:actix-web", "dep:actix-rt"]
 ntex = ["dep:ntex"]
 full = ["fnrpc-variants", "xitca-web-plain", "axum-plain", "actix-web", "ntex"]
+dhat-heap = ["dep:dhat"]
 
 [dependencies]
 # fnrpc variants (always available via path)
@@ -32,7 +33,7 @@ tower = "0.5"
 # Bench harness
 criterion = { version = "0.5", features = ["async_tokio"] }
 tokio = { version = "1", features = ["full"] }
-dhat = "0.3"
+dhat = { version = "0.3", optional = true }
 serde_json = "1"
 serde = "1"
 async-trait = { workspace = true }
@@ -86,6 +87,11 @@ path = "src/bin/dhat_compare.rs"
 [[bin]]
 name = "latency"
 path = "src/bin/latency.rs"
+required-features = ["reqwest"]
+
+[[bin]]
+name = "dhat_lookup"
+path = "src/bin/dhat_lookup.rs"
 required-features = ["reqwest"]
 
 [[bin]]

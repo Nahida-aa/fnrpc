@@ -7,6 +7,10 @@ use fnrpc::router::RpcRouterBuilder;
 use fnrpc_web::{RpcWebConfig, run};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 type AppCtx = Arc<RwLock<HashMap<String, f64>>>;
 
 // ── Small payload: noop ────────────────────────────────
@@ -137,19 +141,28 @@ fn make_medium_payload() -> MediumPayload {
 
 // ── Server setup ────────────────────────────────────────
 
-fn parse_args() -> u16 {
+fn parse_args() -> (u16, bool) {
+    let mut port = 19111u16;
+    let mut dhat_enabled = false;
     let args: Vec<String> = std::env::args().collect();
-    for i in 0..args.len() {
-        if args[i] == "--port" {
-            if let Some(p) = args.get(i + 1) { return p.parse().unwrap_or(19111); }
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--port" => { i += 1; if let Some(p) = args.get(i) { port = p.parse().unwrap_or(19111); } }
+            "--dhat" => dhat_enabled = true,
+            _ => {}
         }
+        i += 1;
     }
-    19111
+    (port, dhat_enabled)
 }
 
 #[tokio::main]
 async fn main() {
-    let port = parse_args();
+    let (port, dhat_enabled) = parse_args();
+
+    #[cfg(feature = "dhat-heap")]
+    let _prof = if dhat_enabled { Some(dhat::Profiler::new_heap()) } else { None };
 
     let data = Arc::new(RwLock::new(HashMap::from([
         ("actix".into(), 1.0), ("axum".into(), 2.0),
