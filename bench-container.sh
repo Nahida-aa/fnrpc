@@ -16,7 +16,7 @@ MAX_CONCURRENCY="${2:-200}"
 DURATION="${3:-3}"
 IMAGE="localhost/fnrpc-bench:latest"
 
-# Build binaries
+# Build binaries (dynamic linking, needs glibc-compatible base image)
 echo "Building binaries..."
 cargo build --release -p benches \
     --bin fnrpc_web_server \
@@ -27,7 +27,7 @@ cargo build --release -p benches \
 if ! podman image exists "$IMAGE" 2>/dev/null; then
     echo "Building container image..."
     echo "Pulling debian base image..."
-    if ! podman pull docker.io/library/debian:bookworm-slim 2>/dev/null; then
+    if ! podman pull docker.io/library/debian:trixie-slim 2>/dev/null; then
         echo "Warning: cannot pull debian image. Falling back to direct execution."
         echo ""
         exec cargo run --release -p benches --bin latency --features reqwest -- \
@@ -37,7 +37,7 @@ if ! podman image exists "$IMAGE" 2>/dev/null; then
     cat > /tmp/Containerfile.fnrpc << 'CONTAINERFILE'
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl libc6 && rm -rf /var/lib/apt/lists/*
+    ca-certificates curl && rm -rf /var/lib/apt/lists/*
 COPY target/release/fnrpc_web_server /usr/local/bin/
 COPY target/release/xitca_web_server /usr/local/bin/
 COPY target/release/latency /usr/local/bin/
