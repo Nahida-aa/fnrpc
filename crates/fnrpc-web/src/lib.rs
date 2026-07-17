@@ -26,7 +26,13 @@ fn raw_response(status: StatusCode, body: Vec<u8>, content_type: Option<&'static
     if let Some(ct) = content_type {
         builder = builder.header(CONTENT_TYPE, HeaderValue::from_static(ct));
     }
-    builder.body(ResponseBody::bytes(Bytes::from(body))).unwrap()
+    // Use static bytes for null/empty responses to avoid allocation
+    let resp_body = if body == b"null" {
+        ResponseBody::bytes(Bytes::from_static(b"null"))
+    } else {
+        ResponseBody::bytes(Bytes::from(body))
+    };
+    builder.body(resp_body).unwrap()
 }
 
 fn error_response(e: fnrpc::error::RpcErr) -> Response<ResponseBody> {
@@ -91,6 +97,58 @@ where
     res
 }
 
+// ── Input parsing (JSON path) ─────────────────────────────
+
+/// Extract the `input` parameter from a URL query string.
+fn extract_input(query_str: &str) -> Value {
+    let mut remaining = query_str;
+    loop {
+        let Some(eq_pos) = remaining.find("input=") else { break };
+        let after_eq = &remaining[eq_pos + 6..];
+        let end = after_eq.find('&').unwrap_or(after_eq.len());
+        let raw = &after_eq[..end];
+        if !raw.is_empty() {
+            let decoded: String = percent_decode(raw);
+            if let Ok(val) = serde_json::from_str(&decoded) {
+                return val;
+            }
+        }
+        remaining = &after_eq[end..];
+        if remaining.is_empty() { break; }
+        if end < after_eq.len() { remaining = &remaining[1..]; }
+    }
+    Value::Null
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'+' => result.push(' '),
+            b'%' => {
+                let hi = bytes.next().and_then(|c| hex_val(c));
+                let lo = bytes.next().and_then(|c| hex_val(c));
+                match (hi, lo) {
+                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
+                    _ => result.push('%'),
+                }
+            }
+            _ => result.push(b as char),
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
 // ── Main handler ──────────────────────────────────────────
 
 /// Handle a single fnrpc HTTP request.
@@ -138,23 +196,26 @@ where
     let path = req.uri().path().strip_prefix('/').unwrap_or("");
     let ctx = (config.ctx_from_headers)(req.headers());
 
-    // For GET requests with JSON handlers, encode the query string as
-    // the input bytes so call_bytes can deserialize it.
-    let input_bytes = if method == Method::GET && body_buf.is_empty() {
-        req.uri().query().unwrap_or("").as_bytes()
-    } else {
-        body_buf.as_slice()
-    };
-
     if let Some(handler) = config.router.get_handler(path) {
-        match handler.call_bytes(&ctx, input_bytes) {
+        // For JSON handlers on GET, use call_value directly (Value → bytes)
+        // to avoid the extra serialize-deserialize round-trip.
+        let is_json = handler.content_type() == Some("application/json");
+        let result = if method == Method::GET && is_json {
+            let input_val = req.uri().query().map(|q| extract_input(q)).unwrap_or(Value::Null);
+            handler.call_value(&ctx, input_val)
+        } else {
+            handler.call_bytes(&ctx, body_buf.as_slice())
+        };
+
+        match result {
             Ok(bytes) => raw_response(StatusCode::OK, bytes, handler.content_type()),
             Err(e) => error_response(e),
         }
     } else if method == Method::GET {
         // Subscriptions (SSE) — only on GET
-        // For now, subscriptions still use the JSON Value path
-        let input_raw: Value = serde_json::from_slice(input_bytes).unwrap_or(Value::Null);
+        let input_raw: Value = req.uri().query()
+            .and_then(|q| serde_json::from_str(q).ok())
+            .unwrap_or(Value::Null);
         if let Some(handler) = config.router.get_sub_handler(path) {
             sse_response(handler, &ctx, input_raw)
         } else {
