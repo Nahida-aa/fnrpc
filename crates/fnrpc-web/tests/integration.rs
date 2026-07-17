@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use fnrpc::error::RpcErr;
 use fnrpc::handler::RpcFn;
-use fnrpc_web::{handle, FnrpcConfig};
+use fnrpc_web::{handle, RpcWebConfig};
 use xitca_http::body::RequestBody;
 use xitca_http::bytes::Bytes;
 use xitca_http::http::{Method, Request, RequestExt, StatusCode};
@@ -22,7 +22,7 @@ async fn test_query_get() {
     }
 
     let router = fnrpc::router::RpcRouterBuilder::<()>::new().query(Greet).build();
-    let config = FnrpcConfig {
+    let config = RpcWebConfig {
         router,
         ctx_from_headers: Arc::new(|_| ()),
     };
@@ -50,7 +50,7 @@ async fn test_query_post() {
     }
 
     let router = fnrpc::router::RpcRouterBuilder::<()>::new().query(Add).build();
-    let config = FnrpcConfig {
+    let config = RpcWebConfig {
         router,
         ctx_from_headers: Arc::new(|_| ()),
     };
@@ -71,7 +71,7 @@ async fn test_query_post() {
 #[tokio::test]
 async fn test_not_found() {
     let router = fnrpc::router::RpcRouterBuilder::<()>::new().build();
-    let config = FnrpcConfig {
+    let config = RpcWebConfig {
         router,
         ctx_from_headers: Arc::new(|_| ()),
     };
@@ -106,7 +106,7 @@ async fn test_subscribe() {
     }
 
     let router = fnrpc::router::RpcRouterBuilder::<()>::new().subscribe(Tick).build();
-    let config = FnrpcConfig {
+    let config = RpcWebConfig {
         router,
         ctx_from_headers: Arc::new(|_| ()),
     };
@@ -141,7 +141,7 @@ async fn test_with_context() {
     let router = fnrpc::router::RpcRouterBuilder::<MyCtx>::new()
         .query(CtxGreet)
         .build();
-    let config = FnrpcConfig {
+    let config = RpcWebConfig {
         router,
         ctx_from_headers: Arc::new(|_| MyCtx {
             prefix: "yo ".to_string(),

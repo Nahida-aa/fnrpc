@@ -4,7 +4,7 @@ use dhat::{HeapStats, Profiler};
 use fnrpc::error::RpcErr;
 use fnrpc::handler::RpcFn;
 use fnrpc::router::RpcRouterBuilder;
-use fnrpc_web::{handle, FnrpcConfig};
+use fnrpc_web::{handle, RpcWebConfig};
 use xitca_http::body::RequestBody;
 use xitca_http::http::{Method, Request};
 
@@ -36,7 +36,7 @@ fn make_get_req(uri: &str) -> Request<RequestBody> {
 }
 
 pub(crate) async fn run(label: &str, n: usize) {
-    let config = FnrpcConfig {
+    let config = RpcWebConfig {
         router: RpcRouterBuilder::<()>::new().query(Noop).query(Echo).build(),
         ctx_from_headers: Arc::new(|_| ()),
     };

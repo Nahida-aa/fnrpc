@@ -4,13 +4,15 @@ use xitca_web::App;
 use xitca_web::WebContext;
 use xitca_web::body::{BodyExt, RequestBody, ResponseBody};
 use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
+use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
 use xitca_web::route::{get, post};
 use xitca_web::service::{Service, fn_service};
 
 async fn handler_noop(_ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_web::error::Error> {
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"ok")))
+        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"null")))
         .unwrap())
 }
 
@@ -25,6 +27,7 @@ async fn handler_echo(mut ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_
     let bytes = serde_json::to_vec(&val).unwrap_or_default();
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
+        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
         .body(ResponseBody::bytes(bytes))
         .unwrap())
 }

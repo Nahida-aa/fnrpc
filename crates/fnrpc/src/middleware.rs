@@ -1,9 +1,9 @@
 //! Middleware system for fnrpc.
 //!
-//! - [`FnService`] — the core callable trait (RPIT-based, zero `Box::pin`
+//! - [`RpcService`] — the core callable trait (RPIT-based, zero `Box::pin`
 //!   inside the monomorphized chain).
-//! - [`ErasedFnService`] — dyn-compatible wrapper for storage in `Arc`.
-//! - [`FnLayer`] — a composable middleware wrapper (generic over inner `S`).
+//! - [`ErasedRpcService`] — dyn-compatible wrapper for storage in `Arc`.
+//! - [`RpcLayer`] — a composable middleware wrapper (generic over inner `S`).
 //! - [`HookLayer`] — before/after hooks.
 //! - [`TracingLayer`] — structured logging (feature = `"tracing"`).
 
@@ -22,18 +22,18 @@ use crate::error::RpcErr;
 /// Uses **RPIT (return-position `impl Trait`)** — no `#[async_trait]`,
 /// no hidden `Box::pin` allocation per call inside the monomorphized chain.
 ///
-/// **This trait is NOT `dyn`-compatible.** Use [`ErasedFnService`] for
+/// **This trait is NOT `dyn`-compatible.** Use [`ErasedRpcService`] for
 /// type-erased storage (a single `Box::pin` at the dyn boundary).
 ///
 /// The [`RpcRouterBuilder`](crate::router::RpcRouterBuilder) builds a concrete
-/// monomorphized chain of layers around a [`RouterService`](crate::router::RouterService).
+/// monomorphized chain of layers around a [`InnerService`](crate::router::InnerService).
 /// At [`build()`](crate::router::RpcRouterBuilder::build) time the chain is
-/// wrapped into a single `Arc<dyn ErasedFnService>` for storage.
+/// wrapped into a single `Arc<dyn ErasedRpcService>` for storage.
 ///
 /// The `extensions` parameter is a per-request type-map shared across the
 /// middleware chain. Middleware can insert typed values (e.g. authenticated
 /// user info) for downstream middleware or the transport layer to read.
-pub trait FnService<Ctx> {
+pub trait RpcService<Ctx> {
     fn call<'a>(
         &'a self,
         ctx: &'a Ctx,
@@ -43,11 +43,11 @@ pub trait FnService<Ctx> {
     ) -> impl Future<Output = Result<Value, RpcErr>> + 'a;
 }
 
-/// Dyn-compatible version of [`FnService`] for storage behind `Arc`.
+/// Dyn-compatible version of [`RpcService`] for storage behind `Arc`.
 ///
-/// Wraps the RPIT-based `FnService::call` with a single `Box::pin` at the
+/// Wraps the RPIT-based `RpcService::call` with a single `Box::pin` at the
 /// dyn boundary. Inside the monomorphized chain there are zero allocations.
-pub trait ErasedFnService<Ctx>: Send + Sync {
+pub trait ErasedRpcService<Ctx>: Send + Sync {
     fn call<'a>(
         &'a self,
         ctx: &'a Ctx,
@@ -57,7 +57,7 @@ pub trait ErasedFnService<Ctx>: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + 'a>>;
 }
 
-impl<Ctx: Send + Sync + 'static, T: FnService<Ctx> + Send + Sync + 'static> ErasedFnService<Ctx>
+impl<Ctx: Send + Sync + 'static, T: RpcService<Ctx> + Send + Sync + 'static> ErasedRpcService<Ctx>
     for T
 {
     fn call<'a>(
@@ -67,13 +67,13 @@ impl<Ctx: Send + Sync + 'static, T: FnService<Ctx> + Send + Sync + 'static> Eras
         input: Value,
         extensions: &'a mut Extensions,
     ) -> Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + 'a>> {
-        Box::pin(FnService::call(self, ctx, path, input, extensions))
+        Box::pin(RpcService::call(self, ctx, path, input, extensions))
     }
 }
 
 /// A composable middleware layer, generic over its inner service type `S`.
 ///
-/// Instead of returning a `Box<dyn ErasedFnService>`, the implementation
+/// Instead of returning a `Box<dyn ErasedRpcService>`, the implementation
 /// specifies a concrete [`Service`](Self::Service) type so the entire chain
 /// is monomorphized at compile time.
 ///
@@ -83,20 +83,20 @@ impl<Ctx: Send + Sync + 'static, T: FnService<Ctx> + Send + Sync + 'static> Eras
 /// [`RpcRouterBuilder`](crate::router::RpcRouterBuilder) becomes the
 /// outermost (first to receive the call, last to produce the response).
 ///
-/// # When to implement [`FnLayer`] vs using [`HookLayer`]
+/// # When to implement [`RpcLayer`] vs using [`HookLayer`]
 ///
 /// | Situation | Recommendation |
 ///|---|---|
 /// | Simple before/after logic | [`HookLayer`] (closures, no boilerplate) |
-/// | Need to hold state (counters, config) | Implement [`FnLayer`] yourself |
+/// | Need to hold state (counters, config) | Implement [`RpcLayer`] yourself |
 /// | Need to short-circuit | Either — `HookLayer::before` returns `Err`, or custom returns early |
-/// | Want to replace the entire call | Implement [`FnLayer`] — you control whether/when to call `inner` |
+/// | Want to replace the entire call | Implement [`RpcLayer`] — you control whether/when to call `inner` |
 ///
 /// # Example — latency timer
 ///
 /// ```ignore
 /// use std::time::Instant;
-/// use fnrpc::middleware::{FnLayer, FnService};
+/// use fnrpc::middleware::{RpcLayer, RpcService};
 ///
 /// struct LatencyLayer;
 ///
@@ -104,7 +104,7 @@ impl<Ctx: Send + Sync + 'static, T: FnService<Ctx> + Send + Sync + 'static> Eras
 ///     inner: S,
 /// }
 ///
-/// impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for LatencyService<Ctx, S> {
+/// impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcService<Ctx> for LatencyService<Ctx, S> {
 ///     async fn call(&self, ctx: &Ctx, path: &str, input: Value, extensions: &mut Extensions) -> Result<Value, RpcErr> {
 ///         let start = Instant::now();
 ///         let result = self.inner.call(ctx, path, input, extensions).await;
@@ -114,7 +114,7 @@ impl<Ctx: Send + Sync + 'static, T: FnService<Ctx> + Send + Sync + 'static> Eras
 ///     }
 /// }
 ///
-/// impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnLayer<Ctx, S> for LatencyLayer {
+/// impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcLayer<Ctx, S> for LatencyLayer {
 ///     type Service = LatencyService<Ctx, S>;
 ///     fn layer(&self, inner: S) -> LatencyService<Ctx, S> {
 ///         LatencyService { inner }
@@ -131,7 +131,7 @@ impl<Ctx: Send + Sync + 'static, T: FnService<Ctx> + Send + Sync + 'static> Eras
 ///     inner: S,
 /// }
 ///
-/// impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for AuthService<Ctx, S> {
+/// impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcService<Ctx> for AuthService<Ctx, S> {
 ///     async fn call(&self, ctx: &Ctx, path: &str, input: Value, extensions: &mut Extensions) -> Result<Value, RpcErr> {
 ///         let user = authenticate(ctx)?;
 ///         extensions.insert(user);
@@ -139,9 +139,9 @@ impl<Ctx: Send + Sync + 'static, T: FnService<Ctx> + Send + Sync + 'static> Eras
 ///     }
 /// }
 /// ```
-pub trait FnLayer<Ctx, S: FnService<Ctx>>: Send + Sync {
+pub trait RpcLayer<Ctx, S: RpcService<Ctx>>: Send + Sync {
     /// The concrete service type produced by this layer.
-    type Service: FnService<Ctx>;
+    type Service: RpcService<Ctx>;
 
     /// Wrap `inner` with this layer's logic, returning a new service.
     fn layer(&self, inner: S) -> Self::Service;
@@ -157,7 +157,7 @@ type AfterHook<Ctx> =
 
 /// A convenience layer with before/after hooks.
 ///
-/// Use this when you don't need to hold state or write a full [`FnLayer`]
+/// Use this when you don't need to hold state or write a full [`RpcLayer`]
 /// implementation — just attach closures for before/after logic.
 ///
 /// # Examples
@@ -287,7 +287,7 @@ pub struct HookService<Ctx, S> {
     after: Option<AfterHook<Ctx>>,
 }
 
-impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for HookService<Ctx, S> {
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcService<Ctx> for HookService<Ctx, S> {
     async fn call(
         &self,
         ctx: &Ctx,
@@ -306,7 +306,7 @@ impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for HookServi
     }
 }
 
-impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnLayer<Ctx, S> for HookLayer<Ctx> {
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcLayer<Ctx, S> for HookLayer<Ctx> {
     type Service = HookService<Ctx, S>;
 
     fn layer(&self, inner: S) -> Self::Service {
@@ -318,7 +318,7 @@ impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnLayer<Ctx, S> for HookLaye
     }
 }
 
-// ── LayerFnService (closure-based middleware) ──────────────
+// ── ClosureService (closure-based middleware) ──────────────
 
 /// A middleware service wrapping an arbitrary closure.
 ///
@@ -345,14 +345,14 @@ impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnLayer<Ctx, S> for HookLaye
 ///     })
 ///     .build();
 /// ```
-pub struct LayerFnService<Ctx, S, F> {
+pub struct ClosureService<Ctx, S, F> {
     pub(crate) inner: S,
     pub(crate) func: F,
     pub(crate) _marker: PhantomData<Ctx>,
 }
 
-impl<Ctx: Send + Sync + 'static, S: Send + Sync + 'static, F> FnService<Ctx>
-    for LayerFnService<Ctx, S, F>
+impl<Ctx: Send + Sync + 'static, S: Send + Sync + 'static, F> RpcService<Ctx>
+    for ClosureService<Ctx, S, F>
 where
     F: for<'a> Fn(&'a S, &'a Ctx, &'a str, Value, &'a mut Extensions)
             -> Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + Send + 'a>>
@@ -384,7 +384,7 @@ pub struct TracingService<Ctx, S> {
 }
 
 #[cfg(feature = "tracing")]
-impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for TracingService<Ctx, S> {
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcService<Ctx> for TracingService<Ctx, S> {
     async fn call(
         &self,
         ctx: &Ctx,
@@ -422,7 +422,7 @@ impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for TracingSe
 }
 
 #[cfg(feature = "tracing")]
-impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnLayer<Ctx, S> for TracingLayer {
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcLayer<Ctx, S> for TracingLayer {
     type Service = TracingService<Ctx, S>;
 
     fn layer(&self, inner: S) -> Self::Service {
