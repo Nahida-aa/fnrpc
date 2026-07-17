@@ -1,5 +1,6 @@
 ## Objective
-- Redesign the fnrpc client API: direct-call `client.xxx(input)` without method suffixes, subscriptions as `AsyncIterable`, unified Rust HTTP routes with kind-based dispatch, runtime kind map
+- TypedHandler + at() registration (xitca-web–style): `#[rpc_query("get", "health")]` macro attrs, zero-sized marker structs with `TypedHandler` trait, `.at(handler)` on builder
+- Rename `fnrpc::codegen` → `fnrpc::gen_ts_client`
 
 ## Important Details
 - No backward compat — old `.query()`/`.mutate()`/`.subscribe()` suffixes removed, `Observable`/`Unsubscribable`/`ExecuteArgs` types gone
@@ -10,7 +11,16 @@
 - **BigInt fix**: cross-IPC (Tauri `JSON.stringify` can't handle BigInt). Solution: orpc-style `{ json, meta }` envelope on TS client side → Rust `unpack_meta()` unwraps before dispatch
 
 ## Work State
-### Completed
+### Completed (current session)
+- `fnrpc::codegen` renamed to `fnrpc::gen_ts_client`; workspace refs updated (tests, examples, READMEs)
+- Added `TypedHandler<Ctx>` / `TypedSubscribeHandler<Ctx>` traits in `handler.rs` — zero-sized marker pattern from xitca-web
+- Proc macros (`rpc_query`/`rpc_mutate`/`rpc_subscribe`) now accept positional attribute args:
+  - `#[rpc_query("get", "health")]` — method + path; both optional, default to fn name + "get"/"post"
+  - Generated struct now implements `TypedHandler<Ctx>` in addition to `RpcFn<Ctx>`
+- Added `.at<T: TypedHandler<Ctx>>(handler)` / `.at_sub<T: TypedSubscribeHandler<Ctx>>(handler)` on `RpcRouterBuilder`
+- Old `.query()` / `.mutate()` / `.subscribe()` / `.route()` still work (backward compat)
+- All 43 tests pass (fnrpc: 28, fnrpc-web: 5, fnrpc-xitca: 5, fnrpc-axum: 5)
+### Completed (prior sessions)
 - Rust side: macros (`rpc_subscribe`/`rpc_mutate`), handler traits, router (`get_procedure_kind`, `__procedureKinds` codegen), Axum merge, Tauri command rename — all compile + 26 tests pass (18 integration + 8 serializer)
 - TS `types.ts`: `ProcedureKind = "query" | "mutate" | "subscribe"`; removed old types; added `ConsumeEventOptions`
 - TS `createClient.ts`: `createClient<P>(transport, kindMap)` — direct proxy calls, no method suffixes
@@ -19,7 +29,7 @@
 - TS `tauri.ts`: subscribe 返回 `Promise<AsyncIterable>` — invoke 成功后 resolve Promise 代表连接就绪
 - TS `UntypedClient.ts`: fetchTransport subscribe 返回 `Promise<AsyncIterable>` — EventSource `onopen` 后 resolve Promise
   - `consumeEventIterator` 接受 `AsyncIterable<T> | Promise<AsyncIterable<T>>`（内部 await）
-- TS `serializer.ts`: orpc-style `serialize(input)` → `{ json, meta }` with `BIGINT` type tag, `deserialize(serialized)` → restored value, `flattenForRust()` for Rust compat, `safeStringify()`
+- TS `serializer.rs`: orpc-style `serialize(input)` → `{ json, meta }` with `BIGINT` type tag, `deserialize(serialized)` → restored value, `flattenForRust()` for Rust compat, `safeStringify()`
   - `walk()` 中 `undefined` → `null`，避免 Tauri IPC 丢 key
   - `flattenForRust()` / `deserialize()` 处理根级别 meta（segments 为空）
 - Rust `serializer.rs`: `unpack_meta()` + `apply_root_fix()` — 处理根级别 BIGINT
@@ -181,3 +191,61 @@ Both apply `serialize()` → `flattenForRust()` before sending.
 - **BigInt precision**: `flattenForRust()` converts BigInt strings to Numbers (precision loss > 2^53)
 - **No WASM/browser test suite** for client packages
 - **Example excluded from workspace** — build/codegen must be done in example dir
+
+## Benchmark Data
+
+In-process dhat allocation analysis: 20,000 requests per endpoint, single-threaded tokio runtime, release mode.
+
+### Per‑request allocations (noop endpoint — minimum handler)
+
+| Configuration | Bytes/op | Blocks/op | Δ vs. plain |
+|---|---|---|---|
+| **xitca‑web** (plain) | 177 | 3 | — |
+| **fnrpc‑web** (bare xitca‑http) | 1 619 | 13 | — |
+| **fnrpc‑xitca** | 2 414 | 17 | + 2 237 B, + 14 blks |
+| **axum** (plain) | 1 032 | 13 | — |
+| **fnrpc‑axum** | 3 451 | 29 | + 2 419 B, + 16 blks |
+| **actix‑web** (plain) | 565 | 11 | — |
+| **ntex** (plain) | 1 355 | 8 | — |
+
+### Dispatch‑level allocations (no fnrpc‑web handler, only `dispatch_send`)
+
+| Operation | Bytes/op | Blocks/op |
+|---|---|---|
+| `dispatch_send` (noop) | 201 | 3 |
+| `dispatch_send` (echo String) | 242 | 5 |
+| `dispatch_send` (not_found) | 165 | 3 |
+
+### Allocation breakdown (per-backtrace)
+
+The 3 dispatch‑level allocs come from three `Box::pin` boundaries:
+
+| Size | Source | What |
+|---|---|---|
+| 128 B | `ErasedFnService::call` blanket | outer dispatch boundary |
+| 72 B | `ErasedHandler::call` blanket | serde + exec wrapper |
+| 1 B | async‑trait generated `Box::pin` | innermost handler future |
+
+### Analysis
+
+1. **fnrpc dispatch overhead is 3 allocs, ~200 B** — constant regardless of handler complexity.
+2. **Framework overhead varies 3×–10×**: xitca‑web (3 blks) ≪ actix‑web (11) < axum (13) ≪ fnrpc‑axum (29). Bare xitca‑http (fnrpc‑web) is the most allocation‑efficient fnrpc host.
+3. **fnrpc‑xitca adds 14 blks vs. plain xitca‑web**; of those, only 3 are dispatch_send — the rest is request/response parsing and the integration handler's extractors.
+4. **fnrpc‑axum adds 16 blks vs. plain axum**; again only 3 come from dispatch_send.
+5. **echo vs. noop** adds ~2 allocs (String serde) at the dispatch level; at the server level the difference is smaller because variable‑size allocations (e.g. serde_json buffers) subsume the extra bytes without new blocks.
+
+### Next optimization targets
+
+The 3 `Box::pin` allocations are the fnrpc core cost. To reduce 3→2:
+- Merge `ErasedHandler` blanket `Box::pin` with the async‑trait `Box::pin` (the serde wrapper and the exec future share one allocation).
+
+The integration‑layer allocations (10–13 per request) are harder to eliminate — they come from URI parsing, query‑string HashMap, body reading, and response serialization. These are framework‑agnostic costs of any HTTP RPC handler.
+
+## Next Steps
+
+1. **Radix tree router** — replace `Arc<RwLock<BTreeMap>>` with `xitca-router` (fork of `matchit`):
+   - Build-time insertion (no per-request RwLock lock/unlock)
+   - Zero-allocation path matching
+   - Combined with `TypedHandler` / `.at()` for fully typed registration
+2. **Path string elimination** — avoid `path.to_string()` in integration handlers by leveraging the radix tree's `at()` method
+3. **Merge ErasedHandler Box::pin** — combine serde wrapper and exec future into one allocation

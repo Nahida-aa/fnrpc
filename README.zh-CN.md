@@ -100,7 +100,7 @@ Router::new()
 // scripts/gen_fnrpc.rs
 fn main() {
     let router = build_router();
-    fnrpc::codegen::write_ts_client(
+    fnrpc::gen_ts_client::write_ts_client(
         &router,
         "http://localhost:3000/fnrpc",
         Path::new("../src/bindings.ts"),

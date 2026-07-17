@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/*",
+    "benches",
     "examples/tauri-solid-tanstack/src-tauri",
     "examples/axum-react-query/server"
 ]
@@ -21,6 +22,7 @@ http = "1"
 serde = { version = "1", features = ["derive"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
 specta-typescript = { version = "0.0.12", features = ["serde"] }
+xitca-router = "0.4"
 
 [profile.release]
 lto = "fat"

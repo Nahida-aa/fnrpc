@@ -22,7 +22,6 @@ struct GreetOutput {
 
 struct Greet;
 
-#[async_trait::async_trait]
 impl RpcFn<()> for Greet {
     type Input = GreetInput;
     type Output = GreetOutput;
@@ -43,7 +42,6 @@ struct AppCtx {
 
 struct CtxGreet;
 
-#[async_trait::async_trait]
 impl RpcFn<AppCtx> for CtxGreet {
     type Input = GreetInput;
     type Output = GreetOutput;
@@ -448,7 +446,7 @@ async fn test_ts_client() {
         .route(multi_param)
         .build();
 
-    let client = fnrpc::codegen::generate_ts_client(&router, "/rpc");
+    let client = fnrpc::gen_ts_client::generate_ts_client(&router, "/rpc");
     assert!(client.contains("greet"), "should contain method name");
     assert!(client.contains("GreetInput"), "should contain input type");
     assert!(client.contains("GreetOutput"), "should contain output type");

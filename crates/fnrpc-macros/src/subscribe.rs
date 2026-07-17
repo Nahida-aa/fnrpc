@@ -1,18 +1,30 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    FnArg, GenericArgument, ItemFn, PathArguments, ReturnType, Type, TypePath, TypeReference,
+    FnArg, GenericArgument, ItemFn, LitStr, PathArguments, ReturnType, Type, TypePath, TypeReference,
     parse_macro_input,
+    parse::Parse, parse::ParseStream,
 };
 
-fn parse_method_attr(attr: &TokenStream) -> &'static str {
-    let attr_str = attr.to_string().trim().to_string();
-    if attr_str.is_empty() {
-        "GET"
-    } else if attr_str == "post" || attr_str == "\"post\"" {
-        "POST"
-    } else {
-        panic!("unsupported subscribe method: {attr_str}, expected \"post\" or no arg");
+struct RpcSubscribeAttr {
+    method: Option<String>,
+    path: Option<String>,
+}
+
+impl Parse for RpcSubscribeAttr {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut method = None;
+        let mut path = None;
+
+        if !input.is_empty() {
+            method = Some(input.parse::<LitStr>()?.value());
+            if input.peek(syn::Token![,]) {
+                let _: syn::Token![,] = input.parse()?;
+                path = Some(input.parse::<LitStr>()?.value());
+            }
+        }
+
+        Ok(RpcSubscribeAttr { method, path })
     }
 }
 
@@ -110,7 +122,11 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
     let mut impl_fn = input_fn.clone();
     impl_fn.sig.ident = impl_fn_name.clone();
 
-    let method_str = parse_method_attr(&attr);
+    // Parse attribute
+    let sub_attr: RpcSubscribeAttr = parse_macro_input!(attr as RpcSubscribeAttr);
+    let method_str = sub_attr.method.as_deref().unwrap_or("get");
+    let path_str = sub_attr.path.unwrap_or_else(|| fn_name.to_string());
+    let http_method = if method_str == "post" { "POST" } else { "GET" };
 
     // --- Analyse parameters (same as rpc_fn_impl) ---
     let params: Vec<&FnArg> = impl_fn.sig.inputs.iter().collect();
@@ -202,6 +218,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
     };
 
     let struct_name = fn_name.clone();
+    let path_val = path_str.clone();
 
     let expanded = if has_ctx {
         quote! {
@@ -214,7 +231,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
-                const METHOD: &'static str = #method_str;
+                const METHOD: &'static str = #http_method;
 
                 fn exec(
                     ctx: &#ctx_ty,
@@ -222,6 +239,11 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + 'static>> {
                     #exec_body
                 }
+            }
+
+            impl fnrpc::handler::TypedSubscribeHandler<#ctx_ty> for #struct_name {
+                fn path() -> &'static str { #path_val }
+                fn method() -> &'static str { #http_method }
             }
         }
     } else {
@@ -235,7 +257,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
-                const METHOD: &'static str = #method_str;
+                const METHOD: &'static str = #http_method;
 
                 fn exec(
                     _ctx: &T,
@@ -243,6 +265,11 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 ) -> std::pin::Pin<Box<dyn ::futures::Stream<Item = Result<Self::Output, fnrpc::error::RpcErr>> + Send + 'static>> {
                     #exec_body
                 }
+            }
+
+            impl<T: Send + Sync + 'static> fnrpc::handler::TypedSubscribeHandler<T> for #struct_name {
+                fn path() -> &'static str { #path_val }
+                fn method() -> &'static str { #http_method }
             }
         }
     };

@@ -5,7 +5,7 @@ fn main() {
     let output_path = manifest_dir.join("../src/integrations/fnrpc/bindings.ts");
 
     let rpc_url = "http://localhost:19110/fnrpc";
-    fnrpc::codegen::write_ts_client(&router, rpc_url, &output_path)
+    fnrpc::gen_ts_client::write_ts_client(&router, rpc_url, &output_path)
         .expect("failed to write fnrpc client");
 
     println!("Generated {}", output_path.display());

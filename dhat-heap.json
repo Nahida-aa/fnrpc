@@ -1,0 +1,239 @@
+{
+"dhatFileVersion": 2,
+"mode": "rust-heap",
+"verb": "Allocated",
+"bklt": true,
+"bkacc": false,
+"tu": "µs",
+"Mtu": "s",
+"tuth": 10,
+"cmd": "target/release/dhat_server fnrpc-web 20000",
+"pid": 1695847,
+"tg": 212108,
+"te": 212123,
+"pps": [
+{
+"tb": 80000,
+"tbk": 20000,
+"tl": 991,
+"mb": 4,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+2,
+3
+]
+},
+{
+"tb": 1680000,
+"tbk": 40000,
+"tl": 32598,
+"mb": 56,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+4,
+5,
+3
+]
+},
+{
+"tb": 640000,
+"tbk": 20000,
+"tl": 22260,
+"mb": 32,
+"mbk": 1,
+"gb": 32,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+6,
+7,
+3
+]
+},
+{
+"tb": 480000,
+"tbk": 20000,
+"tl": 62936,
+"mb": 24,
+"mbk": 1,
+"gb": 24,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+8,
+7,
+3
+]
+},
+{
+"tb": 1280000,
+"tbk": 20000,
+"tl": 194490,
+"mb": 64,
+"mbk": 1,
+"gb": 64,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+9,
+10
+]
+},
+{
+"tb": 100000,
+"tbk": 20000,
+"tl": 141849,
+"mb": 5,
+"mbk": 1,
+"gb": 5,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+11,
+3
+]
+},
+{
+"tb": 12480000,
+"tbk": 20000,
+"tl": 6128,
+"mb": 624,
+"mbk": 1,
+"gb": 624,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+12,
+7,
+3
+]
+},
+{
+"tb": 2560000,
+"tbk": 20000,
+"tl": 79681,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+13,
+7,
+3
+]
+},
+{
+"tb": 12640000,
+"tbk": 20000,
+"tl": 93058,
+"mb": 632,
+"mbk": 1,
+"gb": 632,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+14,
+15,
+3
+]
+},
+{
+"tb": 360000,
+"tbk": 20000,
+"tl": 177303,
+"mb": 18,
+"mbk": 1,
+"gb": 18,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+16,
+17,
+10
+]
+},
+{
+"tb": 620000,
+"tbk": 20000,
+"tl": 109306,
+"mb": 31,
+"mbk": 1,
+"gb": 31,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+18,
+3
+]
+},
+{
+"tb": 320000,
+"tbk": 20000,
+"tl": 40841,
+"mb": 16,
+"mbk": 1,
+"gb": 16,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+16,
+19,
+7,
+3
+]
+}
+],
+"ftbl": [
+"[root]",
+"0x55ebc8e4af99: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+"0x55ebc8e012b1: fnrpc_web::handle::{{closure}} (???:0:0)",
+"0x55ebc8dc9d6e: dhat_server::server::fnrpc_web::run::{{closure}} (???:0:0)",
+"0x55ebc8e05f7e: alloc::fmt::format::format_inner (???:0:0)",
+"0x55ebc8e01abe: fnrpc_web::handle::{{closure}} (???:0:0)",
+"0x55ebc8e53f23: fnrpc_web::json_response (???:0:0)",
+"0x55ebc8e01d96: fnrpc_web::handle::{{closure}} (???:0:0)",
+"0x55ebc8e534bc: fnrpc_web::json_response (???:0:0)",
+"0x55ebc8dc8fb6: dhat_server::server::fnrpc_web::make_get_req (???:0:0)",
+"0x55ebc8dc9d28: dhat_server::server::fnrpc_web::run::{{closure}} (???:0:0)",
+"0x55ebc8e01a4d: fnrpc_web::handle::{{closure}} (???:0:0)",
+"0x55ebc8e53f84: fnrpc_web::json_response (???:0:0)",
+"0x55ebc8e533fd: fnrpc_web::json_response (???:0:0)",
+"0x55ebc8de6d4e: alloc::collections::btree::map::BTreeMap<K,V,A>::insert (???:0:0)",
+"0x55ebc8e01d3f: fnrpc_web::handle::{{closure}} (???:0:0)",
+"0x55ebc8e34bf3: bytes::bytes::Bytes::copy_from_slice (???:0:0)",
+"0x55ebc8dc9124: dhat_server::server::fnrpc_web::make_get_req (???:0:0)",
+"0x55ebc8e01aec: fnrpc_web::handle::{{closure}} (???:0:0)",
+"0x55ebc8e535a8: fnrpc_web::json_response (???:0:0)"
+]
+}

@@ -1,5 +1,5 @@
-pub mod codegen;
 pub mod error;
+pub mod gen_ts_client;
 pub mod handler;
 pub mod middleware;
 pub mod router;

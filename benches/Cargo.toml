@@ -1,0 +1,68 @@
+[package]
+name = "benches"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+default = ["fnrpc-variants"]
+fnrpc-variants = []
+xitca-web-plain = []
+axum-plain = []
+actix-web = ["dep:actix-web", "dep:actix-rt"]
+ntex = ["dep:ntex"]
+full = ["fnrpc-variants", "xitca-web-plain", "axum-plain", "actix-web", "ntex"]
+
+[dependencies]
+# fnrpc variants (always available via path)
+fnrpc = { path = "../crates/fnrpc" }
+fnrpc-web = { path = "../crates/fnrpc-web" }
+fnrpc-xitca = { path = "../crates/fnrpc-xitca" }
+fnrpc-axum = { path = "../crates/fnrpc-axum" }
+
+# Framework deps for fnrpc variants (already transitive)
+xitca-web = { version = "0.8", features = ["json", "params", "urlencoded"] }
+xitca-http = { version = "0.9", features = ["http1"] }
+xitca-server = "0.7"
+xitca-service = "0.3"
+xitca-unsafe-collection = "0.2"
+axum = "0.8"
+tower = "0.5"
+
+# Bench harness
+criterion = { version = "0.5", features = ["async_tokio"] }
+tokio = { version = "1", features = ["full"] }
+dhat = "0.3"
+serde_json = "1"
+serde = "1"
+async-trait = { workspace = true }
+http = "1"
+http-body-util = "0.1"
+bytes = "1"
+url = "2"
+futures = "0.3"
+
+# Optional: extra plain frameworks
+actix-web = { version = "4", optional = true }
+actix-rt = { version = "2", optional = true }
+ntex = { version = "3.10", optional = true, features = ["tokio"] }
+
+# reqwest for network-level latency benchmarks
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls"] }
+
+[[bench]]
+name = "dispatch"
+harness = false
+
+[[bench]]
+name = "server_latency"
+harness = false
+required-features = ["reqwest"]
+
+[[bin]]
+name = "dhat_dispatch"
+path = "src/bin/dhat_dispatch.rs"
+
+[[bin]]
+name = "dhat_server"
+path = "src/bin/dhat_server.rs"

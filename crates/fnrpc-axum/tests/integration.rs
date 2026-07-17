@@ -30,7 +30,6 @@ where
 async fn test_query_get() {
     struct Greet;
 
-    #[async_trait::async_trait]
     impl RpcFn<()> for Greet {
         type Input = String;
         type Output = String;
@@ -64,7 +63,6 @@ async fn test_query_get() {
 async fn test_query_post() {
     struct Add;
 
-    #[async_trait::async_trait]
     impl RpcFn<()> for Add {
         type Input = (i32, i32);
         type Output = i32;
@@ -160,7 +158,6 @@ async fn test_with_context() {
 
     struct CtxGreet;
 
-    #[async_trait::async_trait]
     impl RpcFn<MyCtx> for CtxGreet {
         type Input = String;
         type Output = String;

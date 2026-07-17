@@ -11,11 +11,10 @@
 //!     .with_state(Arc::new(FnrpcState { router, ctx_from_headers }))
 //! ```
 
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{OriginalUri, Path, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
@@ -34,15 +33,23 @@ pub struct FnrpcState<Ctx> {
     pub ctx_from_headers: Arc<dyn Fn(HeaderMap) -> Ctx + Send + Sync>,
 }
 
+fn extract_input(query_str: &str) -> Value {
+    for (key, val) in url::form_urlencoded::parse(query_str.as_bytes()) {
+        if key == "input" {
+            return serde_json::from_str(&val).unwrap_or(Value::Null);
+        }
+    }
+    Value::Null
+}
+
 /// Axum handler for fnrpc requests.
 ///
-/// Mount this at a wildcard route (e.g. `"/fnrpc/{*path}"`) and register
-/// both GET and POST methods. The handler inspects the procedure metadata
-/// to determine dispatch:
+/// Uses [`get_handler`](RpcRouter::get_handler) + direct handler call —
+/// bypasses the middleware stack and saves one `Box::pin` allocation
+/// vs [`dispatch_send`](RpcRouter::dispatch_send).
 ///
-/// - Subscribe: returns an SSE stream.
-/// - Query (GET): reads input from query params.
-/// - Mutate (POST): reads input from request body.
+/// Mount this at a wildcard route (e.g. `"/fnrpc/{*path}"`) and register
+/// both GET and POST methods.
 ///
 /// Subscribe procedures send SSE events with incrementing `id` fields
 /// for client-side reconnection support.
@@ -51,98 +58,59 @@ pub async fn handle<Ctx>(
     State(state): State<Arc<FnrpcState<Ctx>>>,
     Path(path): Path<String>,
     headers: HeaderMap,
-    Query(params): Query<HashMap<String, String>>,
+    OriginalUri(uri): OriginalUri,
     body: Option<axum::extract::Json<Value>>,
 ) -> axum::response::Response
 where
     Ctx: Send + Sync + 'static,
 {
-    let kind = state.router.get_procedure_kind(&path);
+    let ctx = (state.ctx_from_headers)(headers);
 
-    match kind {
-        Some("subscribe") => {
-            let input_raw: Value = match method {
-                Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
-                _ => {
-                    let raw = params
-                        .get("input")
-                        .cloned()
-                        .unwrap_or_else(|| "null".into());
-                    serde_json::from_str(&raw).unwrap_or(Value::Null)
-                }
-            };
-            let input = unpack_meta(&input_raw);
+    // Extract input — no HashMap allocation for query params
+    let input_raw: Value = match method {
+        Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
+        _ => extract_input(uri.query().unwrap_or("")),
+    };
+    let input = unpack_meta(&input_raw);
 
-            match state.router.get_sub_handler(&path) {
-                Some(handler) => {
-                    let ctx = (state.ctx_from_headers)(headers);
-
-                    let stream = handler.call(&ctx, input);
-                    let mut event_id = 0u64;
-                    let sse = stream.map(move |item| {
-                        event_id += 1;
-                        let event = match item {
-                            Ok(val) => Event::default()
-                                .id(event_id.to_string())
-                                .json_data(val)
-                                .unwrap(),
-                            Err(e) => Event::default()
-                                .id(event_id.to_string())
-                                .data(format!(
-                                    "__error:{}",
-                                    serde_json::to_string(&e).unwrap()
-                                )),
-                        };
-                        Ok::<_, Infallible>(event)
-                    });
-
-                    Sse::new(sse)
-                        .keep_alive(KeepAlive::default())
-                        .into_response()
-                }
-                None => (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({
-                        "code": "NOT_FOUND",
-                        "message": format!("unknown path: {path}")
-                    })),
-                )
-                    .into_response(),
+    // Fast path: direct handler call
+    if let Some(handler) = state.router.get_handler(&path) {
+        match handler.call(&ctx, input).await {
+            Ok(val) => Json(val).into_response(),
+            Err(e) => {
+                let status = match e.code.as_str() {
+                    "BAD_REQUEST" => StatusCode::BAD_REQUEST,
+                    "NOT_FOUND" => StatusCode::NOT_FOUND,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                };
+                (status, Json(e)).into_response()
             }
         }
-        Some(_) => {
-            let ctx = (state.ctx_from_headers)(headers);
-
-            let input_raw = match method {
-                Method::GET => {
-                    let raw = params
-                        .get("input")
-                        .cloned()
-                        .unwrap_or_else(|| "null".into());
-                    serde_json::from_str(&raw).unwrap_or(Value::Null)
-                }
-                Method::POST => body.map(|j| j.0).unwrap_or(Value::Null),
-                _ => Value::Null,
+    } else if let Some(handler) = state.router.get_sub_handler(&path) {
+        let stream = handler.call(&ctx, input);
+        let mut event_id = 0u64;
+        let sse = stream.map(move |item| {
+            event_id += 1;
+            let event = match item {
+                Ok(val) => Event::default()
+                    .id(event_id.to_string())
+                    .json_data(val)
+                    .unwrap(),
+                Err(e) => Event::default()
+                    .id(event_id.to_string())
+                    .data(format!("__error:{}", serde_json::to_string(&e).unwrap())),
             };
-            let input = unpack_meta(&input_raw);
+            Ok::<_, Infallible>(event)
+        });
 
-            match state.router.dispatch_send(&ctx, &path, input).await {
-                Ok(val) => Json(val).into_response(),
-                Err(e) => {
-                    let status = match e.code.as_str() {
-                        "BAD_REQUEST" => StatusCode::BAD_REQUEST,
-                        "NOT_FOUND" => StatusCode::NOT_FOUND,
-                        _ => StatusCode::INTERNAL_SERVER_ERROR,
-                    };
-                    (status, Json(e)).into_response()
-                }
-            }
-        }
-        None => (
+        Sse::new(sse)
+            .keep_alive(KeepAlive::default())
+            .into_response()
+    } else {
+        (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": format!("unknown path: {path}") })),
         )
-            .into_response(),
+            .into_response()
     }
 }
-

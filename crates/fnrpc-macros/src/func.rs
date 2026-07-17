@@ -1,9 +1,32 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    FnArg, GenericArgument, ItemFn, PathArguments, ReturnType, Type, TypeReference,
+    FnArg, GenericArgument, ItemFn, LitStr, PathArguments, ReturnType, Type, TypeReference,
     parse_macro_input,
+    parse::Parse, parse::ParseStream,
 };
+
+struct RpcFnAttr {
+    method: Option<String>,
+    path: Option<String>,
+}
+
+impl Parse for RpcFnAttr {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut method = None;
+        let mut path = None;
+
+        if !input.is_empty() {
+            method = Some(input.parse::<LitStr>()?.value());
+            if input.peek(syn::Token![,]) {
+                let _: syn::Token![,] = input.parse()?;
+                path = Some(input.parse::<LitStr>()?.value());
+            }
+        }
+
+        Ok(RpcFnAttr { method, path })
+    }
+}
 
 /// Check if `E` in `Result<T, E>` is `RpcErr`.
 fn is_rpc_err_type(arg: &syn::GenericArgument) -> bool {
@@ -15,13 +38,21 @@ fn is_rpc_err_type(arg: &syn::GenericArgument) -> bool {
     false
 }
 
-pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
+pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
     let fn_name = &input_fn.sig.ident;
     let fn_vis = &input_fn.vis;
     let impl_fn_name = syn::Ident::new(&format!("{}_impl", fn_name), fn_name.span());
     let mut impl_fn = input_fn.clone();
     impl_fn.sig.ident = impl_fn_name.clone();
+
+    // Parse attribute
+    let rpc_attr: RpcFnAttr = parse_macro_input!(attr as RpcFnAttr);
+    let method_str = rpc_attr.method.unwrap_or_else(|| match kind {
+        "mutate" => "post".to_string(),
+        _ => "get".to_string(),
+    });
+    let path_str = rpc_attr.path.unwrap_or_else(|| fn_name.to_string());
 
     // --- Analyse parameters: infer Ctx from first param type ---
     let params: Vec<&FnArg> = impl_fn.sig.inputs.iter().collect();
@@ -136,6 +167,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
     };
 
     let struct_name = fn_name.clone();
+    let path_val = path_str.clone();
 
     let expanded = if has_ctx {
         quote! {
@@ -144,16 +176,23 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;
 
-            #[async_trait::async_trait]
             impl fnrpc::handler::RpcFn<#ctx_ty> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
                 const KIND: &'static str = #kind;
 
-                async fn exec(ctx: &#ctx_ty, input: Self::Input) -> Result<Self::Output, fnrpc::error::RpcErr> {
-                    #exec_body
+                fn exec(
+                    ctx: &#ctx_ty,
+                    input: Self::Input,
+                ) -> impl ::std::future::Future<Output = Result<Self::Output, fnrpc::error::RpcErr>> + Send {
+                    async move { #exec_body }
                 }
+            }
+
+            impl fnrpc::handler::TypedHandler<#ctx_ty> for #struct_name {
+                fn path() -> &'static str { #path_val }
+                fn method() -> &'static str { #method_str }
             }
         }
     } else {
@@ -163,16 +202,23 @@ pub(crate) fn rpc_fn_impl(kind: &str, item: TokenStream) -> TokenStream {
             #[allow(non_camel_case_types, dead_code)]
             #fn_vis struct #struct_name;
 
-            #[async_trait::async_trait]
             impl<T: Send + Sync + 'static> fnrpc::handler::RpcFn<T> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
                 const KIND: &'static str = #kind;
 
-                async fn exec(_ctx: &T, input: Self::Input) -> Result<Self::Output, fnrpc::error::RpcErr> {
-                    #exec_body
+                fn exec(
+                    _ctx: &T,
+                    input: Self::Input,
+                ) -> impl ::std::future::Future<Output = Result<Self::Output, fnrpc::error::RpcErr>> + Send {
+                    async move { #exec_body }
                 }
+            }
+
+            impl<T: Send + Sync + 'static> fnrpc::handler::TypedHandler<T> for #struct_name {
+                fn path() -> &'static str { #path_val }
+                fn method() -> &'static str { #method_str }
             }
         }
     };

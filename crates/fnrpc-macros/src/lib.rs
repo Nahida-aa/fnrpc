@@ -3,17 +3,28 @@
 //! These attributes transform plain Rust functions into typed RPC handlers
 //! that are registered with [`RpcRouter`](fnrpc::router::RpcRouter).
 
-mod query;
+mod func;
 mod subscribe;
 
 use proc_macro::TokenStream;
 
 /// Register an async function as a query RPC.
 ///
-/// The function becomes a `RpcFn<Ctx>`-implementing struct with
-/// [`KIND = "query"`](fnrpc::handler::RpcFn::KIND).
+/// The function becomes a `RpcFn<Ctx>`- and `TypedHandler<Ctx>`-implementing
+/// struct with [`KIND = "query"`](fnrpc::handler::RpcFn::KIND).
 ///
-/// # Parameters
+/// # Attribute arguments
+///
+/// ```ignore
+/// #[rpc_query]                     // method = "get" (default), path = fn name
+/// #[rpc_query("post")]             // method = "post",  path = fn name
+/// #[rpc_query("get", "my_health")] // method = "get",   path = "my_health"
+/// ```
+///
+/// - First positional: HTTP method (`"get"`, `"post"`, etc.). Default: `"get"`.
+/// - Second positional: route path (procedure name in the router). Default: function name.
+///
+/// # Function parameters
 ///
 /// - First `&Ctx` param → context type; omit for `Ctx = ()`.
 /// - Remaining params → single input type or tuple (multi-param).
@@ -33,6 +44,16 @@ use proc_macro::TokenStream;
 /// async fn health_check() -> &'static str {
 ///     "ok"
 /// }
+/// ```
+///
+/// Custom path:
+///
+/// ```ignore
+/// #[rpc_query("get", "health")]
+/// async fn health_check() -> &'static str {
+///     "ok"
+/// }
+/// RpcRouterBuilder::<()>::new().at(health_check).build();
 /// ```
 ///
 /// 64-bit integers (`u64`/`i64`) in parameters or return values are
@@ -89,37 +110,49 @@ use proc_macro::TokenStream;
 /// }
 /// ```
 ///
-/// The expanded form is equivalent to writing the `RpcFn` impl yourself:
+/// The expanded form is equivalent to writing the impl yourself:
 ///
 /// ```ignore
 /// struct health_check;
 ///
-/// #[async_trait::async_trait]
 /// impl<T: Send + Sync + 'static> RpcFn<T> for health_check {
 ///     type Input = ();
 ///     type Output = &'static str;
 ///     const NAME: &'static str = "health_check";
 ///     const KIND: &'static str = "query";
-///
 ///     async fn exec(_ctx: &T, _input: ()) -> Result<Self::Output, RpcErr> {
 ///         Ok("ok")
 ///     }
 /// }
+///
+/// impl<T: Send + Sync + 'static> TypedHandler<T> for health_check {
+///     fn path() -> &'static str { "health_check" }
+///     fn method() -> &'static str { "get" }
+/// }
 /// ```
 #[proc_macro_attribute]
-pub fn rpc_query(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    query::rpc_fn_impl("query", item)
+pub fn rpc_query(attr: TokenStream, item: TokenStream) -> TokenStream {
+    func::rpc_fn_impl("query", attr, item)
 }
 
 /// Register an async function as a mutate RPC.
 ///
-/// Same semantics as [`rpc_query`], but produces `KIND = "mutate"`.
-/// The transport sends input as `POST` body instead of URL query params.
+/// Same semantics as [`rpc_query`], but:
+/// - [`KIND`](fnrpc::handler::RpcFn::KIND) = `"mutate"`.
+/// - Default HTTP method: `"post"`.
+///
+/// # Attribute arguments
+///
+/// ```ignore
+/// #[rpc_mutate]                    // method = "post" (default), path = fn name
+/// #[rpc_mutate("get")]             // method = "get",  path = fn name
+/// #[rpc_mutate("post", "create")]  // method = "post", path = "create"
+/// ```
 ///
 /// See [`rpc_query`] for examples — all apply identically.
 #[proc_macro_attribute]
-pub fn rpc_mutate(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    query::rpc_fn_impl("mutate", item)
+pub fn rpc_mutate(attr: TokenStream, item: TokenStream) -> TokenStream {
+    func::rpc_fn_impl("mutate", attr, item)
 }
 
 /// Register a **sync** function returning a `Stream` as a subscribe RPC.
@@ -132,10 +165,16 @@ pub fn rpc_mutate(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// `Result<T, RpcErr>`, so the caller sees a
 /// `Pin<Box<dyn Stream<Item = Result<T, RpcErr>> + Send + '_>>`.
 ///
-/// # Attribute argument
+/// # Attribute arguments
 ///
-/// - No arg (default): HTTP method `GET`, input via query params.
-/// - `"post"`: HTTP method `POST`, input via body.
+/// ```ignore
+/// #[rpc_subscribe]                    // method = "get" (default), path = fn name
+/// #[rpc_subscribe("post")]            // method = "post",          path = fn name
+/// #[rpc_subscribe("get", "events")]   // method = "get",           path = "events"
+/// ```
+///
+/// - First positional: HTTP method (`"get"`, `"post"`). Default: `"get"`.
+/// - Second positional: route path. Default: function name.
 ///
 /// # Examples
 ///
@@ -196,6 +235,6 @@ pub fn rpc_mutate(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn rpc_subscribe(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    subscribe::rpc_subscribe_impl(_attr, item)
+pub fn rpc_subscribe(attr: TokenStream, item: TokenStream) -> TokenStream {
+    subscribe::rpc_subscribe_impl(attr, item)
 }
