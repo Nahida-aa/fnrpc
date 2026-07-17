@@ -120,6 +120,17 @@ kill $PID 2>/dev/null; wait $PID 2>/dev/null
 **fnrpc and xitca are identical at CPU instruction level.** The `Arc<dyn Fn>` indirect call in
 `RawRpcAdapter` is inlined by the compiler — zero runtime overhead.
 
+### Heap Allocation: Dispatch-Only (dhat_compare) vs Full Service (dhat on server)
+
+**Dispatch-only** (dhat_compare — direct handler call, no HTTP):
+- fnrpc-web **always better** than xitca-web on every endpoint
+- noop_raw: **2B/1blk** (fnrpc) vs 185B/3blks (xitca) — fnrpc skips Box::pin + Extension
+
+**Full service** (dhat on fnrpc_web_server / xitca_web_server — with HTTP):
+- fnrpc-web: 2,167KB total (200 lookup requests + startup)
+- xitca-web: 2,654KB total
+- **fnrpc 0.5MB less** — difference is in HTTP server layer, not framework code
+
 ### Key Takeaways
 
-- fnrpc-web ≈ xitca-web at every level: RPS, latency, memory, CPU instructions
+- fnrpc-web ≈ xitca-web at every level: RPS, latency, memory, CPU instructions, heap allocation
