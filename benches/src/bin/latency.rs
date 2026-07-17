@@ -32,16 +32,45 @@ fn wait_for_server(port: u16, timeout: Duration) {
     }
 }
 
+/// Read process memory. Uses cgroup v2 memory.current when available
+/// (more accurate than VmRSS), falls back to /proc/<pid>/status VmRSS.
+/// Filters out unreasonably large cgroup values (likely shared cgroup).
 fn read_memory_kb(pid: u32) -> u64 {
-    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
-    for line in status.lines() {
-        if let Some(rss) = line.strip_prefix("VmRSS:") {
-            if let Some(kb) = rss.trim().strip_suffix(" kB") {
-                return kb.trim().parse().unwrap_or(0);
+    let vm_rss = || -> u64 {
+        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
+        for line in status.lines() {
+            if let Some(rss) = line.strip_prefix("VmRSS:") {
+                if let Some(kb) = rss.trim().strip_suffix(" kB") {
+                    return kb.trim().parse().unwrap_or(0);
+                }
+            }
+        }
+        0
+    };
+
+    // Try cgroup v2
+    if let Ok(content) = std::fs::read_to_string(format!("/proc/{pid}/cgroup")) {
+        for line in content.lines() {
+            if let Some(path) = line.strip_prefix("0::") {
+                let mem_path = format!("/sys/fs/cgroup{path}/memory.current");
+                if let Ok(val) = std::fs::read_to_string(&mem_path) {
+                    if let Ok(bytes) = val.trim().parse::<u64>() {
+                        let kb = bytes / 1024;
+                        // cgroup memory.current includes all processes in the cgroup.
+                        // If it's unreasonably larger than VmRSS, it's a shared cgroup.
+                        let rss = vm_rss();
+                        if kb < rss * 10 {
+                            return kb; // plausible cgroup value
+                        }
+                        // fallback to VmRSS
+                        return rss;
+                    }
+                }
+                break;
             }
         }
     }
-    0
+    vm_rss()
 }
 
 struct BenchResult {
