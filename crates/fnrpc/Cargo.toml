@@ -18,7 +18,9 @@ specta-typescript.workspace = true
 tracing = { version = "0.1", optional = true }
 
 [features]
+default = ["ts-bindings"]
 tracing = ["dep:tracing"]
+ts-bindings = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

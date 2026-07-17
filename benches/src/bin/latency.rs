@@ -110,6 +110,7 @@ fn run_fnrpc_web(n: usize) {
 
     run_bench(&format!("http://127.0.0.1:{port}/noop?input=null"), n, "fnrpc-web/noop_json");
     run_bench(&format!("http://127.0.0.1:{port}/raw_noop"), n, "fnrpc-web/noop_raw");
+    run_bench(&format!("http://127.0.0.1:{port}/in?key=fnrpc"), n, "fnrpc-web/lookup_json");
 
     let _ = server.kill();
     let _ = server.wait();

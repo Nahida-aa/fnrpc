@@ -217,4 +217,4 @@ tmp
 **/build2
 *.zip
 build/
-out/
+out/benches/target/

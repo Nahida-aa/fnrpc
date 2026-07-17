@@ -204,6 +204,11 @@ where
         let result = if method == Method::GET && is_json {
             let input_val = req.uri().query().map(|q| extract_input(q)).unwrap_or(Value::Null);
             handler.call_value(&ctx, input_val)
+        } else if method == Method::GET && body_buf.is_empty() {
+            // Raw handler GET: pass query string bytes as input
+            let query_bytes = req.uri().query().unwrap_or("").as_bytes().to_vec();
+            body_buf = query_bytes;
+            handler.call_bytes(&ctx, body_buf.as_slice())
         } else {
             handler.call_bytes(&ctx, body_buf.as_slice())
         };
