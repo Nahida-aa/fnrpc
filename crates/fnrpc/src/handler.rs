@@ -5,6 +5,7 @@
 //! - [`RpcSubscribe`] / [`ErasedSubscribeHandler`] for subscriptions.
 
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -98,11 +99,11 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
     ///
     /// Default impl: JSON decode → [`call`](Self::call) → JSON re-encode.
     /// Override for zero-copy raw protocols.
-    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
         let value: Value = serde_json::from_slice(input)
             .map_err(|e| RpcErr::bad_request(format!("deserialize: {e}")))?;
         self.call(ctx, value)
-            .and_then(|v| serde_json::to_vec(&v).map_err(|e| RpcErr::internal(format!("serialize: {e}"))))
+            .and_then(|v| serde_json::to_vec(&v).map(Cow::Owned).map_err(|e| RpcErr::internal(format!("serialize: {e}"))))
     }
 
     /// Dispatch a call, returning a JSON value.
@@ -115,7 +116,7 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
     }
 
     /// Dispatch from a JSON [`Value`], returning serialized bytes.
-    fn call_value(&self, ctx: &Ctx, input: Value) -> Result<Vec<u8>, RpcErr> {
+    fn call_value(&self, ctx: &Ctx, input: Value) -> Result<Cow<'static, [u8]>, RpcErr> {
         let bytes = serde_json::to_vec(&input)
             .map_err(|e| RpcErr::bad_request(format!("serialize input: {e}")))?;
         self.call_bytes(ctx, &bytes)
@@ -160,14 +161,14 @@ impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrap
 
     fn content_type(&self) -> Option<&'static str> { Some("application/json") }
 
-    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
         let input = if is_unit_type::<F::Input>() {
             unsafe { std::mem::zeroed() }
         } else {
             JsonCodec::decode::<F::Input>(input)?
         };
         let output = F::exec(ctx, input)?;
-        JsonCodec::encode(&output)
+        JsonCodec::encode(&output).map(Cow::Owned)
     }
 
     fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr> {
@@ -182,7 +183,7 @@ impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrap
             .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
     }
 
-    fn call_value(&self, ctx: &Ctx, input: Value) -> Result<Vec<u8>, RpcErr> {
+    fn call_value(&self, ctx: &Ctx, input: Value) -> Result<Cow<'static, [u8]>, RpcErr> {
         let input = if is_unit_type::<F::Input>() {
             unsafe { std::mem::zeroed() }
         } else {
@@ -191,6 +192,7 @@ impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrap
         };
         let output = F::exec(ctx, input)?;
         serde_json::to_vec(&output)
+            .map(Cow::Owned)
             .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))
     }
 }
@@ -212,7 +214,7 @@ fn is_unit_type<T: 'static>() -> bool {
 /// Raw handlers bypass the middleware stack and are not included in codegen.
 pub trait RawRpcFn<Ctx>: Send + Sync {
     const NAME: &'static str;
-    fn exec(ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr>;
+    fn exec(ctx: &Ctx, input: &[u8]) -> Result<&'static [u8], RpcErr>;
 }
 
 // ── Subscription traits ────────────────────────────────────
@@ -247,7 +249,7 @@ pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
         &self,
         ctx: &Ctx,
         input: &[u8],
-    ) -> Pin<Box<dyn Stream<Item = Result<Vec<u8>, RpcErr>> + Send + 'static>>;
+    ) -> Pin<Box<dyn Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>;
 }
 
 // ── RoutedHandler (zero-sized marker for route registration) ──
@@ -312,14 +314,14 @@ where
         &self,
         ctx: &Ctx,
         input: &[u8],
-    ) -> Pin<Box<dyn Stream<Item = Result<Vec<u8>, RpcErr>> + Send + 'static>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>> {
         let input = match JsonCodec::decode::<F::Input>(input) {
             Ok(v) => v,
             Err(e) => return Box::pin(futures::stream::once(futures::future::ready(Err(e)))),
         };
         let stream = F::exec(ctx, input);
         Box::pin(stream.map(|item| match item {
-            Ok(v) => JsonCodec::encode(&v),
+            Ok(v) => JsonCodec::encode(&v).map(Cow::Owned),
             Err(e) => Err(e),
         }))
     }

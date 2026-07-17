@@ -3,6 +3,7 @@
 //! Use [`RpcRouterBuilder`] to register handlers and middleware, then
 //! [`build`](RpcRouterBuilder::build) to get a stored [`RpcRouter`].
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -418,7 +419,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     }
 
     /// Dispatch a query/mutate call with raw bytes, bypassing JSON Value.
-    pub fn dispatch_bytes(&self, ctx: &Ctx, path: &str, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+    pub fn dispatch_bytes(&self, ctx: &Ctx, path: &str, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
         let handler = self
             .get_handler(path)
             .ok_or_else(|| RpcErr::not_found(format!("unknown path: {path}")))?;
@@ -431,7 +432,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
         ctx: &Ctx,
         path: &str,
         input: &[u8],
-    ) -> Option<Pin<Box<dyn Stream<Item = Result<Vec<u8>, RpcErr>> + Send + 'static>>> {
+    ) -> Option<Pin<Box<dyn Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>> {
         let handler = self.subscribes.get(path)?;
         Some(handler.call_bytes(ctx, input))
     }
@@ -472,7 +473,7 @@ impl<Ctx: Send + Sync + 'static> RpcService<Ctx> for InnerService<Ctx> {
 /// Bridges a [`RawRpcFn`] to [`ErasedHandler`] via function pointer.
 struct RawRpcAdapter<Ctx> {
     name: &'static str,
-    exec: Arc<dyn Fn(&Ctx, &[u8]) -> Result<Vec<u8>, RpcErr> + Send + Sync>,
+    exec: Arc<dyn Fn(&Ctx, &[u8]) -> Result<&'static [u8], RpcErr> + Send + Sync>,
 }
 
 impl<Ctx> RawRpcAdapter<Ctx> {
@@ -499,7 +500,7 @@ impl<Ctx: Send + Sync + 'static> ErasedHandler<Ctx> for RawRpcAdapter<Ctx> {
     fn populate_types(&self, _types: &mut specta::Types, _top_level: &mut Vec<specta::datatype::DataType>) {}
     fn content_type(&self) -> Option<&'static str> { None }
 
-    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
-        (self.exec)(ctx, input)
+    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
+        (self.exec)(ctx, input).map(Cow::Borrowed)
     }
 }

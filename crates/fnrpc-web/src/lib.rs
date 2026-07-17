@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -21,16 +22,16 @@ pub struct RpcWebConfig<Ctx> {
 // ── Response builders ─────────────────────────────────────
 
 /// Build a response from raw bytes, optionally setting Content-Type.
-fn raw_response(status: StatusCode, body: Vec<u8>, content_type: Option<&'static str>) -> Response<ResponseBody> {
+fn raw_response(status: StatusCode, body: Cow<'static, [u8]>, content_type: Option<&'static str>) -> Response<ResponseBody> {
     let mut builder = Response::builder().status(status);
     if let Some(ct) = content_type {
         builder = builder.header(CONTENT_TYPE, HeaderValue::from_static(ct));
     }
-    // Use static bytes for null/empty responses to avoid allocation
-    let resp_body = if body == b"null" {
-        ResponseBody::bytes(Bytes::from_static(b"null"))
-    } else {
-        ResponseBody::bytes(Bytes::from(body))
+    let resp_body = match body {
+        Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
+        Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(slice)),
+        Cow::Owned(ref vec) if vec == b"null" => ResponseBody::bytes(Bytes::from_static(b"null")),
+        Cow::Owned(vec) => ResponseBody::bytes(Bytes::from(vec)),
     };
     builder.body(resp_body).unwrap()
 }
