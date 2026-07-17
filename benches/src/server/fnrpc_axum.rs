@@ -11,7 +11,7 @@ impl RpcFn<()> for Noop {
     type Input = ();
     type Output = ();
     const NAME: &'static str = "noop";
-    async fn exec(_ctx: &(), _input: ()) -> Result<(), RpcErr> {
+    fn exec(_ctx: &(), _input: ()) -> Result<(), RpcErr> {
         Ok(())
     }
 }
@@ -21,7 +21,7 @@ impl RpcFn<()> for Echo {
     type Input = String;
     type Output = String;
     const NAME: &'static str = "echo";
-    async fn exec(_ctx: &(), input: String) -> Result<String, RpcErr> {
+    fn exec(_ctx: &(), input: String) -> Result<String, RpcErr> {
         Ok(input)
     }
 }

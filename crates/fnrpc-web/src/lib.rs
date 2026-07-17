@@ -7,7 +7,7 @@ use serde_json::Value;
 use xitca_http::body::{BodyExt, RequestBody, ResponseBody, StreamDataBody};
 use xitca_http::bytes::Bytes;
 use xitca_http::http::{
-    header::CONTENT_TYPE, HeaderMap, Method, Request, RequestExt, Response, StatusCode,
+    header::{CONTENT_TYPE, HeaderValue}, HeaderMap, Method, Request, RequestExt, Response, StatusCode,
 };
 use xitca_http::HttpServiceBuilder;
 use xitca_service::{fn_service, ServiceExt};
@@ -20,11 +20,15 @@ pub struct FnrpcConfig<Ctx> {
 }
 
 fn json_response(status: StatusCode, body: Value) -> Response<ResponseBody> {
-    let bytes = serde_json::to_vec(&body).unwrap_or_default();
-    let mut res = Response::new(ResponseBody::bytes(bytes));
+    let mut res = if body.is_null() {
+        Response::new(ResponseBody::bytes(Bytes::from_static(b"null")))
+    } else {
+        let bytes = serde_json::to_vec(&body).unwrap_or_default();
+        Response::new(ResponseBody::bytes(bytes))
+    };
     *res.status_mut() = status;
     res.headers_mut()
-        .insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     res
 }
 
@@ -38,11 +42,12 @@ fn rpc_err_to_response(e: fnrpc::error::RpcErr) -> Response<ResponseBody> {
 }
 
 fn extract_input(query_str: &str) -> Value {
-    let raw = url::form_urlencoded::parse(query_str.as_bytes())
-        .find(|(k, _)| k == "input")
-        .map(|(_, v)| v.into_owned())
-        .unwrap_or_else(|| "null".to_string());
-    serde_json::from_str(&raw).unwrap_or(Value::Null)
+    for (k, v) in url::form_urlencoded::parse(query_str.as_bytes()) {
+        if k == "input" {
+            return serde_json::from_str(&v).unwrap_or(Value::Null);
+        }
+    }
+    Value::Null
 }
 
 fn input_from_body(buf: &[u8]) -> Value {
@@ -129,7 +134,7 @@ where
 
     // Radix-tree lookup — no path clone needed
     if let Some(handler) = config.router.get_handler(path) {
-        match handler.call(&ctx, input).await {
+        match handler.call(&ctx, input) {
             Ok(val) => json_response(StatusCode::OK, val),
             Err(e) => rpc_err_to_response(e),
         }

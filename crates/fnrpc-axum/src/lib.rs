@@ -75,7 +75,7 @@ where
 
     // Fast path: direct handler call
     if let Some(handler) = state.router.get_handler(&path) {
-        match handler.call(&ctx, input).await {
+        match handler.call(&ctx, input) {
             Ok(val) => Json(val).into_response(),
             Err(e) => {
                 let status = match e.code.as_str() {

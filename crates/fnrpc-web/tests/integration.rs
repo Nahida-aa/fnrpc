@@ -16,7 +16,7 @@ async fn test_query_get() {
         type Output = String;
         const NAME: &'static str = "greet";
 
-        async fn exec(_ctx: &(), input: String) -> Result<String, RpcErr> {
+        fn exec(_ctx: &(), input: String) -> Result<String, RpcErr> {
             Ok(format!("Hello {input}!"))
         }
     }
@@ -31,7 +31,7 @@ async fn test_query_get() {
     *req.method_mut() = Method::GET;
     *req.uri_mut() = "/greet?input=%22world%22".parse().unwrap();
 
-    let res = handle(&config, req).await;
+    let res = handle(&config, req);
     assert_eq!(res.status(), StatusCode::OK);
 }
 
@@ -44,7 +44,7 @@ async fn test_query_post() {
         type Output = i32;
         const NAME: &'static str = "add";
 
-        async fn exec(_ctx: &(), input: (i32, i32)) -> Result<i32, RpcErr> {
+        fn exec(_ctx: &(), input: (i32, i32)) -> Result<i32, RpcErr> {
             Ok(input.0 + input.1)
         }
     }
@@ -64,7 +64,7 @@ async fn test_query_post() {
     req.headers_mut()
         .insert("content-type", "application/json".parse().unwrap());
 
-    let res = handle(&config, req).await;
+    let res = handle(&config, req);
     assert_eq!(res.status(), StatusCode::OK);
 }
 
@@ -80,7 +80,7 @@ async fn test_not_found() {
     *req.method_mut() = Method::GET;
     *req.uri_mut() = "/nonexistent".parse().unwrap();
 
-    let res = handle(&config, req).await;
+    let res = handle(&config, req);
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 }
 
@@ -115,7 +115,7 @@ async fn test_subscribe() {
     *req.method_mut() = Method::GET;
     *req.uri_mut() = "/tick?input=3".parse().unwrap();
 
-    let res = handle(&config, req).await;
+    let res = handle(&config, req);
     assert_eq!(res.status(), StatusCode::OK);
 }
 
@@ -133,7 +133,7 @@ async fn test_with_context() {
         type Output = String;
         const NAME: &'static str = "ctx_greet";
 
-        async fn exec(ctx: &MyCtx, input: String) -> Result<String, RpcErr> {
+        fn exec(ctx: &MyCtx, input: String) -> Result<String, RpcErr> {
             Ok(format!("{}{}", ctx.prefix, input))
         }
     }
@@ -152,6 +152,6 @@ async fn test_with_context() {
     *req.method_mut() = Method::GET;
     *req.uri_mut() = "/ctx_greet?input=%22world%22".parse().unwrap();
 
-    let res = handle(&config, req).await;
+    let res = handle(&config, req);
     assert_eq!(res.status(), StatusCode::OK);
 }

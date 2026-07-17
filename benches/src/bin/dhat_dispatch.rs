@@ -9,7 +9,7 @@ impl RpcFn<()> for Noop {
     type Input = ();
     type Output = ();
     const NAME: &'static str = "noop";
-    async fn exec(_ctx: &(), _input: ()) -> Result<(), RpcErr> {
+    fn exec(_ctx: &(), _input: ()) -> Result<(), RpcErr> {
         Ok(())
     }
 }

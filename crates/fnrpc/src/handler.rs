@@ -3,7 +3,6 @@
 //! - [`RpcFn`] / [`ErasedHandler`] for query & mutate.
 //! - [`RpcSubscribe`] / [`ErasedSubscribeHandler`] for subscriptions.
 
-use std::future::Future;
 use std::pin::Pin;
 
 use futures::StreamExt;
@@ -101,15 +100,8 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
     fn output_ts(&self) -> TsTypeInfo;
     /// Populate a shared specta type registry with this handler's types.
     fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
-    /// Dispatch a JSON-serialised call, returning a JSON value.
-    ///
-    /// One `Box::pin` allocation (for the returned [`BoxFuture`]).
-    fn call<'a>(
-        &'a self,
-        ctx: &'a Ctx,
-        input: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + Send + 'a>>
-    where Ctx: 'a;
+    /// Dispatch a call, returning a JSON value (zero allocation).
+    fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr>;
 }
 
 /// Typed RPC function trait.
@@ -137,18 +129,13 @@ pub trait RpcFn<Ctx>: Send + Sync {
     const NAME: &'static str;
     const KIND: &'static str = "query";
 
-    /// Execute the RPC (RPITIT — no `Box::pin`).
-    fn exec(
-        ctx: &Ctx,
-        input: Self::Input,
-    ) -> impl Future<Output = Result<Self::Output, RpcErr>> + Send;
+    /// Execute the RPC.
+    fn exec(ctx: &Ctx, input: Self::Input) -> Result<Self::Output, RpcErr>;
 }
 
 /// Blanket impl: any `RpcFn<Ctx>` becomes an `ErasedHandler<Ctx>`.
 ///
-/// Produces exactly one `Box::pin` — for the [`BoxFuture`] returned by
-/// [`call`](ErasedHandler::call).  The [`RpcFn::exec`] future is stored
-/// inline in the async block's state machine (no second allocation).
+/// Zero-allocation dispatch — no `Box::pin`, no `BoxFuture`.
 impl<Ctx, F> ErasedHandler<Ctx> for F
 where
     F: RpcFn<Ctx> + Send + Sync,
@@ -177,22 +164,12 @@ where
         top_level.push(output);
     }
 
-    fn call<'a>(
-        &'a self,
-        ctx: &'a Ctx,
-        input: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + Send + 'a>>
-    where Ctx: 'a
-    {
-        // Single Box::pin — the inner F::exec future is stored inline in the
-        // async block's state machine via RPITIT, avoiding a second allocation.
-        Box::pin(async move {
-            let input: F::Input = serde_json::from_value(input)
-                .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?;
-            let output = F::exec(ctx, input).await?;
-            Ok(serde_json::to_value(output)
-                .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
-        })
+    fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr> {
+        let input: F::Input = serde_json::from_value(input)
+            .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?;
+        let output = F::exec(ctx, input)?;
+        Ok(serde_json::to_value(output)
+            .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
     }
 }
 

@@ -342,11 +342,10 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
         self.subscribes.get(path).cloned()
     }
 
-    /// Retrieve a query/mutate handler by path (owned `Arc` for direct calling).
+    /// Retrieve a query/mutate handler by path (zero-allocation).
     ///
     /// Uses the radix tree for **zero-allocation** lookup — no lock, no
-    /// hashing, no heap allocation.  Compare with a `BTreeMap` lookup which
-    /// would acquire a read lock and clone a string.
+    /// hashing, no heap allocation, no `Arc::clone`.
     ///
     /// Use this to bypass the middleware stack and the
     /// [`ErasedFnService`](crate::middleware::ErasedFnService) dispatch
@@ -354,14 +353,14 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     ///
     /// The returned handler can be called directly with
     /// [`handler.call(ctx, input).await`](ErasedHandler::call).
-    pub fn get_handler(&self, path: &str) -> Option<Arc<dyn ErasedHandler<Ctx>>> {
-        self.router.at(path).ok().map(|m| Arc::clone(m.value))
+    pub fn get_handler(&self, path: &str) -> Option<&dyn ErasedHandler<Ctx>> {
+        let m = self.router.at(path).ok()?;
+        Some(m.value.as_ref())
     }
 
     /// Dispatch directly to a handler, bypassing the middleware stack.
     ///
-    /// One `Box::pin` allocation cheaper than [`dispatch`](Self::dispatch)
-    /// / [`dispatch_send`](Self::dispatch_send).
+    /// Zero-allocation — one fewer `Box::pin` than [`dispatch`](Self::dispatch).
     ///
     /// Use this in integration handlers when no middleware is needed.
     /// If middleware is required, use [`dispatch`](Self::dispatch) or
@@ -375,7 +374,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
         let handler = self
             .get_handler(path)
             .ok_or_else(|| RpcErr::not_found(format!("unknown path: {path}")))?;
-        handler.call(ctx, input).await
+        handler.call(ctx, input)
     }
 
     /// Return the procedure kind for a given path: `"query"`, `"mutate"`, `"subscribe"`, or `None`.
@@ -430,6 +429,6 @@ impl<Ctx: Send + Sync + 'static> FnService<Ctx> for RouterService<Ctx> {
             .get(path)
             .cloned()
             .ok_or_else(|| RpcErr::not_found(format!("unknown path: {path}")))?;
-        handler.call(ctx, input).await
+        handler.call(ctx, input)
     }
 }

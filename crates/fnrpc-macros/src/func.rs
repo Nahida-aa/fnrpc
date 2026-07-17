@@ -104,15 +104,15 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
     // --- Build the call expression to the renamed impl function ---
     let call = if input_params.is_empty() {
         if has_ctx {
-            quote! { #impl_fn_name(ctx).await }
+            quote! { #impl_fn_name(ctx) }
         } else {
-            quote! { #impl_fn_name().await }
+            quote! { #impl_fn_name() }
         }
     } else if input_params.len() == 1 {
         if has_ctx {
-            quote! { #impl_fn_name(ctx, input).await }
+            quote! { #impl_fn_name(ctx, input) }
         } else {
-            quote! { #impl_fn_name(input).await }
+            quote! { #impl_fn_name(input) }
         }
     } else {
         let destructure: Vec<_> = (0..input_params.len())
@@ -122,9 +122,9 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
             })
             .collect();
         if has_ctx {
-            quote! { #impl_fn_name(ctx, #(#destructure),*).await }
+            quote! { #impl_fn_name(ctx, #(#destructure),*) }
         } else {
-            quote! { #impl_fn_name(#(#destructure),*).await }
+            quote! { #impl_fn_name(#(#destructure),*) }
         }
     };
 
@@ -185,8 +185,8 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
                 fn exec(
                     ctx: &#ctx_ty,
                     input: Self::Input,
-                ) -> impl ::std::future::Future<Output = Result<Self::Output, fnrpc::error::RpcErr>> + Send {
-                    async move { #exec_body }
+                ) -> Result<Self::Output, fnrpc::error::RpcErr> {
+                    #exec_body
                 }
             }
 
@@ -211,8 +211,8 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
                 fn exec(
                     _ctx: &T,
                     input: Self::Input,
-                ) -> impl ::std::future::Future<Output = Result<Self::Output, fnrpc::error::RpcErr>> + Send {
-                    async move { #exec_body }
+                ) -> Result<Self::Output, fnrpc::error::RpcErr> {
+                    #exec_body
                 }
             }
 

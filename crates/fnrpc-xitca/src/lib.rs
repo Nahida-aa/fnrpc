@@ -8,7 +8,7 @@ use xitca_web::bytes::Bytes;
 use xitca_web::error::Error;
 use xitca_web::handler::json::Json;
 use xitca_web::http::{
-    header::CONTENT_TYPE, StatusCode, WebResponse,
+    header::{CONTENT_TYPE, CACHE_CONTROL, HeaderValue}, StatusCode, WebResponse,
 };
 use xitca_web::WebContext;
 
@@ -22,7 +22,7 @@ fn json_response(status: StatusCode, body: Value) -> WebResponse {
     let bytes = serde_json::to_vec(&body).unwrap_or_default();
     WebResponse::builder()
         .status(status)
-        .header(CONTENT_TYPE, "application/json")
+        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
         .body(ResponseBody::bytes(bytes))
         .unwrap()
 }
@@ -77,7 +77,7 @@ pub async fn dispatch<Ctx: Send + Sync + 'static>(
 
     // Fast path: direct handler call
     if let Some(handler) = state.router.get_handler(path) {
-        match handler.call(&ctx_value, input).await {
+        match handler.call(&ctx_value, input) {
             Ok(val) => Ok(json_response(StatusCode::OK, val)),
             Err(e) => Ok(rpc_err_to_response(e)),
         }
@@ -102,8 +102,8 @@ pub async fn dispatch<Ctx: Send + Sync + 'static>(
         });
         let res = WebResponse::builder()
             .status(StatusCode::OK)
-            .header("content-type", "text/event-stream")
-            .header("cache-control", "no-cache")
+            .header(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"))
+            .header(CACHE_CONTROL, HeaderValue::from_static("no-cache"))
             .body(ResponseBody::boxed(StreamDataBody::new(sse)))
             .unwrap();
         Ok(res)

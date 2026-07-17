@@ -120,7 +120,7 @@ use proc_macro::TokenStream;
 ///     type Output = &'static str;
 ///     const NAME: &'static str = "health_check";
 ///     const KIND: &'static str = "query";
-///     async fn exec(_ctx: &T, _input: ()) -> Result<Self::Output, RpcErr> {
+///     fn exec(_ctx: &T, _input: ()) -> Result<Self::Output, RpcErr> {
 ///         Ok("ok")
 ///     }
 /// }
@@ -184,7 +184,7 @@ pub fn rpc_mutate(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[rpc_subscribe]
 /// pub fn tick(interval_ms: u64) -> impl futures::Stream<Item = u64> {
 ///     futures::stream::unfold(0u64, move |count| async move {
-///         tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
+///         tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms));
 ///         Some((count, count + 1))
 ///     })
 /// }
@@ -202,7 +202,7 @@ pub fn rpc_mutate(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     futures::stream::unfold(0u32, move |count| {
 ///         let prefix = prefix.clone();
 ///         async move {
-///             tokio::time::sleep(Duration::from_secs(1)).await;
+///             tokio::time::sleep(Duration::from_secs(1));
 ///             Some((format!("{prefix} #{count}"), count + 1))
 ///         }
 ///     })
@@ -220,7 +220,7 @@ pub fn rpc_mutate(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[rpc_subscribe]
 /// fn subscribe(name: String) -> impl futures::Stream<Item = Result<String, String>> {
 ///     futures::stream::unfold(0u32, move |count| async move {
-///         tokio::time::sleep(Duration::from_secs(1)).await;
+///         tokio::time::sleep(Duration::from_secs(1));
 ///         Some((Ok(format!("hello #{count}")), count + 1))
 ///     })
 /// }

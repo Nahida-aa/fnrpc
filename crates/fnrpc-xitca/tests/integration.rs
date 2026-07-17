@@ -32,7 +32,7 @@ async fn test_query_get() {
         type Output = String;
         const NAME: &'static str = "greet";
 
-        async fn exec(_ctx: &(), input: String) -> Result<String, RpcErr> {
+        fn exec(_ctx: &(), input: String) -> Result<String, RpcErr> {
             Ok(format!("Hello {input}!"))
         }
     }
@@ -70,7 +70,7 @@ async fn test_query_post() {
         type Output = i32;
         const NAME: &'static str = "add";
 
-        async fn exec(_ctx: &(), input: (i32, i32)) -> Result<i32, RpcErr> {
+        fn exec(_ctx: &(), input: (i32, i32)) -> Result<i32, RpcErr> {
             Ok(input.0 + input.1)
         }
     }
@@ -181,7 +181,7 @@ async fn test_with_context() {
         type Output = String;
         const NAME: &'static str = "ctx_greet";
 
-        async fn exec(ctx: &MyCtx, input: String) -> Result<String, RpcErr> {
+        fn exec(ctx: &MyCtx, input: String) -> Result<String, RpcErr> {
             Ok(format!("{}{}", ctx.prefix, input))
         }
     }
