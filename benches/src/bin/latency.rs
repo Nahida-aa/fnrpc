@@ -2,10 +2,10 @@
 //!
 //! Reference: tt benchmark (web-server/tt) — ramp-up concurrency, measure
 //! RPS, latency percentiles, error rate, and memory usage at each level.
+//! Supports GET and POST scenarios with configurable payload sizes.
 //!
 //! Usage:
-//!   cargo run -p benches --bin latency --release -- fnrpc-web 5000 3
-//!   cargo run -p benches --bin latency --release -- xitca-web 5000 3
+//!   cargo run -p benches --bin latency --release -- fnrpc-web 2000 3
 //!   cargo run -p benches --bin latency --release -- all 2000 3
 
 use std::process::{Command, Stdio};
@@ -32,7 +32,6 @@ fn wait_for_server(port: u16, timeout: Duration) {
     }
 }
 
-/// Read server memory usage (VmRSS) from /proc/<pid>/status.
 fn read_memory_kb(pid: u32) -> u64 {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
     for line in status.lines() {
@@ -52,7 +51,6 @@ struct BenchResult {
     errors: usize,
     latencies: Vec<f64>,
     mem_kb: u64,
-    mem_delta_kb: i64, // delta from baseline
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
@@ -61,8 +59,13 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[idx]
 }
 
+enum Req {
+    Get(String),
+    Post(String, Vec<u8>),
+}
+
 async fn bench_concurrent(
-    url: &str, concurrency: usize, duration: Duration,
+    req: &Req, concurrency: usize, duration: Duration,
 ) -> BenchResult {
     let stop = Arc::new(AtomicBool::new(false));
     let latencies = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -80,12 +83,22 @@ async fn bench_concurrent(
         let latencies = latencies.clone();
         let errors = errors.clone();
         let client = client.clone();
-        let url = url.to_string();
+        let req = match req {
+            Req::Get(url) => Req::Get(url.clone()),
+            Req::Post(url, body) => Req::Post(url.clone(), body.clone()),
+        };
         handles.push(tokio::spawn(async move {
             loop {
                 if stop.load(Ordering::Relaxed) { break; }
                 let t0 = Instant::now();
-                match client.get(&url).send().await {
+                let result = match &req {
+                    Req::Get(url) => client.get(url).send().await,
+                    Req::Post(url, body) => client.post(url)
+                        .header("content-type", "application/json")
+                        .body(body.clone())
+                        .send().await,
+                };
+                match result {
                     Ok(resp) => {
                         let _body = resp.bytes().await.unwrap();
                         latencies.lock().unwrap().push(t0.elapsed().as_secs_f64() * 1000.0);
@@ -102,7 +115,7 @@ async fn bench_concurrent(
 
     let latencies = latencies.lock().unwrap().clone();
     let errors = *errors.lock().unwrap();
-    BenchResult { concurrency, duration, requests: latencies.len(), errors, latencies, mem_kb: 0, mem_delta_kb: 0 }
+    BenchResult { concurrency, duration, requests: latencies.len(), errors, latencies, mem_kb: 0 }
 }
 
 fn print_header() {
@@ -128,23 +141,21 @@ fn print_results(scenario: &str, results: &[BenchResult], baseline_kb: u64) {
             r.errors as f64 / (r.requests + r.errors) as f64 * 100.0
         } else { 0.0 };
         let delta = r.mem_kb as i64 - baseline_kb as i64;
-
         println!("  {:>6}  {:>8}  {:>10.0}  {:>8.3}  {:>8.3}  {:>8.3}  {:>8.3}  {:>6.2}%  {:>8}  {:>+9}",
             r.concurrency, r.requests, rps, avg, p50, p95, p99, err_rate, r.mem_kb / 1024, delta / 1024);
     }
 }
 
 async fn run_scenario(
-    url: &str, scenario: &str,
+    req: &Req, scenario: &str,
     concurrency_levels: &[usize], duration: Duration,
     server_pid: u32, baseline_kb: u64,
 ) {
     let mut results = Vec::new();
     for &c in concurrency_levels {
         eprintln!("  {scenario} concurrency={c}...");
-        let mut result = bench_concurrent(url, c, duration).await;
+        let mut result = bench_concurrent(req, c, duration).await;
         result.mem_kb = read_memory_kb(server_pid);
-        result.mem_delta_kb = result.mem_kb as i64 - baseline_kb as i64;
         results.push(result);
     }
     print_results(scenario, &results, baseline_kb);
@@ -153,7 +164,7 @@ async fn run_scenario(
 fn run_framework(
     name: &str, binary: &str, port: u16,
     concurrency_levels: &[usize], duration: Duration,
-    endpoints: &[(&str, &str)],
+    endpoints: &[(&str, &str, bool, &[u8])], // (path, label, is_post, body)
 ) {
     let mut server = if name == "xitca-web" {
         Command::new(binary).arg(port.to_string())
@@ -173,12 +184,14 @@ fn run_framework(
         .enable_all().build().unwrap();
 
     rt.block_on(async {
-        for (path, label) in endpoints {
-            run_scenario(
-                &format!("http://127.0.0.1:{port}{path}"),
-                &format!("{name}/{label}"),
-                concurrency_levels, duration, server_pid, baseline_mem,
-            ).await;
+        for (path, label, is_post, body) in endpoints {
+            let req = if *is_post {
+                Req::Post(format!("http://127.0.0.1:{port}{path}"), body.to_vec())
+            } else {
+                Req::Get(format!("http://127.0.0.1:{port}{path}"))
+            };
+            run_scenario(&req, &format!("{name}/{label}"),
+                concurrency_levels, duration, server_pid, baseline_mem).await;
         }
     });
 
@@ -201,8 +214,7 @@ fn concurrency_levels(max: usize) -> Vec<usize> {
     let mut c = 1000;
     while c <= max {
         levels.push(c);
-        if c >= 2000 { c += 2000; }
-        else { c += 1000; }
+        if c >= 2000 { c += 2000; } else { c += 1000; }
     }
     if *levels.last().unwrap() != max { levels.push(max); }
     levels
@@ -212,7 +224,6 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let framework = args.get(1).map(|s| s.as_str()).unwrap_or_else(|| {
         eprintln!("Usage: latency [fnrpc-web|xitca-web|all] [max_concurrency] [duration_secs]");
-        eprintln!("  Measures RPS, latency percentiles, error rate, and memory at increasing concurrency");
         std::process::exit(1);
     });
     let max_concurrency: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2000);
@@ -220,14 +231,24 @@ fn main() {
     let levels = concurrency_levels(max_concurrency);
     let duration = Duration::from_secs(duration_secs);
 
-    let fnrpc_endpoints = &[
-        ("/noop?input=null", "noop_json"),
-        ("/raw_noop", "noop_raw"),
-        ("/in?key=fnrpc", "lookup"),
+    // Pre-built JSON payloads for POST benchmarks
+    let medium_body = br#"{"id":42,"name":"Alice Johnson","email":"alice@example.com","tags":["premium","vip","early-adopter"],"score":98.5}"#;
+    let large_body = br#"{"items":[{"id":0,"name":"product-0","description":"A high-quality item with excellent features and durable construction suitable for various uses.","price":19.99,"quantity":100,"category":"electronics","tags":["new","popular","discount"],"metadata":{"color":"red","size":"XL","weight":"1.5kg"}},{"id":1,"name":"product-1","description":"A high-quality item with excellent features and durable construction suitable for various uses.","price":20.99,"quantity":101,"category":"electronics","tags":["new","popular","discount"],"metadata":{"color":"red","size":"XL","weight":"1.5kg"}}]}"#;
+
+    // (path, label, is_post, body)
+    let fnrpc_endpoints: &[(&str, &str, bool, &[u8])] = &[
+        ("/noop?input=null", "noop_json", false, b""),
+        ("/raw_noop", "noop_raw", false, b""),
+        ("/in?key=fnrpc", "lookup", false, b""),
+        ("/echo", "echo_small", true, br#""hello""#),
+        ("/medium", "echo_medium", true, medium_body),
+        ("/large", "echo_large", true, large_body),
     ];
-    let xitca_endpoints = &[
-        ("/noop-json", "noop_json"),
-        ("/noop-raw", "noop_raw"),
+
+    let xitca_endpoints: &[(&str, &str, bool, &[u8])] = &[
+        ("/noop-json", "noop_json", false, b""),
+        ("/noop-raw", "noop_raw", false, b""),
+        ("/echo", "echo_small", true, br#""hello""#),
     ];
 
     match framework {
@@ -253,9 +274,6 @@ fn main() {
             run_framework("xitca-web", "target/release/xitca_web_server",
                 find_free_port(), &levels, duration, xitca_endpoints);
         }
-        _ => {
-            eprintln!("Unknown framework: {framework}");
-            std::process::exit(1);
-        }
+        _ => { eprintln!("Unknown: {framework}"); std::process::exit(1); }
     }
 }

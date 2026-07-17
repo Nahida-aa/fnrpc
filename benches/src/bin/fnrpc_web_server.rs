@@ -5,11 +5,11 @@ use fnrpc::error::RpcErr;
 use fnrpc::handler::{RawRpcFn, RpcFn};
 use fnrpc::router::RpcRouterBuilder;
 use fnrpc_web::{RpcWebConfig, run};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 type AppCtx = Arc<RwLock<HashMap<String, f64>>>;
 
-// ── JSON handlers ───────────────────────────────────────
+// ── Small payload: noop ────────────────────────────────
 
 struct Noop;
 impl RpcFn<AppCtx> for Noop {
@@ -19,6 +19,8 @@ impl RpcFn<AppCtx> for Noop {
     fn exec(_ctx: &AppCtx, _input: ()) -> Result<(), RpcErr> { Ok(()) }
 }
 
+// ── Small payload: echo string ─────────────────────────
+
 struct Echo;
 impl RpcFn<AppCtx> for Echo {
     type Input = String;
@@ -27,36 +29,71 @@ impl RpcFn<AppCtx> for Echo {
     fn exec(_ctx: &AppCtx, input: String) -> Result<String, RpcErr> { Ok(input) }
 }
 
-/// Simulates the tt benchmark's `/in?key=` endpoint.
+// ── Medium payload: user profile (~200B JSON) ──────────
+
+#[derive(Serialize, Deserialize)]
+struct MediumPayload {
+    id: u32,
+    name: String,
+    email: String,
+    tags: Vec<String>,
+    score: f64,
+}
+
+struct Medium;
+impl RpcFn<AppCtx> for Medium {
+    type Input = MediumPayload;
+    type Output = MediumPayload;
+    const NAME: &'static str = "medium";
+    fn exec(_ctx: &AppCtx, input: MediumPayload) -> Result<MediumPayload, RpcErr> { Ok(input) }
+}
+
+// ── Large payload: batch data (~10KB JSON) ─────────────
+
+#[derive(Serialize, Deserialize)]
+struct LargePayload {
+    items: Vec<LargeItem>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct LargeItem {
+    id: u32,
+    name: String,
+    description: String,
+    price: f64,
+    quantity: u32,
+    category: String,
+    tags: Vec<String>,
+    metadata: HashMap<String, String>,
+}
+
+struct Large;
+impl RpcFn<AppCtx> for Large {
+    type Input = LargePayload;
+    type Output = LargePayload;
+    const NAME: &'static str = "large";
+    fn exec(_ctx: &AppCtx, input: LargePayload) -> Result<LargePayload, RpcErr> { Ok(input) }
+}
+
+// ── Lookup (HashMap read + JSON response) ──────────────
+
 struct Lookup;
 impl RawRpcFn<AppCtx> for Lookup {
     const NAME: &'static str = "in";
     fn exec(ctx: &AppCtx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
         let query_str = std::str::from_utf8(input).unwrap_or("");
-        let key = query_str
-            .split('&')
-            .find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                if parts.next() == Some("key") {
-                    parts.next()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("");
+        let key = query_str.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            if parts.next() == Some("key") { parts.next() } else { None }
+        }).unwrap_or("");
         let n = ctx.read().unwrap().get(key).copied().unwrap_or(0.0);
-        // Use serde_json for fair comparison with other frameworks
         let output = LookupOutput { entity: key.to_string(), n };
-        let bytes = serde_json::to_vec(&output).unwrap_or_default();
-        Ok(bytes)
+        serde_json::to_vec(&output).map_err(|_| RpcErr::internal("serialize error"))
     }
 }
 
 #[derive(Serialize)]
-struct LookupOutput {
-    entity: String,
-    n: f64,
-}
+struct LookupOutput { entity: String, n: f64 }
 
 // ── Raw handler ─────────────────────────────────────────
 
@@ -66,15 +103,45 @@ impl RawRpcFn<AppCtx> for RawNoop {
     fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> { Ok(b"ok".to_vec()) }
 }
 
+// ── Generate test data ──────────────────────────────────
+
+fn make_large_payload() -> LargePayload {
+    let items: Vec<LargeItem> = (0..20).map(|i| {
+        let mut metadata = HashMap::new();
+        metadata.insert("color".into(), "red".into());
+        metadata.insert("size".into(), "XL".into());
+        metadata.insert("weight".into(), "1.5kg".into());
+        LargeItem {
+            id: i,
+            name: format!("product-{i}"),
+            description: "A high-quality item with excellent features and durable construction suitable for various uses.".into(),
+            price: 19.99 + i as f64,
+            quantity: 100 + i,
+            category: "electronics".into(),
+            tags: vec!["new".into(), "popular".into(), "discount".into()],
+            metadata,
+        }
+    }).collect();
+    LargePayload { items }
+}
+
+fn make_medium_payload() -> MediumPayload {
+    MediumPayload {
+        id: 42,
+        name: "Alice Johnson".into(),
+        email: "alice@example.com".into(),
+        tags: vec!["premium".into(), "vip".into(), "early-adopter".into()],
+        score: 98.5,
+    }
+}
+
 // ── Server setup ────────────────────────────────────────
 
 fn parse_args() -> u16 {
     let args: Vec<String> = std::env::args().collect();
     for i in 0..args.len() {
         if args[i] == "--port" {
-            if let Some(p) = args.get(i + 1) {
-                return p.parse().unwrap_or(19111);
-            }
+            if let Some(p) = args.get(i + 1) { return p.parse().unwrap_or(19111); }
         }
     }
     19111
@@ -85,16 +152,22 @@ async fn main() {
     let port = parse_args();
 
     let data = Arc::new(RwLock::new(HashMap::from([
-        ("actix".to_string(), 1.0),
-        ("axum".to_string(), 2.0),
-        ("gin".to_string(), 3.0),
-        ("fnrpc".to_string(), 4.0),
+        ("actix".into(), 1.0), ("axum".into(), 2.0),
+        ("gin".into(), 3.0), ("fnrpc".into(), 4.0),
     ])));
+
+    // Pre-encode test payloads for POST benchmarks
+    let medium_json = serde_json::to_vec(&make_medium_payload()).unwrap();
+    let large_json = serde_json::to_vec(&make_large_payload()).unwrap();
+    eprintln!("medium payload: {} bytes", medium_json.len());
+    eprintln!("large payload: {} bytes", large_json.len());
 
     let config = RpcWebConfig {
         router: RpcRouterBuilder::<AppCtx>::new()
             .query(Noop)
             .query(Echo)
+            .query(Medium)
+            .query(Large)
             .raw(Lookup)
             .raw(RawNoop)
             .build(),
