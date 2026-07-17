@@ -1,0 +1,193 @@
+{
+"dhatFileVersion": 2,
+"mode": "rust-heap",
+"verb": "Allocated",
+"bklt": true,
+"bkacc": false,
+"tu": "µs",
+"Mtu": "s",
+"tuth": 10,
+"cmd": "target/release/dhat_server fnrpc-web 100",
+"pid": 1811036,
+"tg": 835,
+"te": 844,
+"pps": [
+{
+"tb": 2400,
+"tbk": 100,
+"tl": 29,
+"mb": 24,
+"mbk": 1,
+"gb": 24,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+2,
+3,
+4
+]
+},
+{
+"tb": 2500,
+"tbk": 100,
+"tl": 469,
+"mb": 25,
+"mbk": 1,
+"gb": 25,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+5,
+3,
+4
+]
+},
+{
+"tb": 63200,
+"tbk": 100,
+"tl": 376,
+"mb": 632,
+"mbk": 1,
+"gb": 632,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+6,
+7,
+3,
+4
+]
+},
+{
+"tb": 1200,
+"tbk": 100,
+"tl": 743,
+"mb": 12,
+"mbk": 1,
+"gb": 12,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+8,
+9,
+10
+]
+},
+{
+"tb": 3200,
+"tbk": 100,
+"tl": 197,
+"mb": 32,
+"mbk": 1,
+"gb": 32,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+11,
+12,
+3,
+4
+]
+},
+{
+"tb": 500,
+"tbk": 100,
+"tl": 643,
+"mb": 5,
+"mbk": 1,
+"gb": 5,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+13,
+3,
+4
+]
+},
+{
+"tb": 2800,
+"tbk": 100,
+"tl": 180,
+"mb": 28,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+14,
+15,
+3,
+4
+]
+},
+{
+"tb": 12800,
+"tbk": 100,
+"tl": 302,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+16,
+3,
+4
+]
+},
+{
+"tb": 62400,
+"tbk": 100,
+"tl": 103,
+"mb": 624,
+"mbk": 1,
+"gb": 624,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+17,
+12,
+3,
+4
+]
+}
+],
+"ftbl": [
+"[root]",
+"0x55f391f25089: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+"0x55f391f31ca0: fnrpc_web::not_found_response (???:0:0)",
+"0x55f391edc784: fnrpc_web::handle::{{closure}} (???:0:0)",
+"0x55f391e9e244: dhat_server::server::fnrpc_web::run::{{closure}} (???:0:0)",
+"0x55f391f31a74: fnrpc_web::not_found_response (???:0:0)",
+"0x55f391f2f11e: alloc::collections::btree::map::BTreeMap<K,V,A>::insert (???:0:0)",
+"0x55f391f31ac9: fnrpc_web::not_found_response (???:0:0)",
+"0x55f391f0ed63: bytes::bytes::Bytes::copy_from_slice (???:0:0)",
+"0x55f391e9d533: dhat_server::server::fnrpc_web::make_get_req (???:0:0)",
+"0x55f391e9e1fe: dhat_server::server::fnrpc_web::run::{{closure}} (???:0:0)",
+"0x55f391f2c47b: http::response::Builder::and_then (???:0:0)",
+"0x55f391f31c71: fnrpc_web::not_found_response (???:0:0)",
+"0x55f391f319e8: fnrpc_web::not_found_response (???:0:0)",
+"0x55f391ee014e: alloc::fmt::format::format_inner (???:0:0)",
+"0x55f391f31a54: fnrpc_web::not_found_response (???:0:0)",
+"0x55f391f31b24: fnrpc_web::not_found_response (???:0:0)",
+"0x55f391f2c4dd: http::response::Builder::and_then (???:0:0)"
+]
+}

@@ -54,11 +54,6 @@ fn make_raw_get_req(uri: &str) -> Request<RequestBody> {
     let mut req = Request::new(RequestBody::None);
     *req.method_mut() = Method::GET;
     *req.uri_mut() = uri.parse().unwrap();
-    // Set Content-Type to trigger raw protocol
-    req.headers_mut().insert(
-        http::HeaderName::from_static("content-type"),
-        http::HeaderValue::from_static("application/octet-stream"),
-    );
     req
 }
 
