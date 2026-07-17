@@ -99,6 +99,33 @@ impl RawRpcFn<AppCtx> for Lookup {
 #[derive(Serialize)]
 struct LookupOutput { entity: String, n: f64 }
 
+// ── TechEmpower-style endpoints ────────────────────────
+
+/// /json — returns {"message": "Hello, World!"}
+struct JsonEndpoint;
+impl RpcFn<AppCtx> for JsonEndpoint {
+    type Input = ();
+    type Output = JsonMessage;
+    const NAME: &'static str = "json";
+    fn exec(_ctx: &AppCtx, _input: ()) -> Result<JsonMessage, RpcErr> {
+        Ok(JsonMessage { message: "Hello, World!" })
+    }
+}
+
+#[derive(Serialize)]
+struct JsonMessage {
+    message: &'static str,
+}
+
+/// /plaintext — returns "Hello, World!" (raw, no JSON)
+struct PlaintextEndpoint;
+impl RawRpcFn<AppCtx> for PlaintextEndpoint {
+    const NAME: &'static str = "plaintext";
+    fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+        Ok(b"Hello, World!".to_vec())
+    }
+}
+
 // ── Raw handler ─────────────────────────────────────────
 
 struct RawNoop;
@@ -183,6 +210,8 @@ async fn main() {
             .query(Large)
             .raw(Lookup)
             .raw(RawNoop)
+            .query(JsonEndpoint)
+            .raw(PlaintextEndpoint)
             .build(),
         ctx_from_headers: Arc::new(move |_| data.clone()),
     };

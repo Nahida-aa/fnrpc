@@ -92,6 +92,26 @@ async fn handler_lookup(
         .unwrap())
 }
 
+// ── TechEmpower-style endpoints ───────────────────────
+
+async fn handler_json_te(_ctx: WebContext<'_, AppCtx>) -> Result<WebResponse, xitca_web::error::Error> {
+    let body = serde_json::json!({"message": "Hello, World!"});
+    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    Ok(WebResponse::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .body(ResponseBody::bytes(bytes))
+        .unwrap())
+}
+
+async fn handler_plaintext(_ctx: WebContext<'_, AppCtx>) -> Result<WebResponse, xitca_web::error::Error> {
+    Ok(WebResponse::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, HeaderValue::from_static("text/plain"))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"Hello, World!")))
+        .unwrap())
+}
+
 // ── Server ─────────────────────────────────────────────
 
 fn main() {
@@ -130,6 +150,8 @@ fn main() {
             .at("/medium", post(handler_service(handler_medium)))
             .at("/large", post(handler_service(handler_large)))
             .at("/in", get(fn_service(handler_lookup)))
+            .at("/json", get(fn_service(handler_json_te)))
+            .at("/plaintext", get(fn_service(handler_plaintext)))
             .serve()
             .bind(format!("0.0.0.0:{port}"))
             .unwrap()

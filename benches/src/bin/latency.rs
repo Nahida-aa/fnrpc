@@ -254,6 +254,8 @@ fn main() {
         ("/echo", "echo_small", true, br#""hello""#),
         ("/medium", "echo_medium", true, medium_body),
         ("/large", "echo_large", true, large_body),
+        ("/json", "json_te", false, b""),
+        ("/plaintext", "plaintext_te", false, b""),
     ];
 
     let xitca_endpoints: &[(&str, &str, bool, &[u8])] = &[
@@ -263,6 +265,8 @@ fn main() {
         ("/medium", "echo_medium", true, medium_body),
         ("/large", "echo_large", true, large_body),
         ("/in?key=fnrpc", "lookup", false, b""),
+        ("/json", "json_te", false, b""),
+        ("/plaintext", "plaintext_te", false, b""),
     ];
 
     match framework {
