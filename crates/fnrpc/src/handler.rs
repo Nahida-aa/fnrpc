@@ -163,7 +163,7 @@ fn is_unit_type<T: 'static>() -> bool {
 /// Raw handlers bypass the middleware stack and are not included in codegen.
 pub trait RawRpcFn<Ctx>: Send + Sync {
     const NAME: &'static str;
-    fn exec(ctx: &Ctx, input: &[u8]) -> Result<&'static [u8], RpcErr>;
+    fn exec(ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr>;
 }
 
 // ── Subscription traits ────────────────────────────────────

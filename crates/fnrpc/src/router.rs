@@ -473,7 +473,7 @@ impl<Ctx: Send + Sync + 'static> RpcService<Ctx> for InnerService<Ctx> {
 /// Bridges a [`RawRpcFn`] to [`ErasedHandler`] via function pointer.
 struct RawRpcAdapter<Ctx> {
     name: &'static str,
-    exec: Arc<dyn Fn(&Ctx, &[u8]) -> Result<&'static [u8], RpcErr> + Send + Sync>,
+    exec: Arc<dyn Fn(&Ctx, &[u8]) -> Result<Vec<u8>, RpcErr> + Send + Sync>,
 }
 
 impl<Ctx> RawRpcAdapter<Ctx> {
@@ -501,6 +501,6 @@ impl<Ctx: Send + Sync + 'static> ErasedHandler<Ctx> for RawRpcAdapter<Ctx> {
     fn content_type(&self) -> Option<&'static str> { None }
 
     fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
-        (self.exec)(ctx, input).map(Cow::Borrowed)
+        (self.exec)(ctx, input).map(Cow::Owned)
     }
 }

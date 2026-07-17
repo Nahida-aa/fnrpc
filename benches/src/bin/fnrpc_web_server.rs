@@ -31,7 +31,7 @@ impl RpcFn<AppCtx> for Echo {
 struct Lookup;
 impl RawRpcFn<AppCtx> for Lookup {
     const NAME: &'static str = "in";
-    fn exec(ctx: &AppCtx, input: &[u8]) -> Result<&'static [u8], RpcErr> {
+    fn exec(ctx: &AppCtx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
         let query_str = std::str::from_utf8(input).unwrap_or("");
         let key = query_str
             .split('&')
@@ -48,7 +48,7 @@ impl RawRpcFn<AppCtx> for Lookup {
         // Use serde_json for fair comparison with other frameworks
         let output = LookupOutput { entity: key.to_string(), n };
         let bytes = serde_json::to_vec(&output).unwrap_or_default();
-        Ok(Box::leak(bytes.into_boxed_slice()))
+        Ok(bytes)
     }
 }
 
@@ -63,7 +63,7 @@ struct LookupOutput {
 struct RawNoop;
 impl RawRpcFn<AppCtx> for RawNoop {
     const NAME: &'static str = "raw_noop";
-    fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<&'static [u8], RpcErr> { Ok(b"ok") }
+    fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> { Ok(b"ok".to_vec()) }
 }
 
 // ── Server setup ────────────────────────────────────────

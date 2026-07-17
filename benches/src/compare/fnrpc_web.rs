@@ -28,7 +28,7 @@ impl RpcFn<()> for Echo {
 struct RawNoop;
 impl RawRpcFn<()> for RawNoop {
     const NAME: &'static str = "raw_noop";
-    fn exec(_ctx: &(), _input: &[u8]) -> Result<&'static [u8], RpcErr> { Ok(b"ok") }
+    fn exec(_ctx: &(), _input: &[u8]) -> Result<Vec<u8>, RpcErr> { Ok(b"ok".to_vec()) }
 }
 
 pub(crate) async fn bench(n: usize) {
