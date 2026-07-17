@@ -125,11 +125,37 @@ pub(crate) async fn bench(n: usize) {
         .at("/echo-get", get(fn_service(handler_echo_get)));
     let svc = app.finish().call(()).await.unwrap();
 
-    // — noop_raw (GET, no header) —
+    // Pre-parse URIs outside profiler
+    let uri_raw: http::Uri = "/noop-raw".parse().unwrap();
+    let uri_json: http::Uri = "/noop-json".parse().unwrap();
+    let uri_echo_get: http::Uri = r#"/echo-get?input=%22hello%22"#.parse().unwrap();
+    let uri_echo: http::Uri = "/echo".parse().unwrap();
+    let body_data: Vec<u8> = br#""hello""#.to_vec();
+
+    fn build_get(uri: &http::Uri) -> http::Request<RequestExt<RequestBody>> {
+        let req_ext: RequestExt<RequestBody> = RequestExt::default();
+        http::Request::builder()
+            .method(Method::GET)
+            .uri(uri.clone())
+            .body(req_ext)
+            .unwrap()
+    }
+
+    fn build_post(uri: &http::Uri, body: &[u8]) -> http::Request<RequestExt<RequestBody>> {
+        let req_ext: RequestExt<RequestBody> = <RequestExt<RequestBody>>::default().replace_body(
+            RequestBody::from(xitca_web::bytes::Bytes::copy_from_slice(body))
+        ).0;
+        http::Request::builder()
+            .method(Method::POST)
+            .uri(uri.clone())
+            .body(req_ext)
+            .unwrap()
+    }
+
+    // — noop_raw —
     let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
-        let req = make_get_req("/noop-raw");
-        let _ = svc.call(req).await.unwrap();
+        let _ = svc.call(build_get(&uri_raw)).await.unwrap();
     }
     let s = HeapStats::get();
     eprintln!("xitca-web/noop_raw: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
@@ -138,11 +164,10 @@ pub(crate) async fn bench(n: usize) {
     drop(_p);
     let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-noop-raw.json");
 
-    // — noop_json (GET, JSON header) —
+    // — noop_json —
     let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
-        let req = make_get_req("/noop-json");
-        let _ = svc.call(req).await.unwrap();
+        let _ = svc.call(build_get(&uri_json)).await.unwrap();
     }
     let s = HeapStats::get();
     eprintln!("xitca-web/noop_json: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
@@ -151,11 +176,10 @@ pub(crate) async fn bench(n: usize) {
     drop(_p);
     let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-noop-json.json");
 
-    // — echo (GET) —
+    // — echo_get —
     let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
-        let req = make_get_req(r#"/echo-get?input=%22hello%22"#);
-        let _ = svc.call(req).await.unwrap();
+        let _ = svc.call(build_get(&uri_echo_get)).await.unwrap();
     }
     let s = HeapStats::get();
     eprintln!("xitca-web/echo_get: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
@@ -164,13 +188,10 @@ pub(crate) async fn bench(n: usize) {
     drop(_p);
     let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-echo-get.json");
 
-    // — echo (POST) —
-    let body_data = br#""hello""#;
+    // — echo_post —
     let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
-        let body = RequestBody::from(xitca_web::bytes::Bytes::copy_from_slice(body_data));
-        let req = make_post_req("/echo", body);
-        let _ = svc.call(req).await.unwrap();
+        let _ = svc.call(build_post(&uri_echo, &body_data)).await.unwrap();
     }
     let s = HeapStats::get();
     eprintln!("xitca-web/echo_post: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
