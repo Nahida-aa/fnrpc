@@ -85,7 +85,7 @@ pub(crate) async fn bench(n: usize) {
     };
 
     // — noop_json (GET, JSON Content-Type) —
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_get_req("/noop?input=null");
         let _ = handle(&config, req).await;
@@ -95,10 +95,10 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-noop-json.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-fnrpc-web-noop-json.json");
 
     // — noop_raw (GET, raw Content-Type, RawRpcFn handler) —
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_raw_get_req("/raw_noop");
         let _ = handle(&config, req).await;
@@ -108,10 +108,10 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-noop-raw.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-fnrpc-web-noop-raw.json");
 
     // — echo (GET) —
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_get_req(r#"/echo?input=%22hello%22"#);
         let _ = handle(&config, req).await;
@@ -121,11 +121,11 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-echo-get.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-fnrpc-web-echo-get.json");
 
     // — echo (POST) —
     let body_data = br#""hello""#;
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_post_req("/echo", body_data);
         let _ = handle(&config, req).await;
@@ -135,10 +135,10 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-echo-post.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-fnrpc-web-echo-post.json");
 
     // — not_found —
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_get_req("/nonexistent");
         let _ = handle(&config, req).await;
@@ -148,5 +148,5 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-fnrpc-web-notfound.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-fnrpc-web-notfound.json");
 }

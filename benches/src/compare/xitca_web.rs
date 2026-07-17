@@ -126,7 +126,7 @@ pub(crate) async fn bench(n: usize) {
     let svc = app.finish().call(()).await.unwrap();
 
     // — noop_raw (GET, no header) —
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_get_req("/noop-raw");
         let _ = svc.call(req).await.unwrap();
@@ -136,10 +136,10 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-xitca-web-noop-raw.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-noop-raw.json");
 
     // — noop_json (GET, JSON header) —
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_get_req("/noop-json");
         let _ = svc.call(req).await.unwrap();
@@ -149,10 +149,10 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-xitca-web-noop-json.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-noop-json.json");
 
     // — echo (GET) —
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let req = make_get_req(r#"/echo-get?input=%22hello%22"#);
         let _ = svc.call(req).await.unwrap();
@@ -162,11 +162,11 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-xitca-web-echo-get.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-echo-get.json");
 
     // — echo (POST) —
     let body_data = br#""hello""#;
-    let _p = Profiler::new_heap();
+    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
     for _ in 0..n {
         let body = RequestBody::from(xitca_web::bytes::Bytes::copy_from_slice(body_data));
         let req = make_post_req("/echo", body);
@@ -177,5 +177,5 @@ pub(crate) async fn bench(n: usize) {
         s.total_bytes, s.total_blocks,
         s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
     drop(_p);
-    let _ = std::fs::copy("dhat-heap.json", "dhat-xitca-web-echo-post.json");
+    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-echo-post.json");
 }
