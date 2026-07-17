@@ -165,10 +165,14 @@ async fn run_scenario(
 }
 
 fn run_framework(
-    name: &str, binary: &str,
+    name: &str, default_binary: &str,
     concurrency_levels: &[usize], duration: Duration,
     endpoints: &[(&str, &str, bool, &[u8])],
 ) {
+    // Allow overriding binary path via env var (used in container)
+    let env_key = format!("FNRPC_BIN_{}", name.to_uppercase().replace('-', "_"));
+    let binary = std::env::var(&env_key).unwrap_or_else(|_| default_binary.to_string());
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all().build().unwrap();
 
@@ -176,10 +180,10 @@ fn run_framework(
         for (path, label, is_post, body) in endpoints {
             let port = find_free_port();
             let mut server = if name == "xitca-web" {
-                Command::new(binary).arg(port.to_string())
+                Command::new(&binary).arg(port.to_string())
                     .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
             } else {
-                Command::new(binary).arg("--port").arg(port.to_string())
+                Command::new(&binary).arg("--port").arg(port.to_string())
                     .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
             };
             let mut server = server.expect(&format!("failed to start {name} server"));
@@ -203,6 +207,10 @@ fn run_framework(
 }
 
 fn build_server(name: &str) {
+    // Allow skipping build via env var (used in container: binaries are pre-built)
+    if std::env::var("FNRPC_SKIP_BUILD").is_ok() {
+        return;
+    }
     eprintln!("Building {name}...");
     let status = Command::new("cargo")
         .args(["build", "--release", "-p", "benches", "--bin", name])
