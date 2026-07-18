@@ -235,7 +235,11 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
 /// Used by [`crate::router::RpcRouterBuilder::route_fn`] for zero-overhead dispatch.
 pub enum Handler<Ctx: Send + Sync + 'static> {
     /// Typed RPC function — input/output via JSON Value.
-    Rpc(Arc<dyn for<'a> Fn(&'a Ctx, Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>),
+    /// `skip_query` indicates `Input=()` — query string parsing can be skipped.
+    Rpc {
+        f: Arc<dyn for<'a> Fn(&'a Ctx, Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>,
+        skip_query: bool,
+    },
     /// Bytes handler — raw input/output.
     Bytes(Arc<dyn for<'a> Fn(&'a Ctx, &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>),
 }
@@ -243,7 +247,7 @@ pub enum Handler<Ctx: Send + Sync + 'static> {
 impl<Ctx: Send + Sync + 'static> Clone for Handler<Ctx> {
     fn clone(&self) -> Self {
         match self {
-            Handler::Rpc(f) => Handler::Rpc(Arc::clone(f)),
+            Handler::Rpc { f, skip_query } => Handler::Rpc { f: Arc::clone(f), skip_query: *skip_query },
             Handler::Bytes(f) => Handler::Bytes(Arc::clone(f)),
         }
     }
@@ -252,8 +256,10 @@ impl<Ctx: Send + Sync + 'static> Clone for Handler<Ctx> {
 impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
     pub async fn call(&self, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<Vec<u8>, RpcErr> {
         match self {
-            Handler::Rpc(f) => {
-                let input_val: Value = if is_get {
+            Handler::Rpc { f, skip_query } => {
+                let input_val: Value = if *skip_query {
+                    Value::Null
+                } else if is_get {
                     // GET: parse `input=` from query string
                     let query_str = std::str::from_utf8(input).unwrap_or("");
                     query_str.split('&').find_map(|pair| {

@@ -3,6 +3,7 @@
 //! Use [`RpcRouterBuilder`] to register handlers, then
 //! [`build`](RpcRouterBuilder::build) to get a stored [`RpcRouter`].
 
+use std::any::TypeId;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -123,14 +124,18 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
             output: gen_ts_client::type_ts::<H::Output>(),
         });
 
+        let skip_query = TypeId::of::<H::Input>() == TypeId::of::<()>();
         let inner = Arc::new(handler);
-        let handler_fn = Handler::Rpc(Arc::new(move |ctx: &Ctx, input: Value| {
-            let inner = Arc::clone(&inner);
-            Box::pin(async move {
-                let result = inner.call_value(ctx, input).await?;
-                Ok(result.into_owned())
-            })
-        }));
+        let handler_fn = Handler::Rpc {
+            f: Arc::new(move |ctx: &Ctx, input: Value| {
+                let inner = Arc::clone(&inner);
+                Box::pin(async move {
+                    let result = inner.call_value(ctx, input).await?;
+                    Ok(result.into_owned())
+                })
+            }),
+            skip_query,
+        };
         self.router.insert(H::KEY.to_string(), handler_fn).unwrap();
         self
     }
