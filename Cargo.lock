@@ -6607,6 +6607,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "xitca-codegen"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc921afd144bf419038845eba96c19949953d7c041018b12fb984c1a0c85bcce"
+dependencies = [
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
 name = "xitca-http"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6689,6 +6699,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tokio",
+ "xitca-codegen",
  "xitca-http",
  "xitca-server",
  "xitca-service",

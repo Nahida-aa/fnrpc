@@ -8,38 +8,53 @@ use std::sync::{Arc, RwLock};
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 use serde::{Deserialize, Serialize};
-use xitca_web::App;
+use xitca_web::WebContext;
 use xitca_web::body::ResponseBody;
-use xitca_web::http::{StatusCode, WebResponse};
-use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
 use xitca_web::handler::handler_service;
 use xitca_web::handler::json::Json;
+use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
+use xitca_web::http::{StatusCode, WebResponse};
 use xitca_web::route::{get, post};
 use xitca_web::service::fn_service;
-use xitca_web::WebContext;
+use xitca_web::{App, codegen::route};
 
 type AppCtx = Arc<RwLock<HashMap<String, f64>>>;
 
 // ── Noop ───────────────────────────────────────────────
 
-async fn handler_noop_json(_ctx: WebContext<'_, AppCtx>) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_noop_json(
+    _ctx: WebContext<'_, AppCtx>,
+) -> Result<WebResponse, xitca_web::error::Error> {
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"null")))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
+            b"null",
+        )))
         .unwrap())
 }
 
-async fn handler_noop_raw(_ctx: WebContext<'_, AppCtx>) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_noop_raw(
+    _ctx: WebContext<'_, AppCtx>,
+) -> Result<WebResponse, xitca_web::error::Error> {
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"ok")))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
+            b"ok",
+        )))
         .unwrap())
+}
+
+#[route("/hello", method = get)]
+async fn hello() -> &'static str {
+    "Hello,World!"
 }
 
 // ── Echo ───────────────────────────────────────────────
 
-async fn handler_echo(Json(body): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, xitca_web::error::Error> {
+async fn handler_echo(
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, xitca_web::error::Error> {
     Ok(Json(body))
 }
 
@@ -47,25 +62,41 @@ async fn handler_echo(Json(body): Json<serde_json::Value>) -> Result<Json<serde_
 
 #[derive(Serialize, Deserialize)]
 struct MediumPayload {
-    id: u32, name: String, email: String, tags: Vec<String>, score: f64,
+    id: u32,
+    name: String,
+    email: String,
+    tags: Vec<String>,
+    score: f64,
 }
 
-async fn handler_medium(Json(body): Json<MediumPayload>) -> Result<Json<MediumPayload>, xitca_web::error::Error> {
+async fn handler_medium(
+    Json(body): Json<MediumPayload>,
+) -> Result<Json<MediumPayload>, xitca_web::error::Error> {
     Ok(Json(body))
 }
 
 // ── Large payload ──────────────────────────────────────
 
 #[derive(Serialize, Deserialize)]
-struct LargePayload { items: Vec<LargeItem> }
+struct LargePayload {
+    items: Vec<LargeItem>,
+}
 
 #[derive(Serialize, Deserialize)]
 struct LargeItem {
-    id: u32, name: String, description: String, price: f64,
-    quantity: u32, category: String, tags: Vec<String>, metadata: HashMap<String, String>,
+    id: u32,
+    name: String,
+    description: String,
+    price: f64,
+    quantity: u32,
+    category: String,
+    tags: Vec<String>,
+    metadata: HashMap<String, String>,
 }
 
-async fn handler_large(Json(body): Json<LargePayload>) -> Result<Json<LargePayload>, xitca_web::error::Error> {
+async fn handler_large(
+    Json(body): Json<LargePayload>,
+) -> Result<Json<LargePayload>, xitca_web::error::Error> {
     Ok(Json(body))
 }
 
@@ -76,10 +107,17 @@ async fn handler_lookup(
 ) -> Result<WebResponse, xitca_web::error::Error> {
     let uri: xitca_web::handler::uri::UriRef<'_> = ctx.extract().await.unwrap();
     let query_str = uri.query().unwrap_or("");
-    let key = query_str.split('&').find_map(|pair| {
-        let mut parts = pair.splitn(2, '=');
-        if parts.next() == Some("key") { parts.next() } else { None }
-    }).unwrap_or("");
+    let key = query_str
+        .split('&')
+        .find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            if parts.next() == Some("key") {
+                parts.next()
+            } else {
+                None
+            }
+        })
+        .unwrap_or("");
 
     let app_data = ctx.state();
     let n = app_data.read().unwrap().get(key).copied().unwrap_or(0.0);
@@ -94,7 +132,9 @@ async fn handler_lookup(
 
 // ── TechEmpower-style endpoints ───────────────────────
 
-async fn handler_json_te(_ctx: WebContext<'_, AppCtx>) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_json_te(
+    _ctx: WebContext<'_, AppCtx>,
+) -> Result<WebResponse, xitca_web::error::Error> {
     let body = serde_json::json!({"message": "Hello, World!"});
     let bytes = serde_json::to_vec(&body).unwrap_or_default();
     Ok(WebResponse::builder()
@@ -104,11 +144,15 @@ async fn handler_json_te(_ctx: WebContext<'_, AppCtx>) -> Result<WebResponse, xi
         .unwrap())
 }
 
-async fn handler_plaintext(_ctx: WebContext<'_, AppCtx>) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_plaintext(
+    _ctx: WebContext<'_, AppCtx>,
+) -> Result<WebResponse, xitca_web::error::Error> {
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, HeaderValue::from_static("text/plain"))
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"Hello, World!")))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
+            b"Hello, World!",
+        )))
         .unwrap())
 }
 
@@ -121,29 +165,45 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--port" => { i += 1; if let Some(p) = args.get(i) { port = p.parse().unwrap_or(0); } }
+            "--port" => {
+                i += 1;
+                if let Some(p) = args.get(i) {
+                    port = p.parse().unwrap_or(0);
+                }
+            }
             "--dhat" => dhat_enabled = true,
-            _ => { port = args[i].parse().unwrap_or(0); }
+            _ => {
+                port = args[i].parse().unwrap_or(0);
+            }
         }
         i += 1;
     }
 
     #[cfg(feature = "dhat-heap")]
-    let _prof = if dhat_enabled { Some(dhat::Profiler::new_heap()) } else { None };
+    let _prof = if dhat_enabled {
+        Some(dhat::Profiler::new_heap())
+    } else {
+        None
+    };
 
     let data = Arc::new(RwLock::new(HashMap::from([
-        ("actix".into(), 1.0), ("axum".into(), 2.0),
-        ("gin".into(), 3.0), ("fnrpc".into(), 4.0),
+        ("actix".into(), 1.0),
+        ("axum".into(), 2.0),
+        ("gin".into(), 3.0),
+        ("fnrpc".into(), 4.0),
     ])));
 
     let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all().build().unwrap();
+        .enable_all()
+        .build()
+        .unwrap();
 
     rt.block_on(async {
         eprintln!("Starting xitca-web server on :{port}");
 
         App::new()
             .with_state(data)
+            .at_typed(hello)
             .at("/noop-json", get(fn_service(handler_noop_json)))
             .at("/noop-raw", get(fn_service(handler_noop_raw)))
             .at("/echo", post(handler_service(handler_echo)))

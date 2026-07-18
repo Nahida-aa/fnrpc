@@ -168,6 +168,7 @@ fn run_framework(
     name: &str, default_binary: &str,
     concurrency_levels: &[usize], duration: Duration,
     endpoints: &[(&str, &str, bool, &[u8])],
+    filter: &str,
 ) {
     // Allow overriding binary path via env var (used in container)
     let env_key = format!("FNRPC_BIN_{}", name.to_uppercase().replace('-', "_"));
@@ -178,6 +179,10 @@ fn run_framework(
 
     rt.block_on(async {
         for (path, label, is_post, body) in endpoints {
+            // Filter endpoints by label
+            if !filter.is_empty() && !label.contains(filter) {
+                continue;
+            }
             let port = find_free_port();
             let mut server = if name == "xitca-web" {
                 Command::new(&binary).arg(port.to_string())
@@ -234,11 +239,17 @@ fn concurrency_levels(max: usize) -> Vec<usize> {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let framework = args.get(1).map(|s| s.as_str()).unwrap_or_else(|| {
-        eprintln!("Usage: latency [fnrpc-web|xitca-web|all] [max_concurrency] [duration_secs]");
+        eprintln!("Usage: latency [fnrpc-web|xitca-web|all] [max_concurrency] [duration_secs] [endpoint_filter...]");
+        eprintln!("  endpoint_filter: optional, only run endpoints whose label contains this string");
+        eprintln!("  Examples:");
+        eprintln!("    latency fnrpc-web 200 3          # all endpoints");
+        eprintln!("    latency fnrpc-web 200 3 json_te  # only /json");
+        eprintln!("    latency all 200 3 te             # only TechEmpower endpoints");
         std::process::exit(1);
     });
     let max_concurrency: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2000);
     let duration_secs: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(3);
+    let filter = args.get(4).map(|s| s.as_str()).unwrap_or("");
     let levels = concurrency_levels(max_concurrency);
     let duration = Duration::from_secs(duration_secs);
 
@@ -274,23 +285,23 @@ fn main() {
             build_server("fnrpc_web_server");
             println!("fnrpc-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("fnrpc-web", "target/release/fnrpc_web_server",
-                &levels, duration, fnrpc_endpoints);
+                &levels, duration, fnrpc_endpoints, filter);
         }
         "xitca-web" => {
             build_server("xitca_web_server");
             println!("xitca-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("xitca-web", "target/release/xitca_web_server",
-                &levels, duration, xitca_endpoints);
+                &levels, duration, xitca_endpoints, filter);
         }
         "all" => {
             build_server("fnrpc_web_server");
             build_server("xitca_web_server");
             println!("fnrpc-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("fnrpc-web", "target/release/fnrpc_web_server",
-                &levels, duration, fnrpc_endpoints);
+                &levels, duration, fnrpc_endpoints, filter);
             println!("\nxitca-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("xitca-web", "target/release/xitca_web_server",
-                &levels, duration, xitca_endpoints);
+                &levels, duration, xitca_endpoints, filter);
         }
         _ => { eprintln!("Unknown: {framework}"); std::process::exit(1); }
     }

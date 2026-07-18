@@ -22,7 +22,7 @@ fnrpc-xitca = { path = "../crates/fnrpc-xitca" }
 fnrpc-axum = { path = "../crates/fnrpc-axum" }
 
 # Framework deps for fnrpc variants (already transitive)
-xitca-web = { version = "0.8", features = ["json", "params", "urlencoded"] }
+xitca-web = { version = "0.8", features = ["json", "params", "urlencoded", "codegen"] }
 xitca-http = { version = "0.9", features = ["http1"] }
 xitca-server = "0.7"
 xitca-service = "0.3"
