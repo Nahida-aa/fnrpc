@@ -18,7 +18,7 @@ use crate::handler::TsTypeInfo;
 use crate::router::{ProcedureMeta, RpcRouter};
 
 /// Resolve a specta [`Type`] to a TypeScript type reference string.
-pub(crate) fn type_ts<T: Type>() -> TsTypeInfo {
+pub fn type_ts<T: Type>() -> TsTypeInfo {
     let mut types = specta::Types::default();
     let data_type = T::definition(&mut types);
 
