@@ -14,7 +14,7 @@ port := "0.0.0.0:0"
 
 # Build Rust binaries
 build:
-    cargo build --release -p benches \
+    cd .. && cargo build --release -p benches \
         --bin fnrpc_web_server \
         --bin xitca_web_server \
         --bin actix_web_server --features actix-web \
@@ -31,10 +31,10 @@ bench framework="fnrpc-web" concurrency="200" duration="3" *filter:
     podman rm -f fnrpc-bench 2>/dev/null; true
     podman run --rm \
         --memory={{mem}} --cpus={{cpus}} --network=host \
-        -v "$(pwd)/target/release/fnrpc_web_server:/usr/local/bin/fnrpc_web_server:Z" \
-        -v "$(pwd)/target/release/xitca_web_server:/usr/local/bin/xitca_web_server:Z" \
-        -v "$(pwd)/target/release/actix_web_server:/usr/local/bin/actix_web_server:Z" \
-        -v "$(pwd)/target/release/latency:/usr/local/bin/latency:Z" \
+        -v "../target/release/fnrpc_web_server:/usr/local/bin/fnrpc_web_server:Z" \
+        -v "../target/release/xitca_web_server:/usr/local/bin/xitca_web_server:Z" \
+        -v "../target/release/actix_web_server:/usr/local/bin/actix_web_server:Z" \
+        -v "../target/release/latency:/usr/local/bin/latency:Z" \
         -e FNRPC_BIN_FNRPC_WEB=/usr/local/bin/fnrpc_web_server \
         -e FNRPC_BIN_XITCA_WEB=/usr/local/bin/xitca_web_server \
         -e FNRPC_BIN_ACTIX_WEB=/usr/local/bin/actix_web_server \
