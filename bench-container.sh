@@ -21,6 +21,7 @@ echo "Building binaries..."
 cargo build --release -p benches \
     --bin fnrpc_web_server \
     --bin xitca_web_server \
+    --bin actix_web_server --features actix-web \
     --bin latency --features reqwest 2>&1 | tail -3
 
 # Build minimal container image
@@ -40,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl && rm -rf /var/lib/apt/lists/*
 COPY target/release/fnrpc_web_server /usr/local/bin/
 COPY target/release/xitca_web_server /usr/local/bin/
+COPY target/release/actix_web_server /usr/local/bin/
 COPY target/release/latency /usr/local/bin/
 CMD ["/usr/local/bin/latency"]
 CONTAINERFILE
@@ -58,6 +60,7 @@ podman run --rm \
     -e FNRPC_SKIP_BUILD=1 \
     -e FNRPC_BIN_FNRPC_WEB=/usr/local/bin/fnrpc_web_server \
     -e FNRPC_BIN_XITCA_WEB=/usr/local/bin/xitca_web_server \
+    -e FNRPC_BIN_ACTIX_WEB=/usr/local/bin/actix_web_server \
     --name fnrpc-bench \
     "$IMAGE" \
     /usr/local/bin/latency "$FRAMEWORK" "$MAX_CONCURRENCY" "$DURATION"
