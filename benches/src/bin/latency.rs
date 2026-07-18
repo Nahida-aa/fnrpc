@@ -74,23 +74,22 @@ async fn bench_concurrent(
     let latencies = Arc::new(std::sync::Mutex::new(Vec::new()));
     let errors = Arc::new(std::sync::Mutex::new(0usize));
 
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .pool_max_idle_per_host(usize::MAX)
-        .build()
-        .unwrap();
-
+    // Each task gets its own client to avoid connection pool bottleneck
     let mut handles = Vec::with_capacity(concurrency);
     for _ in 0..concurrency {
         let stop = stop.clone();
         let latencies = latencies.clone();
         let errors = errors.clone();
-        let client = client.clone();
         let req = match req {
             Req::Get(url) => Req::Get(url.clone()),
             Req::Post(url, body) => Req::Post(url.clone(), body.clone()),
         };
         handles.push(tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .pool_max_idle_per_host(0) // no pooling — each task manages its own
+                .build()
+                .unwrap();
             loop {
                 if stop.load(Ordering::Relaxed) { break; }
                 let t0 = Instant::now();

@@ -219,4 +219,5 @@ tmp
 build/
 out/benches/target/
 benches/target/
+benches/logs/
 *.json
