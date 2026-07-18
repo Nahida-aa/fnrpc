@@ -42,6 +42,7 @@ http-body-util = "0.1"
 bytes = "1"
 url = "2"
 futures = "0.3"
+specta = { workspace = true, features = ["derive"] }
 
 # Optional: extra plain frameworks
 actix-web = { version = "4", optional = true, features = ["experimental-io-uring"] }
@@ -67,10 +68,6 @@ path = "src/bin/dhat_dispatch.rs"
 [[bin]]
 name = "dhat_server"
 path = "src/bin/dhat_server.rs"
-
-[[bin]]
-name = "body_bench"
-path = "src/bin/body_bench.rs"
 
 [[bin]]
 name = "fnrpc_web_server"

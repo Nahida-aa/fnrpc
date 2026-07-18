@@ -22,7 +22,7 @@ use crate::error::RpcErr;
 
 /// TypeScript type reference info for a single type (input or output).
 ///
-/// Produced by [`type_ts`] and used during codegen to determine the
+/// Produced by [`type_ts`](crate::gen_ts_client::type_ts) and used during codegen to determine the
 /// TypeScript type name for a given Rust type.
 #[derive(Debug, Clone)]
 pub struct TsTypeInfo {
@@ -87,8 +87,8 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
 
 /// Typed RPC function trait using serde serialization.
 pub trait RpcFn<Ctx>: Send + Sync {
-    type Input: DeserializeOwned + 'static;
-    type Output: Serialize + 'static;
+    type Input: DeserializeOwned + Type + 'static;
+    type Output: Serialize + Type + 'static;
     const NAME: &'static str;
     const KIND: &'static str = "query";
     /// HTTP method: "GET" (default, input from query string) or "POST" (input from body).
@@ -112,10 +112,15 @@ impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrap
     fn name(&self) -> &'static str { F::NAME }
     fn kind(&self) -> &'static str { F::KIND }
     fn method(&self) -> &'static str { F::METHOD }
-    fn input_ts(&self) -> TsTypeInfo { TsTypeInfo { ts_ref: "unknown".into() } }
-    fn output_ts(&self) -> TsTypeInfo { TsTypeInfo { ts_ref: "unknown".into() } }
+    fn input_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Input>() }
+    fn output_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Output>() }
 
-    fn populate_types(&self, _types: &mut specta::Types, _top_level: &mut Vec<DataType>) {}
+    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>) {
+        let input = F::Input::definition(types);
+        let output = F::Output::definition(types);
+        top_level.push(input);
+        top_level.push(output);
+    }
 
     fn content_type(&self) -> Option<&'static str> { Some("application/json") }
 
@@ -239,10 +244,15 @@ where
 {
     fn name(&self) -> &'static str { F::NAME }
     fn method(&self) -> &'static str { F::METHOD }
-    fn input_ts(&self) -> TsTypeInfo { TsTypeInfo { ts_ref: "unknown".into() } }
-    fn output_ts(&self) -> TsTypeInfo { TsTypeInfo { ts_ref: "unknown".into() } }
+    fn input_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Input>() }
+    fn output_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Output>() }
 
-    fn populate_types(&self, _types: &mut specta::Types, _top_level: &mut Vec<DataType>) {}
+    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>) {
+        let input = F::Input::definition(types);
+        let output = F::Output::definition(types);
+        top_level.push(input);
+        top_level.push(output);
+    }
 
     fn call(
         &self,

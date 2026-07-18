@@ -192,7 +192,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
                 }
             }
 
-            impl fnrpc::handler::TypedHandler<#ctx_ty> for #struct_name {
+            impl fnrpc::handler::RoutedHandler<#ctx_ty> for #struct_name {
                 fn path() -> &'static str { #path_val }
                 fn method() -> &'static str { #method_str }
             }
@@ -219,7 +219,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
                 }
             }
 
-            impl<T: Send + Sync + 'static> fnrpc::handler::TypedHandler<T> for #struct_name {
+            impl<T: Send + Sync + 'static> fnrpc::handler::RoutedHandler<T> for #struct_name {
                 fn path() -> &'static str { #path_val }
                 fn method() -> &'static str { #method_str }
             }

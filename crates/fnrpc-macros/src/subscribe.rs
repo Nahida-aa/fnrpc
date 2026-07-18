@@ -241,7 +241,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 }
             }
 
-            impl fnrpc::handler::TypedSubscribeHandler<#ctx_ty> for #struct_name {
+            impl fnrpc::handler::RoutedSubscribeHandler<#ctx_ty> for #struct_name {
                 fn path() -> &'static str { #path_val }
                 fn method() -> &'static str { #http_method }
             }
@@ -267,7 +267,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
                 }
             }
 
-            impl<T: Send + Sync + 'static> fnrpc::handler::TypedSubscribeHandler<T> for #struct_name {
+            impl<T: Send + Sync + 'static> fnrpc::handler::RoutedSubscribeHandler<T> for #struct_name {
                 fn path() -> &'static str { #path_val }
                 fn method() -> &'static str { #http_method }
             }

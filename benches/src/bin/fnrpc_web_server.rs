@@ -4,8 +4,10 @@ use std::sync::{Arc, RwLock};
 use fnrpc::error::RpcErr;
 use fnrpc::handler::{RawRpcFn, RpcFn};
 use fnrpc::router::RpcRouterBuilder;
+use fnrpc::rpc_query;
 use fnrpc_web::{RpcWebConfig, run};
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -20,8 +22,13 @@ impl RpcFn<AppCtx> for Noop {
     type Input = ();
     type Output = ();
     const NAME: &'static str = "noop";
-    fn exec(_ctx: &AppCtx, _input: ()) -> Result<(), RpcErr> { Ok(()) }
+    fn exec(_ctx: &AppCtx, _input: ()) -> Result<(), RpcErr> {
+        Ok(())
+    }
 }
+
+#[rpc_query]
+fn noop() -> () {}
 
 // ── Small payload: echo string (POST) ──────────────────
 
@@ -31,13 +38,21 @@ impl RpcFn<AppCtx> for Echo {
     type Output = String;
     const NAME: &'static str = "echo";
     const METHOD: &'static str = "POST";
-    fn exec(_ctx: &AppCtx, input: String) -> Result<String, RpcErr> { Ok(input) }
+    fn exec(_ctx: &AppCtx, input: String) -> Result<String, RpcErr> {
+        Ok(input)
+    }
 }
 
 // ── Medium payload: user profile (~200B JSON, POST) ───
 
-#[derive(Serialize, Deserialize)]
-struct MediumPayload { id: u32, name: String, email: String, tags: Vec<String>, score: f64 }
+#[derive(Serialize, Deserialize, Type)]
+struct MediumPayload {
+    id: u32,
+    name: String,
+    email: String,
+    tags: Vec<String>,
+    score: f64,
+}
 
 struct Medium;
 impl RpcFn<AppCtx> for Medium {
@@ -45,18 +60,28 @@ impl RpcFn<AppCtx> for Medium {
     type Output = MediumPayload;
     const NAME: &'static str = "medium";
     const METHOD: &'static str = "POST";
-    fn exec(_ctx: &AppCtx, input: MediumPayload) -> Result<MediumPayload, RpcErr> { Ok(input) }
+    fn exec(_ctx: &AppCtx, input: MediumPayload) -> Result<MediumPayload, RpcErr> {
+        Ok(input)
+    }
 }
 
 // ── Large payload: batch data (~10KB JSON, POST) ──────
 
-#[derive(Serialize, Deserialize)]
-struct LargePayload { items: Vec<LargeItem> }
+#[derive(Serialize, Deserialize, Type)]
+struct LargePayload {
+    items: Vec<LargeItem>,
+}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Type)]
 struct LargeItem {
-    id: u32, name: String, description: String, price: f64,
-    quantity: u32, category: String, tags: Vec<String>, metadata: HashMap<String, String>,
+    id: u32,
+    name: String,
+    description: String,
+    price: f64,
+    quantity: u32,
+    category: String,
+    tags: Vec<String>,
+    metadata: HashMap<String, String>,
 }
 
 struct Large;
@@ -65,7 +90,9 @@ impl RpcFn<AppCtx> for Large {
     type Output = LargePayload;
     const NAME: &'static str = "large";
     const METHOD: &'static str = "POST";
-    fn exec(_ctx: &AppCtx, input: LargePayload) -> Result<LargePayload, RpcErr> { Ok(input) }
+    fn exec(_ctx: &AppCtx, input: LargePayload) -> Result<LargePayload, RpcErr> {
+        Ok(input)
+    }
 }
 
 // ── Lookup (HashMap read + JSON response) ──────────────
@@ -75,18 +102,31 @@ impl RawRpcFn<AppCtx> for Lookup {
     const NAME: &'static str = "in";
     fn exec(ctx: &AppCtx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
         let query_str = std::str::from_utf8(input).unwrap_or("");
-        let key = query_str.split('&').find_map(|pair| {
-            let mut parts = pair.splitn(2, '=');
-            if parts.next() == Some("key") { parts.next() } else { None }
-        }).unwrap_or("");
+        let key = query_str
+            .split('&')
+            .find_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                if parts.next() == Some("key") {
+                    parts.next()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or("");
         let n = ctx.read().unwrap().get(key).copied().unwrap_or(0.0);
-        let output = LookupOutput { entity: key.to_string(), n };
+        let output = LookupOutput {
+            entity: key.to_string(),
+            n,
+        };
         serde_json::to_vec(&output).map_err(|_| RpcErr::internal("serialize error"))
     }
 }
 
-#[derive(Serialize)]
-struct LookupOutput { entity: String, n: f64 }
+#[derive(Serialize, Type)]
+struct LookupOutput {
+    entity: String,
+    n: f64,
+}
 
 // ── TechEmpower-style endpoints ────────────────────────
 
@@ -96,12 +136,16 @@ impl RpcFn<AppCtx> for JsonEndpoint {
     type Output = JsonMessage;
     const NAME: &'static str = "json";
     fn exec(_ctx: &AppCtx, _input: ()) -> Result<JsonMessage, RpcErr> {
-        Ok(JsonMessage { message: "Hello, World!" })
+        Ok(JsonMessage {
+            message: "Hello, World!",
+        })
     }
 }
 
-#[derive(Serialize)]
-struct JsonMessage { message: &'static str }
+#[derive(Serialize, Type)]
+struct JsonMessage {
+    message: &'static str,
+}
 
 struct PlaintextEndpoint;
 impl RawRpcFn<AppCtx> for PlaintextEndpoint {
@@ -116,7 +160,9 @@ impl RawRpcFn<AppCtx> for PlaintextEndpoint {
 struct RawNoop;
 impl RawRpcFn<AppCtx> for RawNoop {
     const NAME: &'static str = "raw_noop";
-    fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> { Ok(b"ok".to_vec()) }
+    fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+        Ok(b"ok".to_vec())
+    }
 }
 
 // ── Generate test data ──────────────────────────────────
@@ -139,8 +185,11 @@ fn make_large_payload() -> LargePayload {
 
 fn make_medium_payload() -> MediumPayload {
     MediumPayload {
-        id: 42, name: "Alice Johnson".into(), email: "alice@example.com".into(),
-        tags: vec!["premium".into(), "vip".into(), "early-adopter".into()], score: 98.5,
+        id: 42,
+        name: "Alice Johnson".into(),
+        email: "alice@example.com".into(),
+        tags: vec!["premium".into(), "vip".into(), "early-adopter".into()],
+        score: 98.5,
     }
 }
 
@@ -153,7 +202,12 @@ fn parse_args() -> (u16, bool) {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--port" => { i += 1; if let Some(p) = args.get(i) { port = p.parse().unwrap_or(19111); } }
+            "--port" => {
+                i += 1;
+                if let Some(p) = args.get(i) {
+                    port = p.parse().unwrap_or(19111);
+                }
+            }
             "--dhat" => dhat_enabled = true,
             _ => {}
         }
@@ -167,11 +221,17 @@ async fn main() {
     let (port, dhat_enabled) = parse_args();
 
     #[cfg(feature = "dhat-heap")]
-    let _prof = if dhat_enabled { Some(dhat::Profiler::new_heap()) } else { None };
+    let _prof = if dhat_enabled {
+        Some(dhat::Profiler::new_heap())
+    } else {
+        None
+    };
 
     let data = Arc::new(RwLock::new(HashMap::from([
-        ("actix".into(), 1.0), ("axum".into(), 2.0),
-        ("gin".into(), 3.0), ("fnrpc".into(), 4.0),
+        ("actix".into(), 1.0),
+        ("axum".into(), 2.0),
+        ("gin".into(), 3.0),
+        ("fnrpc".into(), 4.0),
     ])));
 
     let medium_json = serde_json::to_vec(&make_medium_payload()).unwrap();
@@ -195,5 +255,7 @@ async fn main() {
     let config = Arc::new(config);
 
     println!("Starting fnrpc-web server on :{port}");
-    run(config, &format!("0.0.0.0:{port}")).await.expect("failed to bind");
+    run(config, &format!("0.0.0.0:{port}"))
+        .await
+        .expect("failed to bind");
 }

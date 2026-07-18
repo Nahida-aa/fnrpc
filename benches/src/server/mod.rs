@@ -1,5 +1,4 @@
 // fnrpc variants — always available (path deps)
-pub(crate) mod fnrpc_web;
 pub(crate) mod fnrpc_xitca;
 pub(crate) mod fnrpc_axum;
 

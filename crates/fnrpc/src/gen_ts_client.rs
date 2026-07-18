@@ -12,10 +12,59 @@
 use std::path::Path;
 
 use specta::Type;
-use specta::datatype::DataType;
+use specta::datatype::{DataType, Primitive, Reference};
 
 use crate::error::RpcErr;
+use crate::handler::TsTypeInfo;
 use crate::router::RpcRouter;
+
+/// Resolve a specta [`Type`] to a TypeScript type reference string.
+pub(crate) fn type_ts<T: Type>() -> TsTypeInfo {
+    let mut types = specta::Types::default();
+    let data_type = T::definition(&mut types);
+
+    let ts_ref = match &data_type {
+        DataType::Struct(_) | DataType::Enum(_) => types
+            .into_sorted_iter()
+            .next()
+            .map(|ndt| ndt.name.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        DataType::Reference(Reference::Named(r)) => {
+            if let Some(ndt) = types.get(r) {
+                if ndt.ty.is_some() {
+                    ndt.name.to_string()
+                } else {
+                    let exporter = specta_typescript::Typescript::default();
+                    specta_typescript::primitives::inline(&exporter, &types, &data_type)
+                        .unwrap_or_else(|_| "unknown".to_string())
+                }
+            } else {
+                "unknown".to_string()
+            }
+        }
+        DataType::Primitive(p)
+            if matches!(
+                p,
+                Primitive::u64
+                    | Primitive::i64
+                    | Primitive::u128
+                    | Primitive::i128
+                    | Primitive::usize
+                    | Primitive::isize
+            ) =>
+        {
+            "bigint".to_string()
+        }
+        DataType::Primitive(Primitive::f64) => "number | null".to_string(),
+        _ => {
+            let exporter = specta_typescript::Typescript::default();
+            specta_typescript::primitives::inline(&exporter, &types, &data_type)
+                .unwrap_or_else(|_| "unknown".to_string())
+        }
+    };
+
+    TsTypeInfo { ts_ref }
+}
 
 /// Generate TypeScript type definitions and a `Procedures` interface.
 ///

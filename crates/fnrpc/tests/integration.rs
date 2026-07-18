@@ -5,6 +5,7 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::pin::Pin;
+use std::sync::Arc;
 
 // --- Test types ---
 
@@ -57,19 +58,19 @@ impl RpcFn<AppCtx> for CtxGreet {
 // --- Non-Result return type (auto-wrapped in Ok) ---
 
 #[fnrpc::rpc_query]
-async fn macro_health() -> String {
-    "ok".to_string()
+fn macro_health() -> &'static str {
+    "ok"
 }
 
 #[fnrpc::rpc_query]
-async fn macro_health_ctx(_ctx: &()) -> String {
+fn macro_health_ctx(_ctx: &()) -> String {
     "ok".to_string()
 }
 
 // --- rpc_query macro test ---
 
 #[fnrpc::rpc_query]
-async fn macro_greet(input: GreetInput) -> Result<GreetOutput, String> {
+fn macro_greet(input: GreetInput) -> Result<GreetOutput, String> {
     Ok(GreetOutput {
         message: format!("macro hello {}", input.name),
     })
@@ -78,7 +79,7 @@ async fn macro_greet(input: GreetInput) -> Result<GreetOutput, String> {
 // --- rpc_mutate macro test ---
 
 #[fnrpc::rpc_mutate]
-async fn macro_mutate(input: GreetInput) -> Result<GreetOutput, String> {
+fn macro_mutate(input: GreetInput) -> Result<GreetOutput, String> {
     Ok(GreetOutput {
         message: format!("mutated {}", input.name),
     })
@@ -87,7 +88,7 @@ async fn macro_mutate(input: GreetInput) -> Result<GreetOutput, String> {
 // --- rpc_query with context inferred from &T parameter ---
 
 #[fnrpc::rpc_query]
-async fn macro_ctx_greet(ctx: &AppCtx, input: GreetInput) -> Result<GreetOutput, String> {
+fn macro_ctx_greet(ctx: &AppCtx, input: GreetInput) -> Result<GreetOutput, String> {
     Ok(GreetOutput {
         message: format!("{}{}", ctx.prefix, input.name),
     })
@@ -95,7 +96,7 @@ async fn macro_ctx_greet(ctx: &AppCtx, input: GreetInput) -> Result<GreetOutput,
 
 #[tokio::test]
 async fn test_manual_rpc() {
-    let router = RpcRouterBuilder::<()>::new().route(Greet).build();
+    let router = RpcRouterBuilder::<()>::new().query(Greet).build();
 
     let input = serde_json::json!({ "name": "world" });
 
@@ -105,16 +106,14 @@ async fn test_manual_rpc() {
     assert_eq!(output.message, "hello world");
 
     // Unknown method
-    let err = router
-        .dispatch(&(), "nonexistent", serde_json::json!(null))
-        ;
+    let err = router.dispatch(&(), "nonexistent", serde_json::json!(null)).await;
     assert!(err.is_err());
     assert!(err.unwrap_err().to_string().contains("unknown path"));
 }
 
 #[tokio::test]
 async fn test_ctx_rpc() {
-    let router = RpcRouterBuilder::<AppCtx>::new().route(CtxGreet).build();
+    let router = RpcRouterBuilder::<AppCtx>::new().query(CtxGreet).build();
 
     let ctx = AppCtx {
         prefix: "yo ".to_string(),
@@ -128,7 +127,7 @@ async fn test_ctx_rpc() {
 
 #[tokio::test]
 async fn test_macro_rpc() {
-    let router = RpcRouterBuilder::<()>::new().route(macro_greet).build();
+    let router = RpcRouterBuilder::<()>::new().query(macro_greet).build();
 
     let input = serde_json::json!({ "name": "world" });
 
@@ -140,28 +139,26 @@ async fn test_macro_rpc() {
 #[tokio::test]
 async fn test_ts_info() {
     use fnrpc::handler::ErasedHandler;
-    let handler = Greet;
+    let erased: Arc<dyn ErasedHandler<()>> = Greet.into_erased();
 
-    let input_info = handler.input_ts();
+    let input_info = erased.input_ts();
     assert_eq!(input_info.ts_ref, "GreetInput");
 
-    let output_info = handler.output_ts();
+    let output_info = erased.output_ts();
     assert_eq!(output_info.ts_ref, "GreetOutput");
 }
 
 #[tokio::test]
 async fn test_macro_mutate_kind() {
     use fnrpc::handler::ErasedHandler;
-    let handler = macro_mutate;
+    let erased: Arc<dyn ErasedHandler<()>> = macro_mutate.into_erased();
 
-    // ErasedHandler (blanket impl) provides access to kind()
-    let erased: Box<dyn ErasedHandler<()>> = Box::new(handler);
     assert_eq!(erased.kind(), "mutate");
 }
 
 #[tokio::test]
 async fn test_macro_health_no_ctx() {
-    let router = RpcRouterBuilder::<()>::new().route(macro_health).build();
+    let router = RpcRouterBuilder::<()>::new().query(macro_health).build();
     let result = router
         .dispatch(&(), "macro_health", serde_json::json!(null))
         .await
@@ -172,7 +169,7 @@ async fn test_macro_health_no_ctx() {
 #[tokio::test]
 async fn test_macro_health_with_ctx() {
     let router = RpcRouterBuilder::<()>::new()
-        .route(macro_health_ctx)
+        .query(macro_health_ctx)
         .build();
     let result = router
         .dispatch(&(), "macro_health_ctx", serde_json::json!(null))
@@ -184,7 +181,7 @@ async fn test_macro_health_with_ctx() {
 #[tokio::test]
 async fn test_macro_ctx_rpc() {
     let router = RpcRouterBuilder::<AppCtx>::new()
-        .route(macro_ctx_greet)
+        .query(macro_ctx_greet)
         .build();
 
     let ctx = AppCtx {
@@ -225,8 +222,7 @@ async fn test_subscribe() {
     let stream = handler.call(&(), serde_json::json!(3));
     let items: Vec<i32> = stream
         .map(|v| serde_json::from_value::<i32>(v.unwrap()).unwrap())
-        .collect()
-        ;
+        .collect().await;
     assert_eq!(items, vec![1, 2, 3]);
 }
 
@@ -243,8 +239,7 @@ async fn test_subscribe_ctx() {
     let stream = handler.call(&ctx, serde_json::json!(2));
     let items: Vec<String> = stream
         .map(|v| serde_json::from_value::<String>(v.unwrap()).unwrap())
-        .collect()
-        ;
+        .collect().await;
     assert_eq!(items, vec!["n1".to_string(), "n2".to_string()]);
 }
 
@@ -257,18 +252,18 @@ async fn test_subscribe_unknown_path() {
 // ── Multi-parameter tests ──────────────────────────────
 
 #[fnrpc::rpc_query]
-async fn multi_param(a: i32, b: i32, c: String) -> String {
+fn multi_param(a: i32, b: i32, c: String) -> String {
     format!("{}{}{}", a, b, c)
 }
 
 #[fnrpc::rpc_query]
-async fn multi_param_ctx(ctx: &AppCtx, a: i32, b: i32) -> String {
+fn multi_param_ctx(ctx: &AppCtx, a: i32, b: i32) -> String {
     format!("{}{}", a + b, ctx.prefix)
 }
 
 #[tokio::test]
 async fn test_multi_param() {
-    let router = RpcRouterBuilder::<()>::new().route(multi_param).build();
+    let router = RpcRouterBuilder::<()>::new().query(multi_param).build();
 
     let input = serde_json::json!([1, 2, "hello"]);
     let result = router.dispatch(&(), "multi_param", input).await.unwrap();
@@ -281,7 +276,7 @@ async fn test_multi_param_ctx() {
         prefix: "x".to_string(),
     };
     let router = RpcRouterBuilder::<AppCtx>::new()
-        .route(multi_param_ctx)
+        .query(multi_param_ctx)
         .build();
 
     let input = serde_json::json!([3, 4]);
@@ -295,9 +290,8 @@ async fn test_multi_param_ctx() {
 #[tokio::test]
 async fn test_multi_param_ts_info() {
     use fnrpc::handler::ErasedHandler;
-    // multi_param has no ctx param, so RpcFn<T> is generic over T.
-    // Use a fully qualified path via Box<dyn ErasedHandler<()>> to pin Ctx.
-    let erased: Box<dyn ErasedHandler<()>> = Box::new(multi_param);
+    // Use into_erased() to get Arc<dyn ErasedHandler<()>>
+    let erased: Arc<dyn ErasedHandler<()>> = multi_param.into_erased();
 
     let input_info = erased.input_ts();
     // (i32, i32, String) should inline as [number, number, string]
@@ -309,12 +303,12 @@ async fn test_multi_param_ts_info() {
 
 // ── Middleware tests ──────────────────────────────────────
 
-use fnrpc::middleware::{FnLayer, FnService, HookLayer};
+use fnrpc::middleware::{HookLayer, RpcLayer, RpcService};
 
 /// Layer that prepends "layered:" to the output string.
 struct PrefixLayer;
 
-impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnLayer<Ctx, S> for PrefixLayer {
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcLayer<Ctx, S> for PrefixLayer {
     type Service = PrefixService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
@@ -326,7 +320,7 @@ struct PrefixService<S> {
     inner: S,
 }
 
-impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for PrefixService<S> {
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx>> RpcService<Ctx> for PrefixService<S> {
     async fn call(
         &self,
         ctx: &Ctx,
@@ -343,7 +337,7 @@ impl<Ctx: Send + Sync + 'static, S: FnService<Ctx>> FnService<Ctx> for PrefixSer
 #[tokio::test]
 async fn test_custom_layer() {
     let router = RpcRouterBuilder::<()>::new()
-        .route(macro_health)
+        .query(macro_health)
         .layer(PrefixLayer)
         .build();
 
@@ -359,7 +353,7 @@ async fn test_hook_layer() {
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let log_clone = log.clone();
     let router = RpcRouterBuilder::<()>::new()
-        .route(macro_health)
+        .query(macro_health)
         .layer(
             HookLayer::new()
                 .before(move |_ctx, path, _input| {
@@ -385,7 +379,7 @@ async fn test_hook_layer() {
 #[tokio::test]
 async fn test_multiple_layers() {
     let router = RpcRouterBuilder::<()>::new()
-        .route(macro_health)
+        .query(macro_health)
         .layer(PrefixLayer)
         .layer(HookLayer::new().after(|_ctx, _path, result| {
             if let Ok(val) = result {
@@ -405,18 +399,16 @@ async fn test_multiple_layers() {
 #[tokio::test]
 async fn test_layer_fn() {
     let router = RpcRouterBuilder::<()>::new()
-        .route(Greet)
+        .query(Greet)
         .layer_fn(|inner, ctx, path, input, extensions| {
             Box::pin(async move {
-                let result = inner.call(ctx, path, input, extensions);
-                result.map(|v| serde_json::json!({ "wrapped": v }))
+                let result = inner.call(ctx, path, input, extensions).await?;
+                Ok(serde_json::json!({ "wrapped": result }))
             })
         })
         .build();
 
-    let result = router
-        .dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" }))
-        ;
+    let result = router.dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" })).await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap()["wrapped"]["message"], "hello fnrpc");
 }
@@ -424,17 +416,13 @@ async fn test_layer_fn() {
 #[tokio::test]
 async fn test_layer_fn_short_circuit() {
     let router = RpcRouterBuilder::<()>::new()
-        .route(Greet)
+        .query(Greet)
         .layer_fn(|_inner, _ctx, _path, _input, _extensions| {
-            Box::pin(async move {
-                Err(RpcErr::new("BLOCKED", "short-circuited"))
-            })
+            Box::pin(async move { Err(RpcErr::new("BLOCKED", "short-circuited")) })
         })
         .build();
 
-    let result = router
-        .dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" }))
-        ;
+    let result = router.dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" })).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "BLOCKED");
 }
@@ -442,8 +430,8 @@ async fn test_layer_fn_short_circuit() {
 #[tokio::test]
 async fn test_ts_client() {
     let router = RpcRouterBuilder::<()>::new()
-        .route(Greet)
-        .route(multi_param)
+        .query(Greet)
+        .query(multi_param)
         .build();
 
     let client = fnrpc::gen_ts_client::generate_ts_client(&router, "/rpc");

@@ -37,7 +37,6 @@ fn main() {
         .unwrap();
 
     match framework {
-        "fnrpc-web" => rt.block_on(server::fnrpc_web::run("fnrpc-web", n)),
         "fnrpc-xitca" => rt.block_on(server::fnrpc_xitca::run("fnrpc-xitca", n)),
         "fnrpc-axum" => rt.block_on(server::fnrpc_axum::run("fnrpc-axum", n)),
         #[cfg(feature = "xitca-web-plain")]
