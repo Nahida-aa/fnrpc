@@ -52,6 +52,13 @@ pub(crate) fn rpc_bytes_impl(attr: TokenStream, item: TokenStream) -> TokenStrea
         quote! { #impl_fn_name(input) }
     };
 
+    // For async functions, the call returns a future that needs to be awaited
+    let call_expr = if input_fn.sig.asyncness.is_some() {
+        quote! { #call.await }
+    } else {
+        call
+    };
+
     let expanded = if has_ctx {
         quote! {
             #impl_fn
@@ -61,8 +68,8 @@ pub(crate) fn rpc_bytes_impl(attr: TokenStream, item: TokenStream) -> TokenStrea
 
             impl fnrpc::handler::RawRpcFn<#ctx_ty> for #fn_name {
                 const KEY: &'static str = #key;
-                fn exec(ctx: &#ctx_ty, input: &[u8]) -> Result<Vec<u8>, fnrpc::error::RpcErr> {
-                    Ok(#call)
+                fn exec<'a>(ctx: &'a #ctx_ty, input: &'a [u8]) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Vec<u8>, fnrpc::error::RpcErr>> + Send + 'a>> {
+                    Box::pin(async move { Ok(#call_expr) })
                 }
             }
         }
@@ -75,8 +82,8 @@ pub(crate) fn rpc_bytes_impl(attr: TokenStream, item: TokenStream) -> TokenStrea
 
             impl fnrpc::handler::RawRpcFn<()> for #fn_name {
                 const KEY: &'static str = #key;
-                fn exec(_ctx: &(), input: &[u8]) -> Result<Vec<u8>, fnrpc::error::RpcErr> {
-                    Ok(#call)
+                fn exec<'a>(_ctx: &'a (), input: &'a [u8]) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Vec<u8>, fnrpc::error::RpcErr>> + Send + 'a>> {
+                    Box::pin(async move { Ok(#call_expr) })
                 }
             }
         }

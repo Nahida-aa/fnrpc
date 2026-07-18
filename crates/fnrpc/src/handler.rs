@@ -155,7 +155,7 @@ fn is_unit_type<T: 'static>() -> bool {
 /// Raw handlers are not included in codegen.
 pub trait RawRpcFn<Ctx>: Send + Sync {
     const KEY: &'static str;
-    fn exec(ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr>;
+    fn exec<'a>(ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>>;
 }
 
 // ── Subscription traits ────────────────────────────────────

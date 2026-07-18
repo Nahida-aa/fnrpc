@@ -138,7 +138,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>> BytesHandlerFn<Ctx> for BytesHandler<Ctx, F> {
             fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> {
                 Box::pin(async move {
-                    let result = F::exec(ctx, input)?;
+                    let result = F::exec(ctx, input).await?;
                     Ok(result)
                 })
             }
