@@ -26,7 +26,7 @@ struct Greet;
 impl RpcFn<()> for Greet {
     type Input = GreetInput;
     type Output = GreetOutput;
-    const NAME: &'static str = "greet";
+    const KEY: &'static str = "greet";
 
     fn exec(_ctx: &(), input: Self::Input) -> Result<Self::Output, RpcErr> {
         Ok(GreetOutput {
@@ -46,7 +46,7 @@ struct CtxGreet;
 impl RpcFn<AppCtx> for CtxGreet {
     type Input = GreetInput;
     type Output = GreetOutput;
-    const NAME: &'static str = "ctx_greet";
+    const KEY: &'static str = "ctx_greet";
 
     fn exec(ctx: &AppCtx, input: Self::Input) -> Result<Self::Output, RpcErr> {
         Ok(GreetOutput {
@@ -106,7 +106,9 @@ async fn test_manual_rpc() {
     assert_eq!(output.message, "hello world");
 
     // Unknown method
-    let err = router.dispatch(&(), "nonexistent", serde_json::json!(null)).await;
+    let err = router
+        .dispatch(&(), "nonexistent", serde_json::json!(null))
+        .await;
     assert!(err.is_err());
     assert!(err.unwrap_err().to_string().contains("unknown path"));
 }
@@ -222,7 +224,8 @@ async fn test_subscribe() {
     let stream = handler.call(&(), serde_json::json!(3));
     let items: Vec<i32> = stream
         .map(|v| serde_json::from_value::<i32>(v.unwrap()).unwrap())
-        .collect().await;
+        .collect()
+        .await;
     assert_eq!(items, vec![1, 2, 3]);
 }
 
@@ -239,7 +242,8 @@ async fn test_subscribe_ctx() {
     let stream = handler.call(&ctx, serde_json::json!(2));
     let items: Vec<String> = stream
         .map(|v| serde_json::from_value::<String>(v.unwrap()).unwrap())
-        .collect().await;
+        .collect()
+        .await;
     assert_eq!(items, vec!["n1".to_string(), "n2".to_string()]);
 }
 
@@ -408,7 +412,9 @@ async fn test_layer_fn() {
         })
         .build();
 
-    let result = router.dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" })).await;
+    let result = router
+        .dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" }))
+        .await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap()["wrapped"]["message"], "hello fnrpc");
 }
@@ -422,7 +428,9 @@ async fn test_layer_fn_short_circuit() {
         })
         .build();
 
-    let result = router.dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" })).await;
+    let result = router
+        .dispatch(&(), "greet", serde_json::json!({ "name": "fnrpc" }))
+        .await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "BLOCKED");
 }

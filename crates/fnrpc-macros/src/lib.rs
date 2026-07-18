@@ -16,13 +16,13 @@ use proc_macro::TokenStream;
 /// # Attribute arguments
 ///
 /// ```ignore
-/// #[rpc_query]                     // method = "get" (default), path = fn name
-/// #[rpc_query("post")]             // method = "post",  path = fn name
-/// #[rpc_query("get", "my_health")] // method = "get",   path = "my_health"
+/// #[rpc_query]                     // method = "get" (default), key = fn name
+/// #[rpc_query("post")]             // method = "post",  key = fn name
+/// #[rpc_query("get", "my_health")] // method = "get",   key = "my_health"
 /// ```
 ///
 /// - First positional: HTTP method (`"get"`, `"post"`, etc.). Default: `"get"`.
-/// - Second positional: route path (procedure name in the router). Default: function name.
+/// - Second positional: route key (procedure name in the router). Default: function name.
 ///
 /// # Function parameters
 ///
@@ -46,7 +46,7 @@ use proc_macro::TokenStream;
 /// }
 /// ```
 ///
-/// Custom path:
+/// Custom key:
 ///
 /// ```ignore
 /// #[rpc_query("get", "health")]

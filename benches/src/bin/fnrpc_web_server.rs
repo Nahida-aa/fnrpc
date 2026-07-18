@@ -21,7 +21,7 @@ struct Noop;
 impl RpcFn<AppCtx> for Noop {
     type Input = ();
     type Output = ();
-    const NAME: &'static str = "noop";
+    const KEY: &'static str = "noop";
     fn exec(_ctx: &AppCtx, _input: ()) -> Result<(), RpcErr> {
         Ok(())
     }
@@ -36,7 +36,7 @@ struct Echo;
 impl RpcFn<AppCtx> for Echo {
     type Input = String;
     type Output = String;
-    const NAME: &'static str = "echo";
+    const KEY: &'static str = "echo";
     const METHOD: &'static str = "POST";
     fn exec(_ctx: &AppCtx, input: String) -> Result<String, RpcErr> {
         Ok(input)
@@ -58,7 +58,7 @@ struct Medium;
 impl RpcFn<AppCtx> for Medium {
     type Input = MediumPayload;
     type Output = MediumPayload;
-    const NAME: &'static str = "medium";
+    const KEY: &'static str = "medium";
     const METHOD: &'static str = "POST";
     fn exec(_ctx: &AppCtx, input: MediumPayload) -> Result<MediumPayload, RpcErr> {
         Ok(input)
@@ -88,7 +88,7 @@ struct Large;
 impl RpcFn<AppCtx> for Large {
     type Input = LargePayload;
     type Output = LargePayload;
-    const NAME: &'static str = "large";
+    const KEY: &'static str = "large";
     const METHOD: &'static str = "POST";
     fn exec(_ctx: &AppCtx, input: LargePayload) -> Result<LargePayload, RpcErr> {
         Ok(input)
@@ -99,7 +99,7 @@ impl RpcFn<AppCtx> for Large {
 
 struct Lookup;
 impl RawRpcFn<AppCtx> for Lookup {
-    const NAME: &'static str = "in";
+    const KEY: &'static str = "in";
     fn exec(ctx: &AppCtx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
         let query_str = std::str::from_utf8(input).unwrap_or("");
         let key = query_str
@@ -134,7 +134,7 @@ struct JsonEndpoint;
 impl RpcFn<AppCtx> for JsonEndpoint {
     type Input = ();
     type Output = JsonMessage;
-    const NAME: &'static str = "json";
+    const KEY: &'static str = "json";
     fn exec(_ctx: &AppCtx, _input: ()) -> Result<JsonMessage, RpcErr> {
         Ok(JsonMessage {
             message: "Hello, World!",
@@ -149,7 +149,7 @@ struct JsonMessage {
 
 struct PlaintextEndpoint;
 impl RawRpcFn<AppCtx> for PlaintextEndpoint {
-    const NAME: &'static str = "plaintext";
+    const KEY: &'static str = "plaintext";
     fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
         Ok(b"Hello, World!".to_vec())
     }
@@ -159,7 +159,7 @@ impl RawRpcFn<AppCtx> for PlaintextEndpoint {
 
 struct RawNoop;
 impl RawRpcFn<AppCtx> for RawNoop {
-    const NAME: &'static str = "raw_noop";
+    const KEY: &'static str = "raw_noop";
     fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
         Ok(b"ok".to_vec())
     }

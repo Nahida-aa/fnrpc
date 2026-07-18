@@ -230,7 +230,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
             impl fnrpc::handler::RpcSubscribe<#ctx_ty> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
-                const NAME: &'static str = stringify!(#fn_name);
+                const KEY: &'static str = stringify!(#fn_name);
                 const METHOD: &'static str = #http_method;
 
                 fn exec(
@@ -256,7 +256,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
             impl<T: Send + Sync + 'static> fnrpc::handler::RpcSubscribe<T> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
-                const NAME: &'static str = stringify!(#fn_name);
+                const KEY: &'static str = stringify!(#fn_name);
                 const METHOD: &'static str = #http_method;
 
                 fn exec(

@@ -70,7 +70,7 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + 'static> RpcRouterBuilder<
     /// Normally you use the typed helpers [`query`](Self::query),
     /// [`mutate`](Self::mutate), or [`subscribe`](Self::subscribe) instead.
     pub fn route<H: ErasedHandler<Ctx> + 'static>(self, handler: H) -> Self {
-        let name = handler.name();
+        let name = handler.key();
         self.handlers
             .write()
             .unwrap()
@@ -81,14 +81,14 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + 'static> RpcRouterBuilder<
     /// Register a query handler.
     pub fn query<H: RpcFn<Ctx> + 'static>(self, handler: H) -> Self {
         let erased = handler.into_erased();
-        self.handlers.write().unwrap().insert(erased.name(), erased);
+        self.handlers.write().unwrap().insert(erased.key(), erased);
         self
     }
 
     /// Register a mutate handler.
     pub fn mutate<H: RpcFn<Ctx> + 'static>(self, handler: H) -> Self {
         let erased = handler.into_erased();
-        self.handlers.write().unwrap().insert(erased.name(), erased);
+        self.handlers.write().unwrap().insert(erased.key(), erased);
         self
     }
 
@@ -140,7 +140,7 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + 'static> RpcRouterBuilder<
 
     /// Register a subscribe handler.
     pub fn subscribe<H: ErasedSubscribeHandler<Ctx> + 'static>(mut self, handler: H) -> Self {
-        let name = handler.name();
+        let name = handler.key();
         self.subscribes.insert(name, Arc::new(handler));
         self
     }
@@ -151,7 +151,7 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + 'static> RpcRouterBuilder<
     /// TypeScript codegen.
     pub fn raw<F: RawRpcFn<Ctx> + 'static>(self, _handler: F) -> Self {
         let erased = RawRpcAdapter::<Ctx>::new_erased::<F>();
-        self.handlers.write().unwrap().insert(erased.name(), erased);
+        self.handlers.write().unwrap().insert(erased.key(), erased);
         self
     }
 
@@ -490,7 +490,7 @@ impl<Ctx: Send + Sync + 'static> RpcService<Ctx> for InnerService<Ctx> {
 
 /// Bridges a [`RawRpcFn`] to [`ErasedHandler`] via function pointer.
 struct RawRpcAdapter<Ctx> {
-    name: &'static str,
+    key: &'static str,
     exec: Arc<dyn Fn(&Ctx, &[u8]) -> Result<Vec<u8>, RpcErr> + Send + Sync>,
 }
 
@@ -500,15 +500,15 @@ impl<Ctx> RawRpcAdapter<Ctx> {
         Ctx: Send + Sync + 'static,
     {
         Arc::new(Self {
-            name: F::NAME,
+            key: F::KEY,
             exec: Arc::new(|ctx, input| F::exec(ctx, input)),
         })
     }
 }
 
 impl<Ctx: Send + Sync + 'static> ErasedHandler<Ctx> for RawRpcAdapter<Ctx> {
-    fn name(&self) -> &'static str {
-        self.name
+    fn key(&self) -> &'static str {
+        self.key
     }
     fn kind(&self) -> &'static str {
         "query"

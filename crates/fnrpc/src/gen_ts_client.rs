@@ -134,7 +134,7 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
             let method = if kind == "mutate" { "POST" } else { "GET" };
             out.push_str(&format!(
                 "  {}: {{ kind: \"{kind}\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
-                handler.name(),
+                handler.key(),
                 i.ts_ref,
                 o.ts_ref,
             ));
@@ -146,7 +146,7 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
         let method = sub.method();
         out.push_str(&format!(
             "  {}: {{ kind: \"subscribe\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
-            sub.name(),
+            sub.key(),
             i.ts_ref,
             o.ts_ref,
         ));
@@ -161,7 +161,7 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
             let method = if kind == "mutate" { "POST" } else { "GET" };
             out.push_str(&format!(
                 "  {}: {{ kind: \"{kind}\", method: \"{method}\" }},\n",
-                handler.name(),
+                handler.key(),
             ));
         }
     }
@@ -169,7 +169,7 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
         let method = sub.method();
         out.push_str(&format!(
             "  {}: {{ kind: \"subscribe\", method: \"{method}\" }},\n",
-            sub.name(),
+            sub.key(),
         ));
     }
     out.push_str("} as const;\n");

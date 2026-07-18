@@ -180,7 +180,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
             impl fnrpc::handler::RpcFn<#ctx_ty> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
-                const NAME: &'static str = stringify!(#fn_name);
+                const KEY: &'static str = stringify!(#fn_name);
                 const KIND: &'static str = #kind;
                 const METHOD: &'static str = #method_upper;
 
@@ -207,7 +207,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
             impl<T: Send + Sync + 'static> fnrpc::handler::RpcFn<T> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
-                const NAME: &'static str = stringify!(#fn_name);
+                const KEY: &'static str = stringify!(#fn_name);
                 const KIND: &'static str = #kind;
                 const METHOD: &'static str = #method_upper;
 

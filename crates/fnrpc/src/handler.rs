@@ -40,7 +40,7 @@ pub struct TsTypeInfo {
 /// [`call`](ErasedHandler::call) and [`call_value`](ErasedHandler::call_value)
 /// are convenience wrappers that work with JSON [`Value`].
 pub trait ErasedHandler<Ctx>: Send + Sync {
-    fn name(&self) -> &'static str;
+    fn key(&self) -> &'static str;
     fn kind(&self) -> &'static str;
     /// HTTP method for this handler: "GET" (input from query) or "POST" (input from body).
     fn method(&self) -> &'static str;
@@ -89,7 +89,7 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
 pub trait RpcFn<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type + 'static;
     type Output: Serialize + Type + 'static;
-    const NAME: &'static str;
+    const KEY: &'static str;
     const KIND: &'static str = "query";
     /// HTTP method: "GET" (default, input from query string) or "POST" (input from body).
     const METHOD: &'static str = "GET";
@@ -109,7 +109,7 @@ pub trait RpcFn<Ctx>: Send + Sync {
 struct RpcFnWrapper<F>(F) where F: Send + Sync;
 
 impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrapper<F> {
-    fn name(&self) -> &'static str { F::NAME }
+    fn key(&self) -> &'static str { F::KEY }
     fn kind(&self) -> &'static str { F::KIND }
     fn method(&self) -> &'static str { F::METHOD }
     fn input_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Input>() }
@@ -178,7 +178,7 @@ fn is_unit_type<T: 'static>() -> bool {
 ///
 /// Raw handlers bypass the middleware stack and are not included in codegen.
 pub trait RawRpcFn<Ctx>: Send + Sync {
-    const NAME: &'static str;
+    const KEY: &'static str;
     fn exec(ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr>;
 }
 
@@ -188,7 +188,7 @@ pub trait RawRpcFn<Ctx>: Send + Sync {
 pub trait RpcSubscribe<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type;
     type Output: Serialize + Type + 'static;
-    const NAME: &'static str;
+    const KEY: &'static str;
     const KIND: &'static str = "subscribe";
     const METHOD: &'static str = "GET";
 
@@ -200,7 +200,7 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
 
 /// Object-safe erased subscribe handler stored in the router.
 pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
-    fn name(&self) -> &'static str;
+    fn key(&self) -> &'static str;
     fn method(&self) -> &'static str;
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
@@ -242,7 +242,7 @@ where
     Ctx: Send + Sync,
     <F as RpcSubscribe<Ctx>>::Output: 'static,
 {
-    fn name(&self) -> &'static str { F::NAME }
+    fn key(&self) -> &'static str { F::KEY }
     fn method(&self) -> &'static str { F::METHOD }
     fn input_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Input>() }
     fn output_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Output>() }
