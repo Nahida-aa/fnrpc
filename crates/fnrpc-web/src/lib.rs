@@ -10,7 +10,7 @@
 //! use fnrpc_web::App;
 //!
 //! let router = RpcRouterBuilder::<()>::new()
-//!     .route(health_check)
+//!     .route_fn(health_check)
 //!     .build();
 //!
 //! App::new(router, |_| ())
@@ -90,8 +90,11 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
         let ctx = (self.ctx_factory)(req.headers());
         let mut req = req;
 
-        let mut body_buf = Vec::new();
-        if req.method() == Method::POST {
+        // Only allocate body_buf for POST
+        let input: std::borrow::Cow<'_, [u8]> = if req.method() == Method::GET {
+            req.uri().query().unwrap_or("").as_bytes().into()
+        } else {
+            let mut body_buf = Vec::new();
             while let Some(chunk) = req.body_mut().data().await {
                 match chunk {
                     Ok(c) => body_buf.extend_from_slice(c.as_ref()),
@@ -105,11 +108,6 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                     }
                 }
             }
-        }
-
-        let input: std::borrow::Cow<'_, [u8]> = if req.method() == Method::GET {
-            req.uri().query().unwrap_or("").as_bytes().into()
-        } else {
             body_buf.into()
         };
 
@@ -118,13 +116,12 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
         let result = self.router.call_handler(path, &ctx, &input, is_get).await;
 
         match result {
-            Ok(bytes) => {
+            Ok((bytes, is_json)) => {
                 let mut builder = Response::builder().status(StatusCode::OK);
-                builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-                let resp_body = match bytes.as_slice() {
-                    b"null" => ResponseBody::bytes(Bytes::from_static(b"null")),
-                    _ => ResponseBody::bytes(Bytes::from(bytes)),
-                };
+                if is_json {
+                    builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                }
+                let resp_body = ResponseBody::bytes(Bytes::from(bytes));
                 builder.body(resp_body).unwrap()
             }
             Err(e) => {
@@ -154,8 +151,11 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
             async move {
                 let ctx = ctx_factory(req.headers());
 
-                let mut body_buf = Vec::new();
-                if req.method() == Method::POST {
+                // Only allocate body_buf for POST
+                let input: std::borrow::Cow<'_, [u8]> = if req.method() == Method::GET {
+                    req.uri().query().unwrap_or("").as_bytes().into()
+                } else {
+                    let mut body_buf = Vec::new();
                     while let Some(chunk) = req.body_mut().data().await {
                         match chunk {
                             Ok(c) => body_buf.extend_from_slice(c.as_ref()),
@@ -169,11 +169,6 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                             }
                         }
                     }
-                }
-
-                let input: std::borrow::Cow<'_, [u8]> = if req.method() == Method::GET {
-                    req.uri().query().unwrap_or("").as_bytes().into()
-                } else {
                     body_buf.into()
                 };
 
@@ -182,13 +177,12 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                 let result = router.call_handler(path, &ctx, &input, is_get).await;
 
                 match result {
-                    Ok(bytes) => {
+                    Ok((bytes, is_json)) => {
                         let mut builder = Response::builder().status(StatusCode::OK);
-                        builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-                        let resp_body = match bytes.as_slice() {
-                            b"null" => ResponseBody::bytes(Bytes::from_static(b"null")),
-                            _ => ResponseBody::bytes(Bytes::from(bytes)),
-                        };
+                        if is_json {
+                            builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                        }
+                        let resp_body = ResponseBody::bytes(Bytes::from(bytes));
                         Ok::<_, Infallible>(builder.body(resp_body).unwrap())
                     }
                     Err(e) => {

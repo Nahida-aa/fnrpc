@@ -55,7 +55,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     /// * For `Handler::Rpc`: `input` is raw query bytes (GET) or body bytes (POST),
     ///   `is_get` controls query string parsing.
     /// * For `Handler::Bytes`: `input` is passed directly.
-    pub async fn call_handler(&self, path: &str, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<Vec<u8>, RpcErr> {
+    pub async fn call_handler(&self, path: &str, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Vec<u8>, bool), RpcErr> {
         match self.router.at(path).ok() {
             Some(m) => m.value.call(ctx, input, is_get).await,
             None => Err(RpcErr::not_found(format!("unknown path: {path}"))),
@@ -115,7 +115,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     }
 
     /// Register a typed RPC function (query or mutate).
-    pub fn route<H: RpcFn<Ctx> + 'static>(mut self, handler: H) -> Self {
+    pub fn route_fn<H: RpcFn<Ctx> + 'static>(mut self, handler: H) -> Self {
         self.procedures.push(ProcedureMeta {
             key: H::KEY,
             kind: H::KIND,

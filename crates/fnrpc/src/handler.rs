@@ -254,13 +254,14 @@ impl<Ctx: Send + Sync + 'static> Clone for Handler<Ctx> {
 }
 
 impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
-    pub async fn call(&self, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<Vec<u8>, RpcErr> {
+    /// Call the handler. Returns (bytes, is_json) where is_json indicates
+    /// whether the response should have Content-Type: application/json.
+    pub async fn call(&self, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Vec<u8>, bool), RpcErr> {
         match self {
             Handler::Rpc { f, skip_query } => {
                 let input_val: Value = if *skip_query {
                     Value::Null
                 } else if is_get {
-                    // GET: parse `input=` from query string
                     let query_str = std::str::from_utf8(input).unwrap_or("");
                     query_str.split('&').find_map(|pair| {
                         let mut parts = pair.splitn(2, '=');
@@ -276,9 +277,9 @@ impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
                 } else {
                     serde_json::from_slice(input).unwrap_or(Value::Null)
                 };
-                f(ctx, input_val).await
+                f(ctx, input_val).await.map(|b| (b, true))
             }
-            Handler::Bytes(f) => f(ctx, input).await,
+            Handler::Bytes(f) => f(ctx, input).await.map(|b| (b, false)),
         }
     }
 }

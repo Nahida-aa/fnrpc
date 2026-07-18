@@ -37,8 +37,8 @@ async fn echo_post(input: String) -> String {
 }
 
 #[fnrpc::rpc_bytes]
-fn ping(input: &[u8]) -> Vec<u8> {
-    b"pong".to_vec()
+fn noop_raw(input: &[u8]) -> Vec<u8> {
+    b"ok".to_vec()
 }
 
 fn build_get(uri: &Uri) -> Request<RequestExt<RequestBody>> {
@@ -59,7 +59,7 @@ fn build_post(uri: &Uri, body: &[u8]) -> Request<RequestExt<RequestBody>> {
 }
 
 pub(crate) async fn bench_macro(n: usize) {
-    let router = RpcRouterBuilder::<()>::new().route(echo_macro).build();
+    let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
 
@@ -81,7 +81,7 @@ pub(crate) async fn bench_macro(n: usize) {
 }
 
 pub(crate) async fn bench_manual(n: usize) {
-    let router = RpcRouterBuilder::<()>::new().route(EchoManual).build();
+    let router = RpcRouterBuilder::<()>::new().route_fn(EchoManual).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
 
@@ -103,7 +103,7 @@ pub(crate) async fn bench_manual(n: usize) {
 }
 
 pub(crate) async fn bench_post(n: usize) {
-    let router = RpcRouterBuilder::<()>::new().route(echo_post).build();
+    let router = RpcRouterBuilder::<()>::new().route_fn(echo_post).build();
     let app = App::new(router, |_| ());
     let uri_echo: Uri = "/echo".parse().unwrap();
     let body_data: Vec<u8> = br#""hello""#.to_vec();
@@ -125,20 +125,20 @@ pub(crate) async fn bench_post(n: usize) {
     drop(_p);
 }
 
-pub(crate) async fn bench_ping(n: usize) {
-    let router = RpcRouterBuilder::<()>::new().route_bytes(ping).build();
+pub(crate) async fn bench_noop_raw(n: usize) {
+    let router = RpcRouterBuilder::<()>::new().route_bytes(noop_raw).build();
     let app = App::new(router, |_| ());
-    let uri_ping: Uri = "/ping".parse().unwrap();
+    let uri_noop_raw: Uri = "/noop_raw".parse().unwrap();
 
     let _p = Profiler::builder()
         .file_name("benches/target/dhat-heap.json")
         .build();
     for _ in 0..n {
-        let _ = app.call(build_get(&uri_ping)).await;
+        let _ = app.call(build_get(&uri_noop_raw)).await;
     }
     let s = HeapStats::get();
     eprintln!(
-        "fnrpc-web/ping: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        "fnrpc-web/noop_raw: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
         s.total_bytes,
         s.total_blocks,
         s.total_bytes as f64 / n as f64,
@@ -146,3 +146,4 @@ pub(crate) async fn bench_ping(n: usize) {
     );
     drop(_p);
 }
+
