@@ -184,7 +184,7 @@ fn run_framework(
                 continue;
             }
             let port = find_free_port();
-            let mut server = if name == "xitca-web" {
+            let mut server = if name == "xitca-web" || name == "actix-web" {
                 Command::new(&binary).arg(port.to_string())
                     .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
             } else {
@@ -217,9 +217,17 @@ fn build_server(name: &str) {
         return;
     }
     eprintln!("Building {name}...");
-    let status = Command::new("cargo")
-        .args(["build", "--release", "-p", "benches", "--bin", name])
-        .stdout(Stdio::null()).stderr(Stdio::null())
+    // Determine required features for this binary
+    let features = match name {
+        "actix_web_server" => "actix-web",
+        _ => "",
+    };
+    let mut cmd = Command::new("cargo");
+    cmd.args(["build", "--release", "-p", "benches", "--bin", name]);
+    if !features.is_empty() {
+        cmd.args(["--features", features]);
+    }
+    let status = cmd.stdout(Stdio::null()).stderr(Stdio::null())
         .status()
         .expect(&format!("failed to build {name}"));
     assert!(status.success(), "build failed");
@@ -280,6 +288,13 @@ fn main() {
         ("/plaintext", "plaintext_te", false, b""),
     ];
 
+    let actix_endpoints: &[(&str, &str, bool, &[u8])] = &[
+        ("/noop-json", "noop_json", false, b""),
+        ("/json", "json_te", false, b""),
+        ("/plaintext", "plaintext_te", false, b""),
+        ("/in?key=fnrpc", "lookup", false, b""),
+    ];
+
     match framework {
         "fnrpc-web" => {
             build_server("fnrpc_web_server");
@@ -293,15 +308,25 @@ fn main() {
             run_framework("xitca-web", "target/release/xitca_web_server",
                 &levels, duration, xitca_endpoints, filter);
         }
+        "actix-web" => {
+            build_server("actix_web_server");
+            println!("actix-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            run_framework("actix-web", "target/release/actix_web_server",
+                &levels, duration, actix_endpoints, filter);
+        }
         "all" => {
             build_server("fnrpc_web_server");
             build_server("xitca_web_server");
+            build_server("actix_web_server");
             println!("fnrpc-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("fnrpc-web", "target/release/fnrpc_web_server",
                 &levels, duration, fnrpc_endpoints, filter);
             println!("\nxitca-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
             run_framework("xitca-web", "target/release/xitca_web_server",
                 &levels, duration, xitca_endpoints, filter);
+            println!("\nactix-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            run_framework("actix-web", "target/release/actix_web_server",
+                &levels, duration, actix_endpoints, filter);
         }
         _ => { eprintln!("Unknown: {framework}"); std::process::exit(1); }
     }

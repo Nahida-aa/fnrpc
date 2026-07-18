@@ -97,3 +97,8 @@ required-features = ["reqwest"]
 [[bin]]
 name = "xitca_web_server"
 path = "src/bin/xitca_web_server.rs"
+
+[[bin]]
+name = "actix_web_server"
+path = "src/bin/actix_web_server.rs"
+required-features = ["actix-web"]
