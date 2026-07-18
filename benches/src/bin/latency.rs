@@ -234,6 +234,10 @@ fn build_server(name: &str) {
 }
 
 fn concurrency_levels(max: usize) -> Vec<usize> {
+    // If max is 0, run single direct test at default concurrency (ramp-up mode)
+    if max == 0 {
+        return vec![200];
+    }
     let mut levels = vec![1, 10, 50, 100, 200, 500];
     let mut c = 1000;
     while c <= max {
@@ -248,17 +252,22 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let framework = args.get(1).map(|s| s.as_str()).unwrap_or_else(|| {
         eprintln!("Usage: latency [fnrpc-web|xitca-web|all] [max_concurrency] [duration_secs] [endpoint_filter...]");
+        eprintln!("  max_concurrency: 0 = direct mode (single test at 200 concurrency)");
         eprintln!("  endpoint_filter: optional, only run endpoints whose label contains this string");
         eprintln!("  Examples:");
-        eprintln!("    latency fnrpc-web 200 3          # all endpoints");
-        eprintln!("    latency fnrpc-web 200 3 json_te  # only /json");
-        eprintln!("    latency all 200 3 te             # only TechEmpower endpoints");
+        eprintln!("    latency fnrpc-web 200 3          # ramp-up to 200");
+        eprintln!("    latency fnrpc-web 0 5 json_te    # direct: 200 concurrency, 5s, only /json");
+        eprintln!("    latency all 200 3 te             # ramp-up, only TechEmpower endpoints");
         std::process::exit(1);
     });
     let max_concurrency: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(2000);
     let duration_secs: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(3);
     let filter = args.get(4).map(|s| s.as_str()).unwrap_or("");
-    let levels = concurrency_levels(max_concurrency);
+    let is_direct = max_concurrency == 0;
+    // In direct mode, use the first arg after filter as the actual concurrency
+    let direct_concurrency: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(200);
+    let target_concurrency = if is_direct { direct_concurrency } else { max_concurrency };
+    let levels = if is_direct { vec![target_concurrency] } else { concurrency_levels(max_concurrency) };
     let duration = Duration::from_secs(duration_secs);
 
     // Pre-built JSON payloads for POST benchmarks
@@ -295,22 +304,24 @@ fn main() {
         ("/in?key=fnrpc", "lookup", false, b""),
     ];
 
+    let mode_str = if is_direct { "直接模式" } else { "累进模式" };
+
     match framework {
         "fnrpc-web" => {
             build_server("fnrpc_web_server");
-            println!("fnrpc-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            println!("fnrpc-web ({}: {duration_secs}秒, {mode_str})", target_concurrency);
             run_framework("fnrpc-web", "target/release/fnrpc_web_server",
                 &levels, duration, fnrpc_endpoints, filter);
         }
         "xitca-web" => {
             build_server("xitca_web_server");
-            println!("xitca-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            println!("xitca-web ({}: {duration_secs}秒, {mode_str})", target_concurrency);
             run_framework("xitca-web", "target/release/xitca_web_server",
                 &levels, duration, xitca_endpoints, filter);
         }
         "actix-web" => {
             build_server("actix_web_server");
-            println!("actix-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            println!("actix-web ({}: {duration_secs}秒, {mode_str})", target_concurrency);
             run_framework("actix-web", "target/release/actix_web_server",
                 &levels, duration, actix_endpoints, filter);
         }
@@ -318,13 +329,13 @@ fn main() {
             build_server("fnrpc_web_server");
             build_server("xitca_web_server");
             build_server("actix_web_server");
-            println!("fnrpc-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            println!("fnrpc-web ({}: {duration_secs}秒, {mode_str})", target_concurrency);
             run_framework("fnrpc-web", "target/release/fnrpc_web_server",
                 &levels, duration, fnrpc_endpoints, filter);
-            println!("\nxitca-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            println!("\nxitca-web ({}: {duration_secs}秒, {mode_str})", target_concurrency);
             run_framework("xitca-web", "target/release/xitca_web_server",
                 &levels, duration, xitca_endpoints, filter);
-            println!("\nactix-web (每级 {duration_secs} 秒, 最大 {max_concurrency} 并发)");
+            println!("\nactix-web ({}: {duration_secs}秒, {mode_str})", target_concurrency);
             run_framework("actix-web", "target/release/actix_web_server",
                 &levels, duration, actix_endpoints, filter);
         }
