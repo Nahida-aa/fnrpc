@@ -228,29 +228,30 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
     }
 }
 
+// ── HandlerFn trait (avoids Arc::clone by borrowing &self) ──
+
+/// Object-safe handler trait that returns futures borrowing `&self`.
+/// Replaces `Arc<dyn Fn>` to avoid atomic reference counting overhead.
+pub trait HandlerFn<Ctx>: Send + Sync {
+    fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>>;
+}
+
+/// Object-safe bytes handler trait.
+pub trait BytesHandlerFn<Ctx>: Send + Sync {
+    fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>>;
+}
+
 // ── Handler enum (unified dispatch) ──────────────────────
 
 /// A unified handler that can be either a typed RPC function or a bytes handler.
-///
-/// Used by [`crate::router::RpcRouterBuilder::route_fn`] for zero-overhead dispatch.
 pub enum Handler<Ctx: Send + Sync + 'static> {
     /// Typed RPC function — input/output via JSON Value.
-    /// `skip_query` indicates `Input=()` — query string parsing can be skipped.
     Rpc {
-        f: Arc<dyn for<'a> Fn(&'a Ctx, Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>,
+        f: Box<dyn HandlerFn<Ctx>>,
         skip_query: bool,
     },
     /// Bytes handler — raw input/output.
-    Bytes(Arc<dyn for<'a> Fn(&'a Ctx, &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>),
-}
-
-impl<Ctx: Send + Sync + 'static> Clone for Handler<Ctx> {
-    fn clone(&self) -> Self {
-        match self {
-            Handler::Rpc { f, skip_query } => Handler::Rpc { f: Arc::clone(f), skip_query: *skip_query },
-            Handler::Bytes(f) => Handler::Bytes(Arc::clone(f)),
-        }
-    }
+    Bytes(Box<dyn BytesHandlerFn<Ctx>>),
 }
 
 impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
@@ -277,9 +278,9 @@ impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
                 } else {
                     serde_json::from_slice(input).unwrap_or(Value::Null)
                 };
-                f(ctx, input_val).await.map(|b| (b, true))
+                f.call(ctx, input_val).await.map(|b| (b, true))
             }
-            Handler::Bytes(f) => f(ctx, input).await.map(|b| (b, false)),
+            Handler::Bytes(f) => f.call(ctx, input).await.map(|b| (b, false)),
         }
     }
 }

@@ -14,7 +14,7 @@ use serde_json::Value;
 use xitca_router::Router;
 
 use crate::error::RpcErr;
-use crate::handler::{Handler, RpcFn, RpcFnExt, TsTypeInfo};
+use crate::handler::{BytesHandlerFn, Handler, HandlerFn, RpcFn, RpcFnExt, TsTypeInfo};
 use crate::gen_ts_client;
 use crate::middleware::ErasedRpcService;
 
@@ -28,7 +28,6 @@ pub struct ProcedureMeta {
     pub output: TsTypeInfo,
 }
 
-type HandlerFn<Ctx> = Arc<dyn for<'a> Fn(&'a Ctx, Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>;
 
 /// A collection of RPC handlers with radix-tree routing.
 ///
@@ -39,15 +38,6 @@ pub struct RpcRouter<Ctx: Send + Sync + 'static> {
     router: Router<Handler<Ctx>>,
 }
 
-impl<Ctx: Send + Sync + 'static> Clone for RpcRouter<Ctx> {
-    fn clone(&self) -> Self {
-        Self {
-            procedures: self.procedures.clone(),
-            inner: self.inner.clone(),
-            router: self.router.clone(),
-        }
-    }
-}
 
 impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     /// Look up a handler by path and call it.
@@ -125,15 +115,17 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         });
 
         let skip_query = TypeId::of::<H::Input>() == TypeId::of::<()>();
-        let inner = Arc::new(handler);
-        let handler_fn = Handler::Rpc {
-            f: Arc::new(move |ctx: &Ctx, input: Value| {
-                let inner = Arc::clone(&inner);
+        struct RpcHandler<Ctx, H: RpcFn<Ctx>>(H, PhantomData<Ctx>);
+        impl<Ctx: Send + Sync + 'static, H: RpcFn<Ctx>> HandlerFn<Ctx> for RpcHandler<Ctx, H> {
+            fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> {
                 Box::pin(async move {
-                    let result = inner.call_value(ctx, input).await?;
+                    let result = self.0.call_value(ctx, input).await?;
                     Ok(result.into_owned())
                 })
-            }),
+            }
+        }
+        let handler_fn = Handler::Rpc {
+            f: Box::new(RpcHandler(handler, PhantomData)),
             skip_query,
         };
         self.router.insert(H::KEY.to_string(), handler_fn).unwrap();
@@ -142,14 +134,16 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
 
     /// Register a bytes handler (bypasses JSON serialization).
     pub fn route_bytes<F: crate::handler::RawRpcFn<Ctx> + 'static>(mut self, handler: F) -> Self {
-        let inner = Arc::new(handler);
-        let handler_fn = Handler::Bytes(Arc::new(move |ctx: &Ctx, input: &[u8]| {
-            let inner = Arc::clone(&inner);
-            Box::pin(async move {
-                let result = F::exec(ctx, input)?;
-                Ok(result)
-            })
-        }));
+        struct BytesHandler<Ctx, F: crate::handler::RawRpcFn<Ctx>>(F, PhantomData<Ctx>);
+        impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>> BytesHandlerFn<Ctx> for BytesHandler<Ctx, F> {
+            fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> {
+                Box::pin(async move {
+                    let result = F::exec(ctx, input)?;
+                    Ok(result)
+                })
+            }
+        }
+        let handler_fn = Handler::Bytes(Box::new(BytesHandler(handler, PhantomData)));
         self.router.insert(F::KEY.to_string(), handler_fn).unwrap();
         self
     }
