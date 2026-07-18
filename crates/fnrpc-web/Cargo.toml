@@ -7,8 +7,8 @@ license = "MIT"
 
 [dependencies]
 fnrpc = { version = "0.2.0", path = "../fnrpc" }
-xitca-server = "0.7"
-xitca-http = { version = "0.9", features = ["http1"] }
+xitca-server = { version = "0.7", features = ["io-uring"] }
+xitca-http = { version = "0.9", features = ["http1", "io-uring"] }
 xitca-service = "0.3"
 serde_json = "1"
 url = "2"

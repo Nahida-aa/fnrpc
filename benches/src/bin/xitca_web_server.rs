@@ -213,6 +213,7 @@ fn main() {
             .at("/json", get(fn_service(handler_json_te)))
             .at("/plaintext", get(fn_service(handler_plaintext)))
             .serve()
+            .enable_io_uring()
             .bind(format!("0.0.0.0:{port}"))
             .unwrap()
             .run()

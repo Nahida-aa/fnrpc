@@ -246,7 +246,7 @@ where
         let config = config.clone();
         async move { Ok::<Response<ResponseBody>, Infallible>(handle(&config, req).await) }
     })
-    .enclosed(HttpServiceBuilder::new());
+    .enclosed(HttpServiceBuilder::new().io_uring());
 
     Builder::new().bind("fnrpc-web", addr, handler)?.build().await?;
 

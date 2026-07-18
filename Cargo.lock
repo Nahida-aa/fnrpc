@@ -2518,6 +2518,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.7.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9080b15e63775b9a2ac7dca720f7050a8b955e092ea0f6020a4a80f69998cdc0"
+dependencies = [
+ "bitflags 2.13.0",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5386,6 +5397,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ff00a9bd1ff0a3a60078e770129c3fd73eac9e1e260a7e054d6de232e280a32"
 dependencies = [
  "bytes",
+ "io-uring",
+ "libc",
+ "slab",
+ "socket2 0.6.5",
  "tokio",
 ]
 
@@ -6666,6 +6681,7 @@ checksum = "be04f30caeac45e8e8d7edea10fcbfedbe513cbaafdb18ef4abc901a66aeb771"
 dependencies = [
  "socket2 0.6.5",
  "tokio",
+ "tokio-uring-xitca",
  "tracing",
  "xitca-io",
  "xitca-service",
