@@ -58,6 +58,9 @@ podman run --rm \
     -v "$(pwd)/target/release/xitca_web_server:/usr/local/bin/xitca_web_server:Z" \
     -v "$(pwd)/target/release/actix_web_server:/usr/local/bin/actix_web_server:Z" \
     -v "$(pwd)/target/release/latency:/usr/local/bin/latency:Z" \
+    -e FNRPC_BIN_FNRPC_WEB=/usr/local/bin/fnrpc_web_server \
+    -e FNRPC_BIN_XITCA_WEB=/usr/local/bin/xitca_web_server \
+    -e FNRPC_BIN_ACTIX_WEB=/usr/local/bin/actix_web_server \
     -e FNRPC_SKIP_BUILD=1 \
     --name fnrpc-bench \
     --name fnrpc-bench \
