@@ -10,6 +10,7 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::Stream;
@@ -224,5 +225,83 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
             Ok(v) => JsonCodec::encode(&v).map(Cow::Owned),
             Err(e) => Err(e),
         }))
+    }
+}
+
+// ── Handler enum (unified dispatch) ──────────────────────
+
+/// A unified handler that can be either a typed RPC function or a bytes handler.
+///
+/// Used by [`crate::router::RpcRouterBuilder::route_fn`] for zero-overhead dispatch.
+pub enum Handler<Ctx: Send + Sync + 'static> {
+    /// Typed RPC function — input/output via JSON Value.
+    Rpc(Arc<dyn for<'a> Fn(&'a Ctx, Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>),
+    /// Bytes handler — raw input/output.
+    Bytes(Arc<dyn for<'a> Fn(&'a Ctx, &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>),
+}
+
+impl<Ctx: Send + Sync + 'static> Clone for Handler<Ctx> {
+    fn clone(&self) -> Self {
+        match self {
+            Handler::Rpc(f) => Handler::Rpc(Arc::clone(f)),
+            Handler::Bytes(f) => Handler::Bytes(Arc::clone(f)),
+        }
+    }
+}
+
+impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
+    pub async fn call(&self, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<Vec<u8>, RpcErr> {
+        match self {
+            Handler::Rpc(f) => {
+                let input_val: Value = if is_get {
+                    // GET: parse `input=` from query string
+                    let query_str = std::str::from_utf8(input).unwrap_or("");
+                    query_str.split('&').find_map(|pair| {
+                        let mut parts = pair.splitn(2, '=');
+                        let key = parts.next()?;
+                        let val = parts.next()?;
+                        if key == "input" {
+                            let decoded = percent_decode(val);
+                            serde_json::from_str(&decoded).ok()
+                        } else {
+                            None
+                        }
+                    }).unwrap_or(Value::Null)
+                } else {
+                    serde_json::from_slice(input).unwrap_or(Value::Null)
+                };
+                f(ctx, input_val).await
+            }
+            Handler::Bytes(f) => f(ctx, input).await,
+        }
+    }
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'+' => result.push(' '),
+            b'%' => {
+                let hi = bytes.next().and_then(|c| hex_val(c));
+                let lo = bytes.next().and_then(|c| hex_val(c));
+                match (hi, lo) {
+                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
+                    _ => result.push('%'),
+                }
+            }
+            _ => result.push(b as char),
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
     }
 }

@@ -6,6 +6,7 @@ use fnrpc::handler::RpcFn;
 use fnrpc::router::RpcRouterBuilder;
 use fnrpc_web::App;
 use xitca_http::body::RequestBody;
+use xitca_http::bytes::Bytes;
 use xitca_http::http::{Method, Request, RequestExt, Uri};
 
 // ── 宏生成的 handler ──
@@ -35,6 +36,11 @@ async fn echo_post(input: String) -> String {
     input
 }
 
+#[fnrpc::rpc_bytes]
+fn ping(input: &[u8]) -> Vec<u8> {
+    b"pong".to_vec()
+}
+
 fn build_get(uri: &Uri) -> Request<RequestExt<RequestBody>> {
     let req_ext: RequestExt<RequestBody> = RequestExt::default();
     Request::builder()
@@ -42,6 +48,14 @@ fn build_get(uri: &Uri) -> Request<RequestExt<RequestBody>> {
         .uri(uri.clone())
         .body(req_ext)
         .unwrap()
+}
+
+fn build_post(uri: &Uri, body: &[u8]) -> Request<RequestExt<RequestBody>> {
+    let body: RequestBody = xitca_http::bytes::Bytes::copy_from_slice(body).into();
+    let mut req = Request::new(RequestExt::default().map_body(|_: RequestBody| body));
+    *req.method_mut() = Method::POST;
+    *req.uri_mut() = uri.clone();
+    req
 }
 
 pub(crate) async fn bench_macro(n: usize) {
@@ -80,6 +94,51 @@ pub(crate) async fn bench_manual(n: usize) {
     let s = HeapStats::get();
     eprintln!(
         "fnrpc-web/echo_manual: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+}
+
+pub(crate) async fn bench_post(n: usize) {
+    let router = RpcRouterBuilder::<()>::new().route(echo_post).build();
+    let app = App::new(router, |_| ());
+    let uri_echo: Uri = "/echo".parse().unwrap();
+    let body_data: Vec<u8> = br#""hello""#.to_vec();
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let _ = app.call(build_post(&uri_echo, &body_data)).await;
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "fnrpc-web/echo_post: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+}
+
+pub(crate) async fn bench_ping(n: usize) {
+    let router = RpcRouterBuilder::<()>::new().route_bytes(ping).build();
+    let app = App::new(router, |_| ());
+    let uri_ping: Uri = "/ping".parse().unwrap();
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let _ = app.call(build_get(&uri_ping)).await;
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "fnrpc-web/ping: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
         s.total_bytes,
         s.total_blocks,
         s.total_bytes as f64 / n as f64,

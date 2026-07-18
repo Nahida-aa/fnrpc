@@ -8,6 +8,17 @@ use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
 use xitca_web::route::{get, post};
 use xitca_web::service::{Service, fn_service};
 
+/// Ping — returns "pong" with JSON content type.
+async fn handler_ping(
+    _ctx: WebContext<'_, ()>,
+) -> Result<WebResponse, xitca_web::error::Error> {
+    Ok(WebResponse::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"\"pong\"")))
+        .unwrap())
+}
+
 /// Raw noop — no Content-Type header, plain text body.
 /// Matches the original xitca-web baseline (177B/3blks).
 async fn handler_noop_raw(
@@ -130,6 +141,7 @@ fn make_get_req(uri: &str) -> http::Request<RequestExt<RequestBody>> {
 
 pub(crate) async fn bench(n: usize) {
     let app = App::new()
+        .at("/ping", get(fn_service(handler_ping)))
         .at("/noop-raw", get(fn_service(handler_noop_raw)))
         .at("/noop-json", get(fn_service(handler_noop_json)))
         .at("/echo_post", post(fn_service(handler_echo_post)))

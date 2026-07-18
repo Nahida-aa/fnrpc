@@ -5,6 +5,7 @@
 
 mod func;
 mod subscribe;
+mod bytes_handler;
 
 use proc_macro::TokenStream;
 
@@ -237,4 +238,29 @@ pub fn rpc_mutate(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn rpc_subscribe(attr: TokenStream, item: TokenStream) -> TokenStream {
     subscribe::rpc_subscribe_impl(attr, item)
+}
+
+/// Register a function as a bytes handler (zero serialization overhead).
+///
+/// Unlike [`rpc_query`] and [`rpc_mutate`], this does NOT use JSON
+/// serialization — the function receives raw `&[u8]` and returns `Vec<u8>`.
+///
+/// # Attribute arguments
+///
+/// ```ignore
+/// #[rpc_bytes]              // key = function name
+/// #[rpc_bytes("my_key")]    // key = "my_key"
+/// ```
+///
+/// # Example
+///
+/// ```ignore
+/// #[fnrpc::rpc_bytes]
+/// fn ping(input: &[u8]) -> Vec<u8> {
+///     b"pong".to_vec()
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn rpc_bytes(attr: TokenStream, item: TokenStream) -> TokenStream {
+    bytes_handler::rpc_bytes_impl(attr, item)
 }

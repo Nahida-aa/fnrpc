@@ -107,25 +107,15 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
             }
         }
 
-        let input: Value = if req.method() == Method::GET {
-            let query_str = req.uri().query().unwrap_or("");
-            query_str.split('&').find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                let key = parts.next()?;
-                let val = parts.next()?;
-                if key == "input" {
-                    let decoded = percent_decode(val);
-                    serde_json::from_str(&decoded).ok()
-                } else {
-                    None
-                }
-            }).unwrap_or(Value::Null)
+        let input: std::borrow::Cow<'_, [u8]> = if req.method() == Method::GET {
+            req.uri().query().unwrap_or("").as_bytes().into()
         } else {
-            serde_json::from_slice(&body_buf).unwrap_or(Value::Null)
+            body_buf.into()
         };
 
         let path = req.uri().path().strip_prefix('/').unwrap_or("");
-        let result = self.router.call_handler(path, &ctx, input).await;
+        let is_get = req.method() == Method::GET;
+        let result = self.router.call_handler(path, &ctx, &input, is_get).await;
 
         match result {
             Ok(bytes) => {
@@ -181,25 +171,15 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                     }
                 }
 
-                let input: Value = if req.method() == Method::GET {
-                    let query_str = req.uri().query().unwrap_or("");
-                    query_str.split('&').find_map(|pair| {
-                        let mut parts = pair.splitn(2, '=');
-                        let key = parts.next()?;
-                        let val = parts.next()?;
-                        if key == "input" {
-                            let decoded = percent_decode(val);
-                            serde_json::from_str(&decoded).ok()
-                        } else {
-                            None
-                        }
-                    }).unwrap_or(Value::Null)
+                let input: std::borrow::Cow<'_, [u8]> = if req.method() == Method::GET {
+                    req.uri().query().unwrap_or("").as_bytes().into()
                 } else {
-                    serde_json::from_slice(&body_buf).unwrap_or(Value::Null)
+                    body_buf.into()
                 };
 
                 let path = req.uri().path().strip_prefix('/').unwrap_or("");
-                let result = router.call_handler(path, &ctx, input).await;
+                let is_get = req.method() == Method::GET;
+                let result = router.call_handler(path, &ctx, &input, is_get).await;
 
                 match result {
                     Ok(bytes) => {
