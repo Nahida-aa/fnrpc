@@ -3,18 +3,24 @@ use fnrpc::error::RpcErr;
 use fnrpc::handler::{RawRpcFn, RpcFn};
 use fnrpc::router::RpcRouterBuilder;
 use serde_json::Value;
+use std::future::Future;
 
 struct Noop;
 impl RpcFn<()> for Noop {
     type Input = ();
     type Output = ();
-    const NAME: &'static str = "noop";
-    fn exec(_ctx: &(), _input: ()) -> Result<(), RpcErr> { Ok(()) }
+    const KEY: &'static str = "noop";
+    fn exec<'a>(
+        _ctx: &'a (),
+        _input: (),
+    ) -> impl Future<Output = Result<(), RpcErr>> + Send + 'a {
+        async move { Ok(()) }
+    }
 }
 
 struct RawNoop;
 impl RawRpcFn<()> for RawNoop {
-    const NAME: &'static str = "raw_noop";
+    const KEY: &'static str = "raw_noop";
     fn exec(_ctx: &(), _input: &[u8]) -> Result<Vec<u8>, RpcErr> { Ok(b"ok".to_vec()) }
 }
 
@@ -44,7 +50,7 @@ fn main() {
 
     struct Lookup;
     impl RawRpcFn<AppCtx> for Lookup {
-        const NAME: &'static str = "lookup";
+        const KEY: &'static str = "lookup";
         fn exec(ctx: &AppCtx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
             let query_str = std::str::from_utf8(input).unwrap_or("");
             let key = query_str.split('&').find_map(|pair| {

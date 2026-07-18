@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use dhat::{HeapStats, Profiler};
@@ -10,9 +11,12 @@ struct Noop;
 impl RpcFn<()> for Noop {
     type Input = ();
     type Output = ();
-    const NAME: &'static str = "noop";
-    fn exec(_ctx: &(), _input: ()) -> Result<(), RpcErr> {
-        Ok(())
+    const KEY: &'static str = "noop";
+    fn exec<'a>(
+        _ctx: &'a (),
+        _input: (),
+    ) -> impl Future<Output = Result<(), RpcErr>> + Send + 'a {
+        async move { Ok(()) }
     }
 }
 
@@ -20,9 +24,12 @@ struct Echo;
 impl RpcFn<()> for Echo {
     type Input = String;
     type Output = String;
-    const NAME: &'static str = "echo";
-    fn exec(_ctx: &(), input: String) -> Result<String, RpcErr> {
-        Ok(input)
+    const KEY: &'static str = "echo";
+    fn exec<'a>(
+        _ctx: &'a (),
+        input: String,
+    ) -> impl Future<Output = Result<String, RpcErr>> + Send + 'a {
+        async move { Ok(input) }
     }
 }
 

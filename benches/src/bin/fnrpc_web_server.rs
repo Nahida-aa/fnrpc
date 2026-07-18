@@ -8,6 +8,7 @@ use fnrpc::rpc_query;
 use fnrpc_web::{RpcWebConfig, run};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::future::Future;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -22,13 +23,16 @@ impl RpcFn<AppCtx> for Noop {
     type Input = ();
     type Output = ();
     const KEY: &'static str = "noop";
-    fn exec(_ctx: &AppCtx, _input: ()) -> Result<(), RpcErr> {
-        Ok(())
+    fn exec<'a>(
+        _ctx: &'a AppCtx,
+        _input: (),
+    ) -> impl Future<Output = Result<(), RpcErr>> + Send + 'a {
+        async move { Ok(()) }
     }
 }
 
 #[rpc_query]
-fn noop() -> () {}
+async fn noop() -> () {}
 
 // ── Small payload: echo string (POST) ──────────────────
 
@@ -38,9 +42,17 @@ impl RpcFn<AppCtx> for Echo {
     type Output = String;
     const KEY: &'static str = "echo";
     const METHOD: &'static str = "POST";
-    fn exec(_ctx: &AppCtx, input: String) -> Result<String, RpcErr> {
-        Ok(input)
+    fn exec<'a>(
+        _ctx: &'a AppCtx,
+        input: String,
+    ) -> impl Future<Output = Result<String, RpcErr>> + Send + 'a {
+        async move { Ok(input) }
     }
+}
+
+#[fnrpc::rpc_query]
+async fn echo(input: String) -> String {
+    input
 }
 
 // ── Medium payload: user profile (~200B JSON, POST) ───
@@ -60,8 +72,11 @@ impl RpcFn<AppCtx> for Medium {
     type Output = MediumPayload;
     const KEY: &'static str = "medium";
     const METHOD: &'static str = "POST";
-    fn exec(_ctx: &AppCtx, input: MediumPayload) -> Result<MediumPayload, RpcErr> {
-        Ok(input)
+    fn exec<'a>(
+        _ctx: &'a AppCtx,
+        input: MediumPayload,
+    ) -> impl Future<Output = Result<MediumPayload, RpcErr>> + Send + 'a {
+        async move { Ok(input) }
     }
 }
 
@@ -90,8 +105,11 @@ impl RpcFn<AppCtx> for Large {
     type Output = LargePayload;
     const KEY: &'static str = "large";
     const METHOD: &'static str = "POST";
-    fn exec(_ctx: &AppCtx, input: LargePayload) -> Result<LargePayload, RpcErr> {
-        Ok(input)
+    fn exec<'a>(
+        _ctx: &'a AppCtx,
+        input: LargePayload,
+    ) -> impl Future<Output = Result<LargePayload, RpcErr>> + Send + 'a {
+        async move { Ok(input) }
     }
 }
 
@@ -135,10 +153,15 @@ impl RpcFn<AppCtx> for JsonEndpoint {
     type Input = ();
     type Output = JsonMessage;
     const KEY: &'static str = "json";
-    fn exec(_ctx: &AppCtx, _input: ()) -> Result<JsonMessage, RpcErr> {
-        Ok(JsonMessage {
-            message: "Hello, World!",
-        })
+    fn exec<'a>(
+        _ctx: &'a AppCtx,
+        _input: (),
+    ) -> impl Future<Output = Result<JsonMessage, RpcErr>> + Send + 'a {
+        async move {
+            Ok(JsonMessage {
+                message: "Hello, World!",
+            })
+        }
     }
 }
 
@@ -242,7 +265,7 @@ async fn main() {
     let config = RpcWebConfig {
         router: RpcRouterBuilder::<AppCtx>::new()
             .query(Noop)
-            .query(Echo)
+            .query(echo)
             .query(Medium)
             .query(Large)
             .raw(Lookup)

@@ -77,7 +77,7 @@ pub async fn dispatch<Ctx: Send + Sync + 'static>(
 
     // Fast path: direct handler call
     if let Some(handler) = state.router.get_handler(path) {
-        match handler.call(&ctx_value, input) {
+        match handler.call(&ctx_value, input).await {
             Ok(val) => Ok(json_response(StatusCode::OK, val)),
             Err(e) => Ok(rpc_err_to_response(e)),
         }

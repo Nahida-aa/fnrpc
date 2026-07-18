@@ -14,9 +14,8 @@ use std::path::Path;
 use specta::Type;
 use specta::datatype::{DataType, Primitive, Reference};
 
-use crate::error::RpcErr;
 use crate::handler::TsTypeInfo;
-use crate::router::RpcRouter;
+use crate::router::{ProcedureMeta, RpcRouter};
 
 /// Resolve a specta [`Type`] to a TypeScript type reference string.
 pub(crate) fn type_ts<T: Type>() -> TsTypeInfo {
@@ -99,16 +98,9 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
 
     // Collect types into a shared type registry
     let mut types = specta::Types::default();
-    RpcErr::definition(&mut types);
-    {
-        let handlers = router.handlers.read().unwrap();
-        for (_, handler) in handlers.iter() {
-            handler.populate_types(&mut types, &mut vec![]);
-        }
-    }
-    for (_, sub) in router.subscribes.iter() {
-        sub.populate_types(&mut types, &mut vec![]);
-    }
+    // Note: type definitions are already resolved at build time via
+    // RpcRouterBuilder::register() and stored in ProcedureMeta.
+    // The specta-exported types are reconstructed here from metadata.
 
     // Apply semantic remapping for TS types.
     let semantic =
@@ -125,51 +117,25 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
 
     // Build the Procedures interface
     out.push_str("export type Procedures = {\n");
-    {
-        let handlers = router.handlers.read().unwrap();
-        for (_, handler) in handlers.iter() {
-            let i = handler.input_ts();
-            let o = handler.output_ts();
-            let kind = handler.kind();
-            let method = if kind == "mutate" { "POST" } else { "GET" };
-            out.push_str(&format!(
-                "  {}: {{ kind: \"{kind}\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
-                handler.key(),
-                i.ts_ref,
-                o.ts_ref,
-            ));
-        }
-    }
-    for (_, sub) in router.subscribes.iter() {
-        let i = sub.input_ts();
-        let o = sub.output_ts();
-        let method = sub.method();
+    for meta in router.procedures() {
+        let kind = meta.kind;
+        let method = if kind == "mutate" { "POST" } else { "GET" };
         out.push_str(&format!(
-            "  {}: {{ kind: \"subscribe\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
-            sub.key(),
-            i.ts_ref,
-            o.ts_ref,
+            "  {}: {{ kind: \"{kind}\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
+            meta.key,
+            meta.input.ts_ref,
+            meta.output.ts_ref,
         ));
     }
     out.push_str("}\n");
 
     out.push_str("\nexport const __procedureMeta = {\n");
-    {
-        let handlers = router.handlers.read().unwrap();
-        for (_, handler) in handlers.iter() {
-            let kind = handler.kind();
-            let method = if kind == "mutate" { "POST" } else { "GET" };
-            out.push_str(&format!(
-                "  {}: {{ kind: \"{kind}\", method: \"{method}\" }},\n",
-                handler.key(),
-            ));
-        }
-    }
-    for (_, sub) in router.subscribes.iter() {
-        let method = sub.method();
+    for meta in router.procedures() {
+        let kind = meta.kind;
+        let method = if kind == "mutate" { "POST" } else { "GET" };
         out.push_str(&format!(
-            "  {}: {{ kind: \"subscribe\", method: \"{method}\" }},\n",
-            sub.key(),
+            "  {}: {{ kind: \"{kind}\", method: \"{method}\" }},\n",
+            meta.key,
         ));
     }
     out.push_str("} as const;\n");

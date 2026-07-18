@@ -1,13 +1,15 @@
 //! Handler traits for RPC functions.
 //!
-//! - [`RpcFn`] / [`ErasedHandler`] for query & mutate.
+//! - [`RpcFn`] for typed query & mutate procedures.
+//! - [`RpcFnExt`] provides default [`call_bytes`](RpcFnExt::call_bytes),
+//!   [`call`](RpcFnExt::call), and [`call_value`](RpcFnExt::call_value) impls.
 //! - [`RawRpcFn`] for raw byte-buffer handlers.
-//! - [`RpcSubscribe`] / [`ErasedSubscribeHandler`] for subscriptions.
+//! - [`RpcSubscribe`] / [`SubscribeExt`] for subscriptions.
 
 use std::any::TypeId;
 use std::borrow::Cow;
+use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::Stream;
@@ -15,7 +17,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use specta::Type;
-use specta::datatype::DataType;
 
 use crate::codec::{JsonCodec, RpcCodec};
 use crate::error::RpcErr;
@@ -30,62 +31,16 @@ pub struct TsTypeInfo {
     pub ts_ref: String,
 }
 
-
-// ── ErasedHandler (object-safe dispatch) ──────────────────
-
-/// Object-safe erased handler stored in the router.
-///
-/// The [`call_bytes`](ErasedHandler::call_bytes) method is the primary
-/// dispatch path — raw bytes in, raw bytes out.
-/// [`call`](ErasedHandler::call) and [`call_value`](ErasedHandler::call_value)
-/// are convenience wrappers that work with JSON [`Value`].
-pub trait ErasedHandler<Ctx>: Send + Sync {
-    fn key(&self) -> &'static str;
-    fn kind(&self) -> &'static str;
-    /// HTTP method for this handler: "GET" (input from query) or "POST" (input from body).
-    fn method(&self) -> &'static str;
-    fn input_ts(&self) -> TsTypeInfo;
-    fn output_ts(&self) -> TsTypeInfo;
-    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
-
-    /// Content-Type for responses produced by this handler.
-    fn content_type(&self) -> Option<&'static str>;
-
-    /// Whether this handler's Input type is `()` — meaning it needs no input.
-    /// When true, the server can skip query-string/body parsing entirely.
-    fn input_is_unit(&self) -> bool { false }
-
-    /// Primary dispatch: raw bytes in, raw bytes out.
-    ///
-    /// Default impl: JSON decode → [`call`](Self::call) → JSON re-encode.
-    /// Override for zero-copy raw protocols.
-    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
-        let value: Value = serde_json::from_slice(input)
-            .map_err(|e| RpcErr::bad_request(format!("deserialize: {e}")))?;
-        self.call(ctx, value)
-            .and_then(|v| serde_json::to_vec(&v).map(Cow::Owned).map_err(|e| RpcErr::internal(format!("serialize: {e}"))))
-    }
-
-    /// Dispatch a call, returning a JSON value.
-    fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr> {
-        let bytes = serde_json::to_vec(&input)
-            .map_err(|e| RpcErr::bad_request(format!("serialize input: {e}")))?;
-        let result = self.call_bytes(ctx, &bytes)?;
-        serde_json::from_slice(&result)
-            .map_err(|e| RpcErr::internal(format!("deserialize result: {e}")))
-    }
-
-    /// Dispatch from a JSON [`Value`], returning serialized bytes.
-    fn call_value(&self, ctx: &Ctx, input: Value) -> Result<Cow<'static, [u8]>, RpcErr> {
-        let bytes = serde_json::to_vec(&input)
-            .map_err(|e| RpcErr::bad_request(format!("serialize input: {e}")))?;
-        self.call_bytes(ctx, &bytes)
-    }
-}
-
 // ── RpcFn (typed, serde-based) ────────────────────────────
 
 /// Typed RPC function trait using serde serialization.
+///
+/// # Defaults
+///
+/// - [`KIND`](Self::KIND) = `"query"`
+/// - [`METHOD`](Self::METHOD) = `"GET"`
+///
+/// Override these constants to register as a mutate (POST) procedure.
 pub trait RpcFn<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type + 'static;
     type Output: Serialize + Type + 'static;
@@ -94,71 +49,93 @@ pub trait RpcFn<Ctx>: Send + Sync {
     /// HTTP method: "GET" (default, input from query string) or "POST" (input from body).
     const METHOD: &'static str = "GET";
 
-    fn exec(ctx: &Ctx, input: Self::Input) -> Result<Self::Output, RpcErr>;
-
-    /// Wrap this handler as an erased handler (Arc'd).
-    fn into_erased(self) -> Arc<dyn ErasedHandler<Ctx>>
-    where
-        Self: Sized + 'static,
-        Ctx: Send + Sync + 'static,
-    {
-        Arc::new(RpcFnWrapper(self))
-    }
+    fn exec(ctx: &Ctx, input: Self::Input) -> Pin<Box<dyn Future<Output = Result<Self::Output, RpcErr>> + Send + '_>>;
 }
 
-struct RpcFnWrapper<F>(F) where F: Send + Sync;
+// ── RpcFnExt ──────────────────────────────────────────────
 
-impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrapper<F> {
-    fn key(&self) -> &'static str { F::KEY }
-    fn kind(&self) -> &'static str { F::KIND }
-    fn method(&self) -> &'static str { F::METHOD }
-    fn input_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Input>() }
-    fn output_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Output>() }
+/// Extension trait providing default [`call_bytes`](Self::call_bytes),
+/// [`call`](Self::call), and [`call_value`](Self::call_value) implementations.
+///
+/// These methods handle serialization/deserialization and are the primary
+/// dispatch interface used by transport layers (fnrpc-web, fnrpc-axum, etc.).
+///
+/// All return `impl Future` — zero boxing, monomorphized at compile time.
+pub trait RpcFnExt<Ctx>: RpcFn<Ctx> {
+    /// Primary dispatch: raw bytes in, raw bytes out.
+    fn call_bytes<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: &'a [u8],
+    ) -> impl Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a;
 
-    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>) {
-        let input = F::Input::definition(types);
-        let output = F::Output::definition(types);
-        top_level.push(input);
-        top_level.push(output);
+    /// Dispatch a call, returning a JSON value.
+    fn call<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: Value,
+    ) -> impl Future<Output = Result<Value, RpcErr>> + Send + 'a;
+
+    /// Dispatch from a JSON [`Value`], returning serialized bytes.
+    fn call_value<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: Value,
+    ) -> impl Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a;
+}
+
+impl<Ctx: Send + Sync + 'static, T: RpcFn<Ctx>> RpcFnExt<Ctx> for T {
+    fn call_bytes<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: &'a [u8],
+    ) -> impl Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a {
+        async move {
+            let input = if is_unit_type::<T::Input>() {
+                unsafe { std::mem::zeroed() }
+            } else {
+                JsonCodec::decode::<T::Input>(input)?
+            };
+            let output = T::exec(ctx, input).await?;
+            Ok(JsonCodec::encode(&output).map(Cow::Owned).unwrap())
+        }
     }
 
-    fn content_type(&self) -> Option<&'static str> { Some("application/json") }
-
-    fn input_is_unit(&self) -> bool { is_unit_type::<F::Input>() }
-
-    fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
-        let input = if is_unit_type::<F::Input>() {
-            unsafe { std::mem::zeroed() }
-        } else {
-            JsonCodec::decode::<F::Input>(input)?
-        };
-        let output = F::exec(ctx, input)?;
-        JsonCodec::encode(&output).map(Cow::Owned)
+    fn call<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: Value,
+    ) -> impl Future<Output = Result<Value, RpcErr>> + Send + 'a {
+        async move {
+            let input = if is_unit_type::<T::Input>() {
+                unsafe { std::mem::zeroed() }
+            } else {
+                serde_json::from_value(input)
+                    .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
+            };
+            let output = T::exec(ctx, input).await?;
+            Ok(serde_json::to_value(output)
+                .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
+        }
     }
 
-    fn call(&self, ctx: &Ctx, input: Value) -> Result<Value, RpcErr> {
-        let input = if is_unit_type::<F::Input>() {
-            unsafe { std::mem::zeroed() }
-        } else {
-            serde_json::from_value(input)
-                .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
-        };
-        let output = F::exec(ctx, input)?;
-        Ok(serde_json::to_value(output)
-            .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
-    }
-
-    fn call_value(&self, ctx: &Ctx, input: Value) -> Result<Cow<'static, [u8]>, RpcErr> {
-        let input = if is_unit_type::<F::Input>() {
-            unsafe { std::mem::zeroed() }
-        } else {
-            serde_json::from_value(input)
-                .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
-        };
-        let output = F::exec(ctx, input)?;
-        serde_json::to_vec(&output)
-            .map(Cow::Owned)
-            .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))
+    fn call_value<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: Value,
+    ) -> impl Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a {
+        async move {
+            let input = if is_unit_type::<T::Input>() {
+                unsafe { std::mem::zeroed() }
+            } else {
+                serde_json::from_value(input)
+                    .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
+            };
+            let output = T::exec(ctx, input).await?;
+            Ok(serde_json::to_vec(&output)
+                .map(Cow::Owned)
+                .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
+        }
     }
 }
 
@@ -174,9 +151,7 @@ fn is_unit_type<T: 'static>() -> bool {
 /// A raw RPC function that operates directly on byte buffers.
 ///
 /// Unlike [`RpcFn`], this trait bypasses serde serialization entirely.
-/// Register with [`RpcRouterBuilder::raw`](crate::router::RpcRouterBuilder::raw).
-///
-/// Raw handlers bypass the middleware stack and are not included in codegen.
+/// Raw handlers are not included in codegen.
 pub trait RawRpcFn<Ctx>: Send + Sync {
     const KEY: &'static str;
     fn exec(ctx: &Ctx, input: &[u8]) -> Result<Vec<u8>, RpcErr>;
@@ -189,7 +164,6 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type;
     type Output: Serialize + Type + 'static;
     const KEY: &'static str;
-    const KIND: &'static str = "subscribe";
     const METHOD: &'static str = "GET";
 
     fn exec(
@@ -198,18 +172,15 @@ pub trait RpcSubscribe<Ctx>: Send + Sync {
     ) -> Pin<Box<dyn Stream<Item = Result<Self::Output, RpcErr>> + Send + 'static>>;
 }
 
-/// Object-safe erased subscribe handler stored in the router.
-pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
-    fn key(&self) -> &'static str;
-    fn method(&self) -> &'static str;
-    fn input_ts(&self) -> TsTypeInfo;
-    fn output_ts(&self) -> TsTypeInfo;
-    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
+/// Extension trait providing [`call`](SubscribeExt::call) and
+/// [`call_bytes`](SubscribeExt::call_bytes) for subscribe handlers.
+pub trait SubscribeExt<Ctx>: RpcSubscribe<Ctx> {
     fn call(
         &self,
         ctx: &Ctx,
         input: Value,
     ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'static>>;
+
     fn call_bytes(
         &self,
         ctx: &Ctx,
@@ -217,43 +188,7 @@ pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
     ) -> Pin<Box<dyn Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>;
 }
 
-// ── RoutedHandler (zero-sized marker for route registration) ──
-
-/// Trait for route-registered handler (xitca-web–style).
-///
-/// Implemented by the zero-sized marker struct generated by
-/// [`#[rpc_query]`](fnrpc_macros::rpc_query) and
-/// [`#[rpc_mutate]`](fnrpc_macros::rpc_mutate).
-pub trait RoutedHandler<Ctx>: RpcFn<Ctx> {
-    fn path() -> &'static str;
-    fn method() -> &'static str;
-}
-
-/// Trait for route-registered subscribe handler.
-pub trait RoutedSubscribeHandler<Ctx>: ErasedSubscribeHandler<Ctx> {
-    fn path() -> &'static str;
-    fn method() -> &'static str;
-}
-
-/// Blanket impl: any `RpcSubscribe<Ctx>` becomes an `ErasedSubscribeHandler<Ctx>`.
-impl<Ctx, F> ErasedSubscribeHandler<Ctx> for F
-where
-    F: RpcSubscribe<Ctx> + Send + Sync,
-    Ctx: Send + Sync,
-    <F as RpcSubscribe<Ctx>>::Output: 'static,
-{
-    fn key(&self) -> &'static str { F::KEY }
-    fn method(&self) -> &'static str { F::METHOD }
-    fn input_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Input>() }
-    fn output_ts(&self) -> TsTypeInfo { crate::gen_ts_client::type_ts::<F::Output>() }
-
-    fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>) {
-        let input = F::Input::definition(types);
-        let output = F::Output::definition(types);
-        top_level.push(input);
-        top_level.push(output);
-    }
-
+impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
     fn call(
         &self,
         ctx: &Ctx,

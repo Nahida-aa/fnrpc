@@ -101,6 +101,8 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
         ReturnType::Default => panic!("function must have a return type"),
     };
 
+    let is_async = input_fn.sig.asyncness.is_some();
+
     // --- Build the call expression to the renamed impl function ---
     let call = if input_params.is_empty() {
         if has_ctx {
@@ -128,19 +130,26 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
         }
     };
 
+    // For async functions, the call returns a future that needs to be awaited
+    let call_expr = if is_async {
+        quote! { #call.await }
+    } else {
+        call
+    };
+
     let exec_body = if is_result_return {
         if is_rpc_err {
-            quote! { #call }
+            quote! { #call_expr }
         } else {
             quote! {
-                match #call {
+                match #call_expr {
                     Ok(val) => Ok(val),
                     Err(e) => Err(fnrpc::error::RpcErr::internal(e.to_string())),
                 }
             }
         }
     } else {
-        quote! { Ok(#call) }
+        quote! { Ok(#call_expr) }
     };
 
     // --- Extract input type (tuple-ize multiple params) ---
@@ -180,21 +189,16 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
             impl fnrpc::handler::RpcFn<#ctx_ty> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
-                const KEY: &'static str = stringify!(#fn_name);
+                const KEY: &'static str = #path_val;
                 const KIND: &'static str = #kind;
                 const METHOD: &'static str = #method_upper;
 
                 fn exec(
                     ctx: &#ctx_ty,
                     input: Self::Input,
-                ) -> Result<Self::Output, fnrpc::error::RpcErr> {
-                    #exec_body
+                ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Self::Output, fnrpc::error::RpcErr>> + Send + '_>> {
+                    Box::pin(async move { #exec_body })
                 }
-            }
-
-            impl fnrpc::handler::RoutedHandler<#ctx_ty> for #struct_name {
-                fn path() -> &'static str { #path_val }
-                fn method() -> &'static str { #method_str }
             }
         }
     } else {
@@ -207,21 +211,16 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
             impl<T: Send + Sync + 'static> fnrpc::handler::RpcFn<T> for #struct_name {
                 type Input = #input_ty;
                 type Output = #output_ty;
-                const KEY: &'static str = stringify!(#fn_name);
+                const KEY: &'static str = #path_val;
                 const KIND: &'static str = #kind;
                 const METHOD: &'static str = #method_upper;
 
                 fn exec(
                     _ctx: &T,
                     input: Self::Input,
-                ) -> Result<Self::Output, fnrpc::error::RpcErr> {
-                    #exec_body
+                ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Self::Output, fnrpc::error::RpcErr>> + Send + '_>> {
+                    Box::pin(async move { #exec_body })
                 }
-            }
-
-            impl<T: Send + Sync + 'static> fnrpc::handler::RoutedHandler<T> for #struct_name {
-                fn path() -> &'static str { #path_val }
-                fn method() -> &'static str { #method_str }
             }
         }
     };
