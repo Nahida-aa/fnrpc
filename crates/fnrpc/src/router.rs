@@ -2,10 +2,6 @@
 //!
 //! Use [`RpcRouterBuilder`] to register handlers, then
 //! [`build`](RpcRouterBuilder::build) to get a stored [`RpcRouter`].
-//!
-//! Unlike tRPC-style routers, this is purely a metadata collection layer.
-//! Actual HTTP routing is handled by the transport crate (fnrpc-web, etc.)
-//! which registers each procedure as an independent route.
 
 use std::future::Future;
 use std::marker::PhantomData;
@@ -14,9 +10,10 @@ use std::sync::Arc;
 
 use http::Extensions;
 use serde_json::Value;
+use xitca_router::Router;
 
 use crate::error::RpcErr;
-use crate::handler::{RpcFn, TsTypeInfo};
+use crate::handler::{RpcFn, RpcFnExt, TsTypeInfo};
 use crate::gen_ts_client;
 use crate::middleware::ErasedRpcService;
 
@@ -30,15 +27,15 @@ pub struct ProcedureMeta {
     pub output: TsTypeInfo,
 }
 
-/// A collection of procedure metadata.
+type HandlerFn<Ctx> = Arc<dyn for<'a> Fn(&'a Ctx, Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> + Send + Sync>;
+
+/// A collection of RPC handlers with radix-tree routing.
 ///
 /// Produced by [`RpcRouterBuilder::build`].
-///
-/// This struct stores procedure metadata for TypeScript codegen.
-/// Actual HTTP routing is handled by the transport layer.
 pub struct RpcRouter<Ctx> {
     pub(crate) procedures: Vec<ProcedureMeta>,
     pub(crate) inner: Arc<dyn ErasedRpcService<Ctx>>,
+    router: Router<HandlerFn<Ctx>>,
 }
 
 impl<Ctx> Clone for RpcRouter<Ctx> {
@@ -46,29 +43,32 @@ impl<Ctx> Clone for RpcRouter<Ctx> {
         Self {
             procedures: self.procedures.clone(),
             inner: self.inner.clone(),
+            router: self.router.clone(),
         }
     }
 }
 
 impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
+    /// Look up a handler by path and call it with JSON input.
+    pub async fn call_handler(&self, path: &str, ctx: &Ctx, input: Value) -> Result<Vec<u8>, RpcErr> {
+        match self.router.at(path).ok() {
+            Some(m) => m.value.as_ref()(ctx, input).await,
+            None => Err(RpcErr::not_found(format!("unknown path: {path}"))),
+        }
+    }
+
     /// Iterate over all procedure metadata for TypeScript codegen.
     pub fn procedures(&self) -> &[ProcedureMeta] {
         &self.procedures
     }
 
     /// Dispatch a call through the middleware stack.
-    ///
-    /// This is used by middleware tests and advanced integration scenarios.
-    /// For HTTP routing, use the transport layer (fnrpc-web, fnrpc-axum, etc.)
-    /// which registers each procedure as an independent route.
     pub async fn dispatch(&self, ctx: &Ctx, path: &str, input: Value) -> Result<Value, RpcErr> {
         let mut extensions = Extensions::new();
         self.inner.call(ctx, path, input, &mut extensions).await
     }
 
     /// Dispatch a call and return a [`Send`] future.
-    ///
-    /// Required by multi-threaded runtimes (Axum, Tower, etc.).
     pub async fn dispatch_send(
         &self,
         ctx: &Ctx,
@@ -95,11 +95,9 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
 // ── RpcRouterBuilder ──────────────────────────────────────
 
 /// Builder for an [`RpcRouter`].
-///
-/// Registers procedures and subscribe handlers.
 pub struct RpcRouterBuilder<Ctx> {
     procedures: Vec<ProcedureMeta>,
-    _marker: PhantomData<Ctx>,
+    router: Router<HandlerFn<Ctx>>,
 }
 
 impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
@@ -107,12 +105,12 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     pub fn new() -> Self {
         Self {
             procedures: Vec::new(),
-            _marker: PhantomData,
+            router: Router::new(),
         }
     }
 
     /// Register a typed RPC function (query or mutate).
-    pub fn register<H: RpcFn<Ctx> + 'static>(mut self, _handler: H) -> Self {
+    pub fn route<H: RpcFn<Ctx> + 'static>(mut self, handler: H) -> Self {
         self.procedures.push(ProcedureMeta {
             key: H::KEY,
             kind: H::KIND,
@@ -120,12 +118,21 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
             input: gen_ts_client::type_ts::<H::Input>(),
             output: gen_ts_client::type_ts::<H::Output>(),
         });
+
+        let inner = Arc::new(handler);
+        let handler_fn: HandlerFn<Ctx> = Arc::new(move |ctx: &Ctx, input: Value| {
+            let inner = Arc::clone(&inner);
+            Box::pin(async move {
+                let result = inner.call_value(ctx, input).await?;
+                Ok(result.into_owned())
+            })
+        });
+        self.router.insert(H::KEY.to_string(), handler_fn).unwrap();
         self
     }
 
     /// Register a raw byte-buffer handler.
-    pub fn register_raw<F: crate::handler::RawRpcFn<Ctx> + 'static>(self, _handler: F) -> Self {
-        // Raw handlers are not included in codegen — no metadata collected.
+    pub fn route_raw<F: crate::handler::RawRpcFn<Ctx> + 'static>(self, _handler: F) -> Self {
         self
     }
 
@@ -146,9 +153,6 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
 
     /// Finalize and produce a type-erased [`RpcRouter`].
     pub fn build(self) -> RpcRouter<Ctx> {
-        // Build a no-op middleware chain.
-        // The inner service is unused in the new architecture — handlers
-        // are registered directly with the transport layer.
         struct NoopService<C>(PhantomData<C>);
         impl<C: Send + Sync + 'static> crate::middleware::RpcService<C> for NoopService<C> {
             async fn call(
@@ -164,6 +168,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         RpcRouter {
             procedures: self.procedures,
             inner: Arc::new(NoopService(PhantomData)) as Arc<dyn ErasedRpcService<Ctx>>,
+            router: self.router,
         }
     }
 }

@@ -1,27 +1,28 @@
-//! Standalone fnrpc HTTP app on xitca-http + xitca-server.
+//! Standalone fnrpc HTTP server on xitca-http + xitca-server.
 //!
-//! Each procedure is registered via `.register()` and collected into a
-//! single HTTP service at `.run()` time.
+//! A thin HTTP transport layer. Routing and handler dispatch are handled
+//! by [`fnrpc::router::RpcRouter`].
 //!
 //! # Example
 //!
 //! ```ignore
+//! use fnrpc::router::RpcRouterBuilder;
 //! use fnrpc_web::App;
 //!
-//! App::new(|_| ())
-//!     .register(health_check)
+//! let router = RpcRouterBuilder::<()>::new()
+//!     .route(health_check)
+//!     .build();
+//!
+//! App::new(router, |_| ())
 //!     .run("0.0.0.0:3000")
 //!     .await
 //!     .unwrap();
 //! ```
 
-use std::borrow::Cow;
 use std::convert::Infallible;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
-use fnrpc::handler::RpcFnExt;
+use fnrpc::router::RpcRouter;
 use serde_json::Value;
 use xitca_http::body::{BodyExt, RequestBody, ResponseBody};
 use xitca_http::bytes::Bytes;
@@ -29,79 +30,66 @@ use xitca_http::http::header::{HeaderValue, CONTENT_TYPE};
 use xitca_http::http::{HeaderMap, Method, Request, RequestExt, Response, StatusCode};
 use xitca_http::HttpServiceBuilder;
 use xitca_server::Builder;
-use xitca_service::{fn_service, Service, ServiceExt};
+use xitca_service::{fn_service, ServiceExt};
 
 use futures::StreamExt;
 
-// ── Procedure type info (for TS codegen) ─────────────────
+// ── URL percent-decoding ────────────────────────────────
 
-/// Metadata for a registered procedure.
-#[derive(Clone)]
-pub struct ProcedureMeta {
-    pub key: &'static str,
-    pub kind: &'static str,
-    pub method: &'static str,
-    pub input: fnrpc::handler::TsTypeInfo,
-    pub output: fnrpc::handler::TsTypeInfo,
+fn percent_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'+' => result.push(' '),
+            b'%' => {
+                let hi = bytes.next().and_then(|c| hex_val(c));
+                let lo = bytes.next().and_then(|c| hex_val(c));
+                match (hi, lo) {
+                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
+                    _ => result.push('%'),
+                }
+            }
+            _ => result.push(b as char),
+        }
+    }
+    result
 }
 
-// ── Server ────────────────────────────────────────────────
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
 
-/// HTTP server builder for fnrpc.
+// ── App ──────────────────────────────────────────────────
+
+/// Thin HTTP transport layer for fnrpc.
+///
+/// Wraps a [`RpcRouter`] with HTTP request parsing and response building.
+/// No routing logic — all dispatch goes through `RpcRouter::call_handler`.
 pub struct App<Ctx: Send + Sync + 'static> {
+    router: RpcRouter<Ctx>,
     ctx_factory: Arc<dyn Fn(&HeaderMap) -> Ctx + Send + Sync>,
-    procedures: Vec<ProcedureMeta>,
-    handlers: Vec<Arc<dyn for<'a> Fn(&'a Ctx, &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, fnrpc::error::RpcErr>> + Send + 'a>> + Send + Sync>>,
 }
 
 impl<Ctx: Send + Sync + 'static> App<Ctx> {
-    pub fn new(ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static) -> Self {
+    /// Create a new app with a router and context factory.
+    pub fn new(router: RpcRouter<Ctx>, ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static) -> Self {
         Self {
+            router,
             ctx_factory: Arc::new(ctx_factory),
-            procedures: Vec::new(),
-            handlers: Vec::new(),
         }
     }
 
-    /// Register a typed RPC function.
-    pub fn register<H>(mut self, handler: H) -> Self
-    where
-        H: fnrpc::handler::RpcFn<Ctx> + Send + Sync + 'static,
-    {
-        self.procedures.push(ProcedureMeta {
-            key: H::KEY,
-            kind: H::KIND,
-            method: H::METHOD,
-            input: fnrpc::gen_ts_client::type_ts::<H::Input>(),
-            output: fnrpc::gen_ts_client::type_ts::<H::Output>(),
-        });
-
-        let handler = Arc::new(handler);
-        self.handlers.push(Arc::new(move |ctx: &Ctx, input: &[u8]| {
-            let handler = Arc::clone(&handler);
-            Box::pin(async move {
-                let result = handler.call_bytes(ctx, input).await?;
-                Ok(result.into_owned())
-            })
-        }));
-
-        self
-    }
-
-    /// Return procedure metadata for TypeScript codegen.
-    pub fn procedures(&self) -> &[ProcedureMeta] {
-        &self.procedures
-    }
-
-    /// Process a single HTTP request in-process (for testing/benchmarking).
-    ///
-    /// This runs the same handler dispatch as the real server, but without
-    /// network or `HttpServiceBuilder` overhead.
-    pub async fn call_request(&self, req: Request<RequestExt<RequestBody>>) -> Response<ResponseBody> {
+    /// Process a single request in-process (for testing/benchmarking).
+    pub async fn call(&self, req: Request<RequestExt<RequestBody>>) -> Response<ResponseBody> {
         let ctx = (self.ctx_factory)(req.headers());
         let mut req = req;
 
-        // Read body for POST
         let mut body_buf = Vec::new();
         if req.method() == Method::POST {
             while let Some(chunk) = req.body_mut().data().await {
@@ -109,7 +97,7 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                     Ok(c) => body_buf.extend_from_slice(c.as_ref()),
                     Err(_) => {
                         let body = serde_json::to_vec(&fnrpc::error::RpcErr::bad_request("body read error")).unwrap_or_default();
-                        return xitca_http::http::Response::builder()
+                        return Response::builder()
                             .status(StatusCode::BAD_REQUEST)
                             .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
                             .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
@@ -119,62 +107,60 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
             }
         }
 
-        // Input source
-        let input = if req.method() == Method::GET {
-            req.uri().query().unwrap_or("").as_bytes().to_vec()
+        let input: Value = if req.method() == Method::GET {
+            let query_str = req.uri().query().unwrap_or("");
+            query_str.split('&').find_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                let key = parts.next()?;
+                let val = parts.next()?;
+                if key == "input" {
+                    let decoded = percent_decode(val);
+                    serde_json::from_str(&decoded).ok()
+                } else {
+                    None
+                }
+            }).unwrap_or(Value::Null)
         } else {
-            body_buf
+            serde_json::from_slice(&body_buf).unwrap_or(Value::Null)
         };
 
-        // Dispatch to first handler
-        let result = match self.handlers.first() {
-            Some(h) => Some(h(&ctx, &input).await),
-            None => None,
-        };
+        let path = req.uri().path().strip_prefix('/').unwrap_or("");
+        let result = self.router.call_handler(path, &ctx, input).await;
 
         match result {
-            Some(Ok(bytes)) => {
-                let mut builder = xitca_http::http::Response::builder().status(StatusCode::OK);
+            Ok(bytes) => {
+                let mut builder = Response::builder().status(StatusCode::OK);
                 builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                 let resp_body = match bytes.as_slice() {
                     b"null" => ResponseBody::bytes(Bytes::from_static(b"null")),
-                    _ => ResponseBody::bytes(Bytes::copy_from_slice(&bytes)),
+                    _ => ResponseBody::bytes(Bytes::from(bytes)),
                 };
                 builder.body(resp_body).unwrap()
             }
-            Some(Err(e)) => {
+            Err(e) => {
                 let status = match e.code.as_str() {
                     "BAD_REQUEST" => StatusCode::BAD_REQUEST,
                     "NOT_FOUND" => StatusCode::NOT_FOUND,
                     _ => StatusCode::INTERNAL_SERVER_ERROR,
                 };
                 let body = serde_json::to_vec(&e).unwrap_or_default();
-                xitca_http::http::Response::builder()
+                Response::builder()
                     .status(status)
                     .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                    .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
-                    .unwrap()
-            }
-            None => {
-                let body = serde_json::json!({"error": "not found"});
-                let bytes = serde_json::to_vec(&body).unwrap_or_default();
-                xitca_http::http::Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                    .body(ResponseBody::bytes(Bytes::copy_from_slice(&bytes)))
+                    .body(ResponseBody::bytes(Bytes::from(body)))
                     .unwrap()
             }
         }
     }
 
-    /// Build a full HTTP service (with `HttpServiceBuilder`) and bind to address.
+    /// Start the server (binds to address and serves via network).
     pub async fn run(self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let router = Arc::new(self.router);
         let ctx_factory = self.ctx_factory;
-        let handlers = Arc::new(self.handlers);
 
         let svc = fn_service(move |mut req: Request<RequestExt<RequestBody>>| {
+            let router = Arc::clone(&router);
             let ctx_factory = Arc::clone(&ctx_factory);
-            let handlers = Arc::clone(&handlers);
             async move {
                 let ctx = ctx_factory(req.headers());
 
@@ -195,28 +181,37 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                     }
                 }
 
-                let input = if req.method() == Method::GET {
-                    req.uri().query().unwrap_or("").as_bytes().to_vec()
+                let input: Value = if req.method() == Method::GET {
+                    let query_str = req.uri().query().unwrap_or("");
+                    query_str.split('&').find_map(|pair| {
+                        let mut parts = pair.splitn(2, '=');
+                        let key = parts.next()?;
+                        let val = parts.next()?;
+                        if key == "input" {
+                            let decoded = percent_decode(val);
+                            serde_json::from_str(&decoded).ok()
+                        } else {
+                            None
+                        }
+                    }).unwrap_or(Value::Null)
                 } else {
-                    body_buf
+                    serde_json::from_slice(&body_buf).unwrap_or(Value::Null)
                 };
 
-                let result = match handlers.first() {
-                    Some(h) => Some(h(&ctx, &input).await),
-                    None => None,
-                };
+                let path = req.uri().path().strip_prefix('/').unwrap_or("");
+                let result = router.call_handler(path, &ctx, input).await;
 
                 match result {
-                    Some(Ok(bytes)) => {
+                    Ok(bytes) => {
                         let mut builder = Response::builder().status(StatusCode::OK);
                         builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                         let resp_body = match bytes.as_slice() {
                             b"null" => ResponseBody::bytes(Bytes::from_static(b"null")),
-                            _ => ResponseBody::bytes(Bytes::copy_from_slice(&bytes)),
+                            _ => ResponseBody::bytes(Bytes::from(bytes)),
                         };
                         Ok::<_, Infallible>(builder.body(resp_body).unwrap())
                     }
-                    Some(Err(e)) => {
+                    Err(e) => {
                         let status = match e.code.as_str() {
                             "BAD_REQUEST" => StatusCode::BAD_REQUEST,
                             "NOT_FOUND" => StatusCode::NOT_FOUND,
@@ -226,16 +221,7 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                         Ok(Response::builder()
                             .status(status)
                             .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                            .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
-                            .unwrap())
-                    }
-                    None => {
-                        let body = serde_json::json!({"error": "not found"});
-                        let bytes = serde_json::to_vec(&body).unwrap_or_default();
-                        Ok(Response::builder()
-                            .status(StatusCode::NOT_FOUND)
-                            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                            .body(ResponseBody::bytes(Bytes::copy_from_slice(&bytes)))
+                            .body(ResponseBody::bytes(Bytes::from(body)))
                             .unwrap())
                     }
                 }

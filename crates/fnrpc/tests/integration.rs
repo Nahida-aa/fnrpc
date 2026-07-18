@@ -120,7 +120,7 @@ async fn test_manual_rpc() {
 
 #[tokio::test]
 async fn test_ctx_rpc() {
-    let router = RpcRouterBuilder::<AppCtx>::new().register(CtxGreet).build();
+    let router = RpcRouterBuilder::<AppCtx>::new().route(CtxGreet).build();
 
     let ctx = AppCtx {
         prefix: "yo ".to_string(),
@@ -143,7 +143,7 @@ async fn test_macro_rpc() {
 
 #[tokio::test]
 async fn test_ts_info() {
-    let router = RpcRouterBuilder::<()>::new().register(Greet).build();
+    let router = RpcRouterBuilder::<()>::new().route(Greet).build();
     let meta = router
         .procedures()
         .iter()
@@ -155,7 +155,7 @@ async fn test_ts_info() {
 
 #[tokio::test]
 async fn test_macro_mutate_kind() {
-    let router = RpcRouterBuilder::<()>::new().register(macro_mutate).build();
+    let router = RpcRouterBuilder::<()>::new().route(macro_mutate).build();
     let meta = router
         .procedures()
         .iter()
@@ -272,7 +272,7 @@ async fn test_multi_param_ctx() {
 
 #[tokio::test]
 async fn test_multi_param_ts_info() {
-    let router = RpcRouterBuilder::<()>::new().register(multi_param).build();
+    let router = RpcRouterBuilder::<()>::new().route(multi_param).build();
     let meta = router
         .procedures()
         .iter()

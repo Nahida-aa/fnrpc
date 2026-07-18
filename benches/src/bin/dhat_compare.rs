@@ -28,7 +28,8 @@ fn main() {
         .unwrap();
 
     match framework {
-        "fnrpc-web" => rt.block_on(compare::fnrpc_web::bench(n)),
+        "fnrpc-web" | "fnrpc-web-macro" => rt.block_on(compare::fnrpc_web::bench_macro(n)),
+        "fnrpc-web-manual" => rt.block_on(compare::fnrpc_web::bench_manual(n)),
         "xitca-web" => rt.block_on(compare::xitca_web::bench(n)),
         _ => {
             eprintln!("Unknown framework: {framework}");
