@@ -218,3 +218,5 @@ tmp
 *.zip
 build/
 out/benches/target/
+benches/target/
+*.json
