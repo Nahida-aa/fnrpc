@@ -37,7 +37,7 @@ async fn echo_post(input: String) -> String {
 }
 
 #[fnrpc::rpc_bytes]
-fn noop_raw(input: &[u8]) -> Vec<u8> {
+async fn noop_raw(input: &[u8]) -> Vec<u8> {
     b"ok".to_vec()
 }
 
@@ -58,16 +58,25 @@ fn build_post(uri: &Uri, body: &[u8]) -> Request<RequestExt<RequestBody>> {
     req
 }
 
+fn prebuild_get(uri: &Uri, n: usize) -> Vec<Request<RequestExt<RequestBody>>> {
+    (0..n).map(|_| build_get(uri)).collect()
+}
+
+fn prebuild_post(uri: &Uri, body: &[u8], n: usize) -> Vec<Request<RequestExt<RequestBody>>> {
+    (0..n).map(|_| build_post(uri, body)).collect()
+}
+
 pub(crate) async fn bench_macro(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
+    let reqs = prebuild_get(&uri_echo_get, n);
 
     let _p = Profiler::builder()
         .file_name("benches/target/dhat-heap.json")
         .build();
-    for _ in 0..n {
-        let _ = app.call(build_get(&uri_echo_get)).await;
+    for req in reqs {
+        let _ = app.call(req).await;
     }
     let s = HeapStats::get();
     eprintln!(
@@ -84,12 +93,13 @@ pub(crate) async fn bench_manual(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_fn(EchoManual).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
+    let reqs = prebuild_get(&uri_echo_get, n);
 
     let _p = Profiler::builder()
         .file_name("benches/target/dhat-heap.json")
         .build();
-    for _ in 0..n {
-        let _ = app.call(build_get(&uri_echo_get)).await;
+    for req in reqs {
+        let _ = app.call(req).await;
     }
     let s = HeapStats::get();
     eprintln!(
@@ -107,12 +117,13 @@ pub(crate) async fn bench_post(n: usize) {
     let app = App::new(router, |_| ());
     let uri_echo: Uri = "/echo".parse().unwrap();
     let body_data: Vec<u8> = br#""hello""#.to_vec();
+    let reqs = prebuild_post(&uri_echo, &body_data, n);
 
     let _p = Profiler::builder()
         .file_name("benches/target/dhat-heap.json")
         .build();
-    for _ in 0..n {
-        let _ = app.call(build_post(&uri_echo, &body_data)).await;
+    for req in reqs {
+        let _ = app.call(req).await;
     }
     let s = HeapStats::get();
     eprintln!(
@@ -129,12 +140,13 @@ pub(crate) async fn bench_noop_raw(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_bytes(noop_raw).build();
     let app = App::new(router, |_| ());
     let uri_noop_raw: Uri = "/noop_raw".parse().unwrap();
+    let reqs = prebuild_get(&uri_noop_raw, n);
 
     let _p = Profiler::builder()
         .file_name("benches/target/dhat-heap.json")
         .build();
-    for _ in 0..n {
-        let _ = app.call(build_get(&uri_noop_raw)).await;
+    for req in reqs {
+        let _ = app.call(req).await;
     }
     let s = HeapStats::get();
     eprintln!(
@@ -146,4 +158,3 @@ pub(crate) async fn bench_noop_raw(n: usize) {
     );
     drop(_p);
 }
-
