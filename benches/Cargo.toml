@@ -44,7 +44,7 @@ url = "2"
 futures = "0.3"
 
 # Optional: extra plain frameworks
-actix-web = { version = "4", optional = true }
+actix-web = { version = "4", optional = true, features = ["experimental-io-uring"] }
 actix-rt = { version = "2", optional = true }
 ntex = { version = "3.10", optional = true, features = ["tokio"] }
 
@@ -102,3 +102,7 @@ path = "src/bin/xitca_web_server.rs"
 name = "actix_web_server"
 path = "src/bin/actix_web_server.rs"
 required-features = ["actix-web"]
+
+[[bin]]
+name = "axum_web_server"
+path = "src/bin/axum_web_server.rs"

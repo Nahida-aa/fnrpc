@@ -183,7 +183,7 @@ fn run_framework(
                 continue;
             }
             let port = find_free_port();
-            let mut server = if name == "xitca-web" || name == "actix-web" {
+            let mut server = if name == "xitca-web" || name == "actix-web" || name == "axum" {
                 Command::new(&binary).arg(port.to_string())
                     .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
             } else {
@@ -303,6 +303,13 @@ fn main() {
         ("/in?key=fnrpc", "lookup", false, b""),
     ];
 
+    let axum_endpoints: &[(&str, &str, bool, &[u8])] = &[
+        ("/noop-json", "noop_json", false, b""),
+        ("/json", "json_te", false, b""),
+        ("/plaintext", "plaintext_te", false, b""),
+        ("/in?key=fnrpc", "lookup", false, b""),
+    ];
+
     let mode_str = if is_direct { "直接模式" } else { "累进模式" };
 
     match framework {
@@ -323,6 +330,12 @@ fn main() {
             println!("actix-web ({}: {duration_secs}秒, {mode_str})", target_concurrency);
             run_framework("actix-web", "target/release/actix_web_server",
                 &levels, duration, actix_endpoints, filter);
+        }
+        "axum" => {
+            build_server("axum_web_server");
+            println!("axum ({}: {duration_secs}秒, {mode_str})", target_concurrency);
+            run_framework("axum", "target/release/axum_web_server",
+                &levels, duration, axum_endpoints, filter);
         }
         "all" => {
             build_server("fnrpc_web_server");

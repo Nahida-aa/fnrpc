@@ -205,8 +205,13 @@ where
         let is_get = handler.method() == "GET";
         let is_json = handler.content_type() == Some("application/json");
         let result = if is_get && is_json {
-            let input_val = req.uri().query().map(|q| extract_input(q)).unwrap_or(Value::Null);
-            handler.call_value(&ctx, input_val)
+            if handler.input_is_unit() {
+                // Input=(): skip query string parsing entirely
+                handler.call_bytes(&ctx, &[])
+            } else {
+                let input_val = req.uri().query().map(|q| extract_input(q)).unwrap_or(Value::Null);
+                handler.call_value(&ctx, input_val)
+            }
         } else if is_get {
             let query_bytes = req.uri().query().unwrap_or("").as_bytes().to_vec();
             body_buf = query_bytes;

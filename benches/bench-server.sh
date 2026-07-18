@@ -16,6 +16,7 @@ case "$FRAMEWORK" in
     fnrpc-web) BIN=fnrpc_web_server; PORT=19199; ARGS="--port";;
     xitca-web) BIN=xitca_web_server; PORT=19199; ARGS="";;
     actix-web) BIN=actix_web_server; PORT=19199; ARGS="";;
+    axum) BIN=axum_web_server; PORT=19199; ARGS="";;
 esac
 
 # Kill any previous instance

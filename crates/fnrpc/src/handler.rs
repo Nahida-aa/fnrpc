@@ -51,6 +51,10 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
     /// Content-Type for responses produced by this handler.
     fn content_type(&self) -> Option<&'static str>;
 
+    /// Whether this handler's Input type is `()` — meaning it needs no input.
+    /// When true, the server can skip query-string/body parsing entirely.
+    fn input_is_unit(&self) -> bool { false }
+
     /// Primary dispatch: raw bytes in, raw bytes out.
     ///
     /// Default impl: JSON decode → [`call`](Self::call) → JSON re-encode.
@@ -114,6 +118,8 @@ impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrap
     fn populate_types(&self, _types: &mut specta::Types, _top_level: &mut Vec<DataType>) {}
 
     fn content_type(&self) -> Option<&'static str> { Some("application/json") }
+
+    fn input_is_unit(&self) -> bool { is_unit_type::<F::Input>() }
 
     fn call_bytes(&self, ctx: &Ctx, input: &[u8]) -> Result<Cow<'static, [u8]>, RpcErr> {
         let input = if is_unit_type::<F::Input>() {
