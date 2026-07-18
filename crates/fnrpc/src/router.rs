@@ -491,6 +491,7 @@ impl<Ctx> RawRpcAdapter<Ctx> {
 impl<Ctx: Send + Sync + 'static> ErasedHandler<Ctx> for RawRpcAdapter<Ctx> {
     fn name(&self) -> &'static str { self.name }
     fn kind(&self) -> &'static str { "query" }
+    fn method(&self) -> &'static str { "GET" }
     fn input_ts(&self) -> crate::handler::TsTypeInfo {
         crate::handler::TsTypeInfo { ts_ref: "unknown".into() }
     }

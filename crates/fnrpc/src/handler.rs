@@ -42,6 +42,8 @@ pub struct TsTypeInfo {
 pub trait ErasedHandler<Ctx>: Send + Sync {
     fn name(&self) -> &'static str;
     fn kind(&self) -> &'static str;
+    /// HTTP method for this handler: "GET" (input from query) or "POST" (input from body).
+    fn method(&self) -> &'static str;
     fn input_ts(&self) -> TsTypeInfo;
     fn output_ts(&self) -> TsTypeInfo;
     fn populate_types(&self, types: &mut specta::Types, top_level: &mut Vec<DataType>);
@@ -85,6 +87,8 @@ pub trait RpcFn<Ctx>: Send + Sync {
     type Output: Serialize + 'static;
     const NAME: &'static str;
     const KIND: &'static str = "query";
+    /// HTTP method: "GET" (default, input from query string) or "POST" (input from body).
+    const METHOD: &'static str = "GET";
 
     fn exec(ctx: &Ctx, input: Self::Input) -> Result<Self::Output, RpcErr>;
 
@@ -103,6 +107,7 @@ struct RpcFnWrapper<F>(F) where F: Send + Sync;
 impl<Ctx: Send + Sync + 'static, F: RpcFn<Ctx>> ErasedHandler<Ctx> for RpcFnWrapper<F> {
     fn name(&self) -> &'static str { F::NAME }
     fn kind(&self) -> &'static str { F::KIND }
+    fn method(&self) -> &'static str { F::METHOD }
     fn input_ts(&self) -> TsTypeInfo { TsTypeInfo { ts_ref: "unknown".into() } }
     fn output_ts(&self) -> TsTypeInfo { TsTypeInfo { ts_ref: "unknown".into() } }
 

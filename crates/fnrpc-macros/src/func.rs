@@ -169,6 +169,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
     let struct_name = fn_name.clone();
     let path_val = path_str.clone();
 
+    let method_upper = method_str.to_uppercase();
     let expanded = if has_ctx {
         quote! {
             #impl_fn
@@ -181,6 +182,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
                 const KIND: &'static str = #kind;
+                const METHOD: &'static str = #method_upper;
 
                 fn exec(
                     ctx: &#ctx_ty,
@@ -207,6 +209,7 @@ pub(crate) fn rpc_fn_impl(kind: &str, attr: TokenStream, item: TokenStream) -> T
                 type Output = #output_ty;
                 const NAME: &'static str = stringify!(#fn_name);
                 const KIND: &'static str = #kind;
+                const METHOD: &'static str = #method_upper;
 
                 fn exec(
                     _ctx: &T,

@@ -23,52 +23,40 @@ impl RpcFn<AppCtx> for Noop {
     fn exec(_ctx: &AppCtx, _input: ()) -> Result<(), RpcErr> { Ok(()) }
 }
 
-// ── Small payload: echo string ─────────────────────────
+// ── Small payload: echo string (POST) ──────────────────
 
 struct Echo;
 impl RpcFn<AppCtx> for Echo {
     type Input = String;
     type Output = String;
     const NAME: &'static str = "echo";
+    const METHOD: &'static str = "POST";
     fn exec(_ctx: &AppCtx, input: String) -> Result<String, RpcErr> { Ok(input) }
 }
 
-// ── Medium payload: user profile (~200B JSON) ──────────
+// ── Medium payload: user profile (~200B JSON, POST) ───
 
 #[derive(Serialize, Deserialize)]
-struct MediumPayload {
-    id: u32,
-    name: String,
-    email: String,
-    tags: Vec<String>,
-    score: f64,
-}
+struct MediumPayload { id: u32, name: String, email: String, tags: Vec<String>, score: f64 }
 
 struct Medium;
 impl RpcFn<AppCtx> for Medium {
     type Input = MediumPayload;
     type Output = MediumPayload;
     const NAME: &'static str = "medium";
+    const METHOD: &'static str = "POST";
     fn exec(_ctx: &AppCtx, input: MediumPayload) -> Result<MediumPayload, RpcErr> { Ok(input) }
 }
 
-// ── Large payload: batch data (~10KB JSON) ─────────────
+// ── Large payload: batch data (~10KB JSON, POST) ──────
 
 #[derive(Serialize, Deserialize)]
-struct LargePayload {
-    items: Vec<LargeItem>,
-}
+struct LargePayload { items: Vec<LargeItem> }
 
 #[derive(Serialize, Deserialize)]
 struct LargeItem {
-    id: u32,
-    name: String,
-    description: String,
-    price: f64,
-    quantity: u32,
-    category: String,
-    tags: Vec<String>,
-    metadata: HashMap<String, String>,
+    id: u32, name: String, description: String, price: f64,
+    quantity: u32, category: String, tags: Vec<String>, metadata: HashMap<String, String>,
 }
 
 struct Large;
@@ -76,6 +64,7 @@ impl RpcFn<AppCtx> for Large {
     type Input = LargePayload;
     type Output = LargePayload;
     const NAME: &'static str = "large";
+    const METHOD: &'static str = "POST";
     fn exec(_ctx: &AppCtx, input: LargePayload) -> Result<LargePayload, RpcErr> { Ok(input) }
 }
 
@@ -101,7 +90,6 @@ struct LookupOutput { entity: String, n: f64 }
 
 // ── TechEmpower-style endpoints ────────────────────────
 
-/// /json — returns {"message": "Hello, World!"}
 struct JsonEndpoint;
 impl RpcFn<AppCtx> for JsonEndpoint {
     type Input = ();
@@ -113,11 +101,8 @@ impl RpcFn<AppCtx> for JsonEndpoint {
 }
 
 #[derive(Serialize)]
-struct JsonMessage {
-    message: &'static str,
-}
+struct JsonMessage { message: &'static str }
 
-/// /plaintext — returns "Hello, World!" (raw, no JSON)
 struct PlaintextEndpoint;
 impl RawRpcFn<AppCtx> for PlaintextEndpoint {
     const NAME: &'static str = "plaintext";
@@ -143,14 +128,10 @@ fn make_large_payload() -> LargePayload {
         metadata.insert("size".into(), "XL".into());
         metadata.insert("weight".into(), "1.5kg".into());
         LargeItem {
-            id: i,
-            name: format!("product-{i}"),
+            id: i, name: format!("product-{i}"),
             description: "A high-quality item with excellent features and durable construction suitable for various uses.".into(),
-            price: 19.99 + i as f64,
-            quantity: 100 + i,
-            category: "electronics".into(),
-            tags: vec!["new".into(), "popular".into(), "discount".into()],
-            metadata,
+            price: 19.99 + i as f64, quantity: 100 + i, category: "electronics".into(),
+            tags: vec!["new".into(), "popular".into(), "discount".into()], metadata,
         }
     }).collect();
     LargePayload { items }
@@ -158,11 +139,8 @@ fn make_large_payload() -> LargePayload {
 
 fn make_medium_payload() -> MediumPayload {
     MediumPayload {
-        id: 42,
-        name: "Alice Johnson".into(),
-        email: "alice@example.com".into(),
-        tags: vec!["premium".into(), "vip".into(), "early-adopter".into()],
-        score: 98.5,
+        id: 42, name: "Alice Johnson".into(), email: "alice@example.com".into(),
+        tags: vec!["premium".into(), "vip".into(), "early-adopter".into()], score: 98.5,
     }
 }
 
@@ -196,7 +174,6 @@ async fn main() {
         ("gin".into(), 3.0), ("fnrpc".into(), 4.0),
     ])));
 
-    // Pre-encode test payloads for POST benchmarks
     let medium_json = serde_json::to_vec(&make_medium_payload()).unwrap();
     let large_json = serde_json::to_vec(&make_large_payload()).unwrap();
     eprintln!("medium payload: {} bytes", medium_json.len());

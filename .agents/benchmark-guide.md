@@ -1,5 +1,20 @@
 # Benchmark Guide for fnrpc
 
+## Tested Endpoints
+
+| 端点 | 来源 | 方法 | 说明 |
+|---|---|---|---|
+| `/noop?input=null` | fnrpc | GET | 空载 JSON，`()` → `()` |
+| `/raw_noop` | fnrpc | GET | 空载纯文本，`b"ok"` |
+| `/echo` | fnrpc | POST | 小 JSON echo，`"hello"` |
+| `/medium` | fnrpc | POST | 中 JSON echo，~150B 结构体 |
+| `/large` | fnrpc | POST | 大 JSON echo，~900B 数组 |
+| `/in?key=fnrpc` | tt | GET | HashMap lookup + JSON |
+| `/json` | **TFB** | GET | `{"message":"Hello, World!"}` |
+| `/plaintext` | **TFB** | GET | `"Hello, World!"` 纯文本 |
+
+TFB = TechEmpower FrameworkBenchmarks 标准端点，可直接与社区数据对比。
+
 ## Available Benchmarks
 
 ### 1. Heap Allocation Analysis (dhat)

@@ -198,14 +198,16 @@ where
     let ctx = (config.ctx_from_headers)(req.headers());
 
     if let Some(handler) = config.router.get_handler(path) {
-        // For JSON handlers on GET, use call_value directly (Value → bytes)
-        // to avoid the extra serialize-deserialize round-trip.
+        // Data source determined by handler's method():
+        // "GET" → input from query string (parse "input" param for JSON,
+        //          raw bytes for non-JSON)
+        // "POST" → input from body
+        let is_get = handler.method() == "GET";
         let is_json = handler.content_type() == Some("application/json");
-        let result = if method == Method::GET && is_json {
+        let result = if is_get && is_json {
             let input_val = req.uri().query().map(|q| extract_input(q)).unwrap_or(Value::Null);
             handler.call_value(&ctx, input_val)
-        } else if method == Method::GET && body_buf.is_empty() {
-            // Raw handler GET: pass query string bytes as input
+        } else if is_get {
             let query_bytes = req.uri().query().unwrap_or("").as_bytes().to_vec();
             body_buf = query_bytes;
             handler.call_bytes(&ctx, body_buf.as_slice())
