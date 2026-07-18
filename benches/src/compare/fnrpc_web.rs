@@ -30,6 +30,11 @@ impl RpcFn<()> for EchoManual {
     }
 }
 
+#[fnrpc::rpc_mutate]
+async fn echo_post(input: String) -> String {
+    input
+}
+
 fn build_get(uri: &Uri) -> Request<RequestExt<RequestBody>> {
     let req_ext: RequestExt<RequestBody> = RequestExt::default();
     Request::builder()
@@ -40,9 +45,7 @@ fn build_get(uri: &Uri) -> Request<RequestExt<RequestBody>> {
 }
 
 pub(crate) async fn bench_macro(n: usize) {
-    let router = RpcRouterBuilder::<()>::new()
-        .route(echo_macro)
-        .build();
+    let router = RpcRouterBuilder::<()>::new().route(echo_macro).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
 
@@ -64,9 +67,7 @@ pub(crate) async fn bench_macro(n: usize) {
 }
 
 pub(crate) async fn bench_manual(n: usize) {
-    let router = RpcRouterBuilder::<()>::new()
-        .route(EchoManual)
-        .build();
+    let router = RpcRouterBuilder::<()>::new().route(EchoManual).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
 

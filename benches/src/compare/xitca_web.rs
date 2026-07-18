@@ -3,31 +3,41 @@ use serde_json::Value;
 use xitca_web::App;
 use xitca_web::WebContext;
 use xitca_web::body::{BodyExt, RequestBody, ResponseBody};
-use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
 use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
+use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
 use xitca_web::route::{get, post};
 use xitca_web::service::{Service, fn_service};
 
 /// Raw noop — no Content-Type header, plain text body.
 /// Matches the original xitca-web baseline (177B/3blks).
-async fn handler_noop_raw(_ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_noop_raw(
+    _ctx: WebContext<'_, ()>,
+) -> Result<WebResponse, xitca_web::error::Error> {
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"ok")))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
+            b"ok",
+        )))
         .unwrap())
 }
 
 /// JSON noop — returns `null` with Content-Type: application/json.
-async fn handler_noop_json(_ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_noop_json(
+    _ctx: WebContext<'_, ()>,
+) -> Result<WebResponse, xitca_web::error::Error> {
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"null")))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
+            b"null",
+        )))
         .unwrap())
 }
 
 /// Echo via POST body — reads body, deserializes, serializes back with JSON header.
-async fn handler_echo_post(mut ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_echo_post(
+    mut ctx: WebContext<'_, ()>,
+) -> Result<WebResponse, xitca_web::error::Error> {
     let body = ctx.body_get_mut();
     let mut buf = Vec::new();
     while let Some(chunk) = body.data().await {
@@ -100,7 +110,8 @@ fn hex_val(b: u8) -> Option<u8> {
 }
 
 fn make_post_req(uri: &str, body: RequestBody) -> http::Request<RequestExt<RequestBody>> {
-    let req_ext: RequestExt<RequestBody> = <RequestExt<RequestBody>>::default().replace_body(body).0;
+    let req_ext: RequestExt<RequestBody> =
+        <RequestExt<RequestBody>>::default().replace_body(body).0;
     http::Request::builder()
         .method(Method::POST)
         .uri(uri)
@@ -121,7 +132,7 @@ pub(crate) async fn bench(n: usize) {
     let app = App::new()
         .at("/noop-raw", get(fn_service(handler_noop_raw)))
         .at("/noop-json", get(fn_service(handler_noop_json)))
-        .at("/echo", post(fn_service(handler_echo_post)))
+        .at("/echo_post", post(fn_service(handler_echo_post)))
         .at("/echo-get", get(fn_service(handler_echo_get)));
     let svc = app.finish().call(()).await.unwrap();
 
@@ -142,9 +153,11 @@ pub(crate) async fn bench(n: usize) {
     }
 
     fn build_post(uri: &http::Uri, body: &[u8]) -> http::Request<RequestExt<RequestBody>> {
-        let req_ext: RequestExt<RequestBody> = <RequestExt<RequestBody>>::default().replace_body(
-            RequestBody::from(xitca_web::bytes::Bytes::copy_from_slice(body))
-        ).0;
+        let req_ext: RequestExt<RequestBody> = <RequestExt<RequestBody>>::default()
+            .replace_body(RequestBody::from(xitca_web::bytes::Bytes::copy_from_slice(
+                body,
+            )))
+            .0;
         http::Request::builder()
             .method(Method::POST)
             .uri(uri.clone())
@@ -153,50 +166,86 @@ pub(crate) async fn bench(n: usize) {
     }
 
     // — noop_raw —
-    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
     for _ in 0..n {
         let _ = svc.call(build_get(&uri_raw)).await.unwrap();
     }
     let s = HeapStats::get();
-    eprintln!("xitca-web/noop_raw: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
-        s.total_bytes, s.total_blocks,
-        s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
+    eprintln!(
+        "xitca-web/noop_raw: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
     drop(_p);
-    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-noop-raw.json");
+    let _ = std::fs::copy(
+        "./benches/target/dhat-heap.json",
+        "./benches/target/dhat-xitca-web-noop-raw.json",
+    );
 
     // — noop_json —
-    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
     for _ in 0..n {
         let _ = svc.call(build_get(&uri_json)).await.unwrap();
     }
     let s = HeapStats::get();
-    eprintln!("xitca-web/noop_json: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
-        s.total_bytes, s.total_blocks,
-        s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
+    eprintln!(
+        "xitca-web/noop_json: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
     drop(_p);
-    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-noop-json.json");
+    let _ = std::fs::copy(
+        "./benches/target/dhat-heap.json",
+        "./benches/target/dhat-xitca-web-noop-json.json",
+    );
 
     // — echo_get —
-    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
     for _ in 0..n {
         let _ = svc.call(build_get(&uri_echo_get)).await.unwrap();
     }
     let s = HeapStats::get();
-    eprintln!("xitca-web/echo_get: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
-        s.total_bytes, s.total_blocks,
-        s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
+    eprintln!(
+        "xitca-web/echo_get: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
     drop(_p);
-    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-echo-get.json");
+    let _ = std::fs::copy(
+        "./benches/target/dhat-heap.json",
+        "./benches/target/dhat-xitca-web-echo-get.json",
+    );
 
     // — echo_post —
-    let _p = Profiler::builder().file_name("benches/target/dhat-heap.json").build();
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
     for _ in 0..n {
         let _ = svc.call(build_post(&uri_echo, &body_data)).await.unwrap();
     }
     let s = HeapStats::get();
-    eprintln!("xitca-web/echo_post: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
-        s.total_bytes, s.total_blocks,
-        s.total_bytes as f64 / n as f64, s.total_blocks as f64 / n as f64);
+    eprintln!(
+        "xitca-web/echo_post: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
     drop(_p);
-    let _ = std::fs::copy("./benches/target/dhat-heap.json", "./benches/target/dhat-xitca-web-echo-post.json");
+    let _ = std::fs::copy(
+        "./benches/target/dhat-heap.json",
+        "./benches/target/dhat-xitca-web-echo-post.json",
+    );
 }
