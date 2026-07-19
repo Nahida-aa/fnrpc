@@ -17,3 +17,4 @@ tokio = { version = "1", features = ["full", "rt"] }
 serde = { version = "1", features = ["derive"] }
 async-trait = { workspace = true }
 xitca-unsafe-collection = "0.2"
+http-body-util = "0.1"

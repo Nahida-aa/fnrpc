@@ -289,7 +289,6 @@ where
     type Response = S::Response;
     type Error = S::Error;
     async fn call(&self, req: Req) -> Result<Self::Response, Self::Error> {
-        eprintln!("[xitca-web MW] XitcaNoopMwService::call");
         self.0.call(req).await
     }
 }
@@ -301,7 +300,6 @@ impl<S> ReadyService for XitcaNoopMwService<S> {
 
 pub(crate) async fn bench_mw(n: usize) {
     // xitca-web middleware on stable: use `enclosed` with a zero-size struct.
-    // The middleware is applied at the App level, not on individual handlers.
     let app = App::new()
         .at(
             "/echo-get",
@@ -319,13 +317,6 @@ pub(crate) async fn bench_mw(n: usize) {
             .body(req_ext)
             .unwrap()
     }
-
-    // Run 3 warmup iterations first to verify middleware is hit
-    eprintln!("[xitca-web MW] warmup - 3 requests");
-    for _ in 0..3 {
-        let _ = svc.call(build_get(&uri_echo_get)).await.unwrap();
-    }
-    eprintln!("[xitca-web MW] warmup done - starting benchmark");
 
     let _p = Profiler::builder()
         .file_name("benches/target/dhat-heap.json")

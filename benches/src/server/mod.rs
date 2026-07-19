@@ -1,6 +1,5 @@
-// fnrpc variants — always available (path deps)
-pub(crate) mod fnrpc_xitca;
-pub(crate) mod fnrpc_axum;
+// fnrpc variants — removed, will be replaced by compare/ benchmarks
+// after fnrpc-xitca is fully developed.
 
 // plain frameworks — gated
 #[cfg(feature = "xitca-web-plain")]

@@ -1,10 +1,138 @@
 //! xitca-web integration for fnrpc.
-//! Placeholder — being refactored for zero-erasure architecture.
+//!
+//! Provides a [`handle`] function that dispatches an HTTP request through
+//! a [`fnrpc::router::RpcRouter`]. Use it to mount fnrpc endpoints into
+//! a xitca-web application:
+//!
+//! ```ignore
+//! use fnrpc::router::RpcRouterBuilder;
+//! use fnrpc_xitca::{FnrpcState, handle};
+//! use xitca_web::{App, route::get, service::fn_service};
+//!
+//! let router = RpcRouterBuilder::<MyCtx>::new()
+//!     .route_fn(my_handler)
+//!     .build();
+//!
+//! let state = FnrpcState::new(router, |_headers| MyCtx { ... });
+//!
+//! App::new()
+//!     .with_state(state)
+//!     .at("/{*path}", get(fn_service(handle)).post(fn_service(handle)))
+//!     .serve()
+//!     .bind("0.0.0.0:3000")?
+//!     .run()
+//!     .wait()
+//!     .unwrap();
+//! ```
 
+use std::borrow::Cow;
 use std::sync::Arc;
-use xitca_web::http::header::HeaderMap;
 
-/// Placeholder state.
-pub struct FnrpcState<Ctx> {
-    pub ctx_from_headers: Arc<dyn Fn(&HeaderMap) -> Ctx + Send + Sync>,
+use fnrpc::middleware::RpcService;
+use fnrpc::router::RpcRouter;
+use xitca_web::body::{BodyExt, RequestBody, ResponseBody};
+use xitca_web::bytes::Bytes;
+use xitca_web::http::header::{HeaderValue, CONTENT_TYPE};
+use xitca_web::http::HeaderMap;
+use xitca_web::http::{Method, StatusCode, WebResponse};
+use xitca_web::WebContext;
+
+/// Application state holding a router and a context factory.
+///
+/// Pass this to `App::with_state(state)` when setting up the xitca-web application.
+pub struct FnrpcState<Ctx: Send + Sync + 'static> {
+    router: Arc<RpcRouter<Ctx>>,
+    ctx_factory: Arc<dyn Fn(&HeaderMap) -> Ctx + Send + Sync>,
+}
+
+impl<Ctx: Send + Sync + 'static> Clone for FnrpcState<Ctx> {
+    fn clone(&self) -> Self {
+        Self {
+            router: Arc::clone(&self.router),
+            ctx_factory: Arc::clone(&self.ctx_factory),
+        }
+    }
+}
+
+impl<Ctx: Send + Sync + 'static> FnrpcState<Ctx> {
+    /// Create a new state with a router and a context factory.
+    ///
+    /// The context factory receives the request headers and returns the
+    /// application context (e.g., database connection, auth info).
+    pub fn new(
+        router: RpcRouter<Ctx>,
+        ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            router: Arc::new(router),
+            ctx_factory: Arc::new(ctx_factory),
+        }
+    }
+}
+
+/// Dispatch an RPC call through the router stored in xitca-web's application state.
+///
+/// The application state must be a [`FnrpcState<Ctx>`](FnrpcState). Pass it via
+/// `App::with_state(state)`.
+pub async fn handle<Ctx>(
+    mut ctx: WebContext<'_, FnrpcState<Ctx>>,
+) -> Result<WebResponse, xitca_web::error::Error>
+where
+    Ctx: Send + Sync + 'static,
+{
+    let (path, method, input) = {
+        let req = ctx.req();
+        let method = req.method().clone();
+        let path = req.uri().path().strip_prefix('/').unwrap_or("").to_string();
+        let input: Cow<'_, [u8]> = if method == Method::GET {
+            req.uri().query().unwrap_or("").as_bytes().into()
+        } else {
+            let body = ctx.body_get_mut();
+            let mut buf = Vec::new();
+            while let Some(chunk) = body.data().await {
+                let chunk = chunk.map_err(|_| {
+                    xitca_web::error::Error::from(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "body read error",
+                    ))
+                })?;
+                buf.extend_from_slice(chunk.as_ref());
+            }
+            buf.into()
+        };
+        (path, method, input)
+    };
+
+    let state: &FnrpcState<Ctx> = ctx.state();
+    let app_ctx = (state.ctx_factory)(ctx.req().headers());
+    let is_get = method == Method::GET;
+    let result = state.router.dispatch(&app_ctx, &path, &input, is_get).await;
+
+    match result {
+        Ok((bytes, is_json)) => {
+            let mut builder = xitca_web::http::Response::builder().status(StatusCode::OK);
+            if is_json {
+                builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            }
+            let resp_body = match &bytes {
+                Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
+                Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(*slice)),
+                Cow::Owned(vec) => ResponseBody::bytes(Bytes::copy_from_slice(vec)),
+            };
+            Ok(builder.body(resp_body).unwrap())
+        }
+        Err(e) => {
+            let status = match e.code.as_str() {
+                "BAD_REQUEST" => StatusCode::BAD_REQUEST,
+                "NOT_FOUND" => StatusCode::NOT_FOUND,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            let body = serde_json::to_vec(&e).unwrap_or_default();
+            Ok(xitca_web::http::Response::builder()
+                .status(status)
+                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                .body(ResponseBody::bytes(Bytes::from(body)))
+                .unwrap())
+        }
+    }
 }
