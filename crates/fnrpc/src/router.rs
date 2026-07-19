@@ -17,7 +17,7 @@ use xitca_router::Router;
 use crate::error::RpcErr;
 use crate::handler::{BytesHandlerFn, Handler, HandlerFn, RpcFn, RpcFnExt, TsTypeInfo};
 use crate::gen_ts_client;
-use crate::middleware::ErasedRpcService;
+use crate::middleware::{RpcLayer, RpcService};
 
 /// Metadata for a single procedure, used by TypeScript codegen.
 #[derive(Debug, Clone)]
@@ -29,57 +29,22 @@ pub struct ProcedureMeta {
     pub output: TsTypeInfo,
 }
 
-
 /// A collection of RPC handlers with radix-tree routing.
 ///
 /// Produced by [`RpcRouterBuilder::build`].
-pub struct RpcRouter<Ctx: Send + Sync + 'static> {
+///
+/// Generic over the service type `S` — the middleware chain is monomorphized
+/// at compile time with zero indirection overhead.
+pub struct RpcRouter<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static = InnerService<Ctx>> {
     pub(crate) procedures: Vec<ProcedureMeta>,
-    pub(crate) inner: Arc<dyn ErasedRpcService<Ctx>>,
-    router: Router<Handler<Ctx>>,
+    pub(crate) inner: S,
+    _ctx: PhantomData<Ctx>,
 }
 
-
-impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
-    /// Look up a handler by path and call it.
-    ///
-    /// * For `Handler::Rpc`: `input` is raw query bytes (GET) or body bytes (POST),
-    ///   `is_get` controls query string parsing.
-    /// * For `Handler::Bytes`: `input` is passed directly.
-    pub async fn call_handler(&self, path: &str, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
-        match self.router.at(path).ok() {
-            Some(m) => m.value.call(ctx, input, is_get).await,
-            None => Err(RpcErr::not_found(format!("unknown path: {path}"))),
-        }
-    }
-
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync> RpcRouter<Ctx, S> {
     /// Iterate over all procedure metadata for TypeScript codegen.
     pub fn procedures(&self) -> &[ProcedureMeta] {
         &self.procedures
-    }
-
-    /// Dispatch a call through the middleware stack.
-    pub async fn dispatch(&self, ctx: &Ctx, path: &str, input: Value) -> Result<Value, RpcErr> {
-        let mut extensions = Extensions::new();
-        self.inner.call(ctx, path, input, &mut extensions).await
-    }
-
-    /// Dispatch a call and return a [`Send`] future.
-    pub async fn dispatch_send(
-        &self,
-        ctx: &Ctx,
-        path: &str,
-        input: Value,
-    ) -> Result<Value, RpcErr> {
-        let mut extensions = Extensions::new();
-        let fut = self.inner.call(ctx, path, input, &mut extensions);
-        unsafe {
-            std::mem::transmute::<
-                Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + '_>>,
-                Pin<Box<dyn Future<Output = Result<Value, RpcErr>> + Send + '_>>,
-            >(fut)
-        }
-        .await
     }
 
     /// Generate TypeScript client code.
@@ -88,23 +53,96 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     }
 }
 
-// ── RpcRouterBuilder ──────────────────────────────────────
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync>
+    RpcRouter<Ctx, S>
+{
+    /// Look up a handler by path and call it directly, bypassing middleware.
+    pub async fn call_handler(
+        &self,
+        path: &str,
+        ctx: &Ctx,
+        input: &[u8],
+        is_get: bool,
+    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+        self.dispatch(ctx, path, input, is_get).await
+    }
+
+    /// Dispatch a call through the middleware stack.
+    ///
+    /// This call is fully monomorphized — zero `Box::pin`, zero vtable dispatch.
+    pub async fn dispatch(&self, ctx: &Ctx, path: &str, input: &[u8], is_get: bool) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+        let mut extensions = Extensions::new();
+        self.inner.call(ctx, path, input, is_get, &mut extensions).await
+    }
+}
+
+// ── InnerService ────────────────────────────────────────
+
+/// Inner service that dispatches to handlers via radix tree.
+/// Used as the base of the middleware chain.
+///
+/// Handlers are stored in `Arc<Handler<Ctx>>` so we can clone the `Arc`
+/// out of the router, drop the lock, and then call the handler without
+/// holding the lock across `.await`.
+#[doc(hidden)]
+pub struct InnerService<Ctx: Send + Sync + 'static> {
+    router: Arc<std::sync::Mutex<Router<Arc<Handler<Ctx>>>>>,
+}
+
+impl<Ctx: Send + Sync + 'static> RpcService<Ctx> for InnerService<Ctx> {
+    type Response = (Cow<'static, [u8]>, bool);
+    type Error = RpcErr;
+
+    async fn call(
+        &self,
+        ctx: &Ctx,
+        path: &str,
+        input: &[u8],
+        is_get: bool,
+        _extensions: &mut Extensions,
+    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+        // Clone the Arc<Handler> out of the router, drop the lock, then call.
+        let handler = {
+            let router = self.router.lock().unwrap();
+            match router.at(path).ok() {
+                Some(m) => Arc::clone(m.value),
+                None => return Err(RpcErr::not_found(format!("unknown path: {path}"))),
+            }
+        };
+        let (bytes, is_json) = handler.call(ctx, input, is_get).await?;
+        Ok((bytes, is_json))
+    }
+}
+
+// ── RpcRouterBuilder ────────────────────────────────────
 
 /// Builder for an [`RpcRouter`].
-pub struct RpcRouterBuilder<Ctx: Send + Sync + 'static> {
+///
+/// Uses a shared `Arc<Mutex<Router<Arc<Handler<Ctx>>>>>` that both the builder
+/// and [`InnerService`] reference. Handlers are stored as `Arc` so they can be
+/// cheaply cloned out of the router at request time.
+pub struct RpcRouterBuilder<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static = InnerService<Ctx>> {
     procedures: Vec<ProcedureMeta>,
-    router: Router<Handler<Ctx>>,
+    /// Shared router — builder and InnerService both hold clones of this Arc.
+    shared_router: Arc<std::sync::Mutex<Router<Arc<Handler<Ctx>>>>>,
+    service: S,
 }
 
 impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     /// Create an empty router builder.
     pub fn new() -> Self {
+        let shared_router = Arc::new(std::sync::Mutex::new(Router::new()));
         Self {
             procedures: Vec::new(),
-            router: Router::new(),
+            shared_router: Arc::clone(&shared_router),
+            service: InnerService {
+                router: shared_router,
+            },
         }
     }
+}
 
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> RpcRouterBuilder<Ctx, S> {
     /// Register a typed RPC function (query or mutate).
     pub fn route_fn<H: RpcFn<Ctx> + 'static>(mut self, handler: H) -> Self {
         self.procedures.push(ProcedureMeta {
@@ -118,7 +156,12 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         let skip_query = TypeId::of::<H::Input>() == TypeId::of::<()>();
         struct RpcHandler<Ctx, H: RpcFn<Ctx>>(H, PhantomData<Ctx>);
         impl<Ctx: Send + Sync + 'static, H: RpcFn<Ctx>> HandlerFn<Ctx> for RpcHandler<Ctx, H> {
-            fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>> {
+            fn call<'a>(
+                &'a self,
+                ctx: &'a Ctx,
+                input: Value,
+            ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>
+            {
                 Box::pin(async move {
                     let result = self.0.call_value(ctx, input).await?;
                     Ok(result)
@@ -129,15 +172,22 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
             f: Box::new(RpcHandler(handler, PhantomData)),
             skip_query,
         };
-        self.router.insert(H::KEY.to_string(), handler_fn).unwrap();
+        self.shared_router.lock().unwrap().insert(H::KEY.to_string(), Arc::new(handler_fn)).unwrap();
         self
     }
 
     /// Register a bytes handler (bypasses JSON serialization).
     pub fn route_bytes<F: crate::handler::RawRpcFn<Ctx> + 'static>(mut self, handler: F) -> Self {
         struct BytesHandler<Ctx, F: crate::handler::RawRpcFn<Ctx>>(F, PhantomData<Ctx>);
-        impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>> BytesHandlerFn<Ctx> for BytesHandler<Ctx, F> {
-            fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>> {
+        impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>> BytesHandlerFn<Ctx>
+            for BytesHandler<Ctx, F>
+        {
+            fn call<'a>(
+                &'a self,
+                ctx: &'a Ctx,
+                input: &'a [u8],
+            ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>
+            {
                 Box::pin(async move {
                     let result = F::exec(ctx, input).await?;
                     Ok(result)
@@ -145,7 +195,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
             }
         }
         let handler_fn = Handler::Bytes(Box::new(BytesHandler(handler, PhantomData)));
-        self.router.insert(F::KEY.to_string(), handler_fn).unwrap();
+        self.shared_router.lock().unwrap().insert(F::KEY.to_string(), Arc::new(handler_fn)).unwrap();
         self
     }
 
@@ -164,24 +214,54 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         self
     }
 
-    /// Finalize and produce a type-erased [`RpcRouter`].
-    pub fn build(self) -> RpcRouter<Ctx> {
-        struct NoopService<C>(PhantomData<C>);
-        impl<C: Send + Sync + 'static> crate::middleware::RpcService<C> for NoopService<C> {
-            async fn call(
-                &self,
-                _ctx: &C,
-                _path: &str,
-                _input: Value,
-                _extensions: &mut Extensions,
-            ) -> Result<Value, RpcErr> {
-                Err(RpcErr::not_found("no handler registered for dispatch"))
-            }
-        }
+    /// Finalize and produce a [`RpcRouter`] with a concrete service type.
+    ///
+    /// The returned router is fully monomorphized — zero `Box::pin`, zero vtable dispatch.
+    pub fn build(self) -> RpcRouter<Ctx, S>
+    where
+        S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>,
+    {
         RpcRouter {
             procedures: self.procedures,
-            inner: Arc::new(NoopService(PhantomData)) as Arc<dyn ErasedRpcService<Ctx>>,
-            router: self.router,
+            inner: self.service,
+            _ctx: PhantomData,
+        }
+    }
+
+    /// Attach a middleware layer.
+    pub fn layer<L: RpcLayer<Ctx, S> + 'static>(
+        self,
+        layer: L,
+    ) -> RpcRouterBuilder<Ctx, L::Service> {
+        RpcRouterBuilder {
+            procedures: self.procedures,
+            shared_router: self.shared_router,
+            service: layer.layer(self.service),
+        }
+    }
+
+    /// Attach a closure-based middleware layer.
+    pub fn layer_fn<F>(self, func: F) -> RpcRouterBuilder<Ctx, crate::middleware::ClosureService<Ctx, S, F>>
+    where
+        F: for<'a> Fn(
+                &'a S,
+                &'a Ctx,
+                &'a str,
+                &'a [u8],
+                bool,
+                &'a mut Extensions,
+            ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
+            + Send + Sync + 'static,
+        S: Send + Sync + 'static,
+    {
+        RpcRouterBuilder {
+            procedures: self.procedures,
+            shared_router: self.shared_router,
+            service: crate::middleware::ClosureService {
+                inner: self.service,
+                func,
+                _marker: std::marker::PhantomData,
+            },
         }
     }
 }

@@ -1,6 +1,9 @@
 use fnrpc::error::RpcErr;
 use fnrpc::handler::{RpcFn, RpcFnExt, SubscribeExt};
+use fnrpc::middleware::HookLayer;
+use fnrpc::middleware::NextExt;
 use fnrpc::router::RpcRouterBuilder;
+use std::sync::Arc;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -284,6 +287,200 @@ async fn test_multi_param_ts_info() {
 }
 
 // ── Middleware tests ──────────────────────────────────────
-// TODO: restore these tests after middleware refactor
-// The middleware dispatch chain needs to be reworked for the new
-// no-erasure architecture.
+
+#[tokio::test]
+async fn test_middleware_before_hook_short_circuit() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let cc = Arc::clone(&call_count);
+
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(macro_health)
+        .layer(
+            HookLayer::new()
+                .before(move |_ctx, _path, _input, _is_get| {
+                    cc.fetch_add(1, Ordering::SeqCst);
+                    Err(RpcErr::new("BLOCKED", "blocked by middleware"))
+                }),
+        )
+        .build();
+
+    let result = router.dispatch(&(), "macro_health", b"null", false).await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "BLOCKED");
+    // Before hook was called
+    assert_eq!(call_count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn test_middleware_modify_input() {
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(macro_health)
+        .layer(
+            HookLayer::new()
+                .before(|_ctx, _path, input, _is_get| {
+                    // Return input unchanged
+                    Ok(std::borrow::Cow::Borrowed(input))
+                }),
+        )
+        .build();
+
+    let result = router.dispatch(&(), "macro_health", b"null", false).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_middleware_after_hook() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let after_called = Arc::new(AtomicUsize::new(0));
+    let ac = Arc::clone(&after_called);
+
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(macro_health)
+        .layer(
+            HookLayer::new()
+                .after(move |_ctx, _path, _result| {
+                    ac.fetch_add(1, Ordering::SeqCst);
+                }),
+        )
+        .build();
+
+    let result = router.dispatch(&(), "macro_health", b"null", false).await;
+    assert!(result.is_ok());
+    assert_eq!(after_called.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn test_middleware_chain_order() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let order = Arc::new(AtomicUsize::new(0));
+    let o1 = Arc::clone(&order);
+    let o2 = Arc::clone(&order);
+
+    // Layer order: LIFO — last added layer wraps the previous ones.
+    // .layer(L1) → service = L1.layer(InnerService)
+    // .layer(L2) → service = L2.layer(L1.layer(InnerService))
+    // Execution: L2.before → L1.before → handler → L1.after → L2.after
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(macro_health)
+        .layer(
+            HookLayer::new()
+                .before(move |_ctx, _path, _input, _is_get| {
+                    o1.store(1, Ordering::SeqCst);
+                    Ok(std::borrow::Cow::Borrowed(_input))
+                }),
+        )
+        .layer(
+            HookLayer::new()
+                .before(move |_ctx, _path, _input, _is_get| {
+                    o2.store(2, Ordering::SeqCst);
+                    Ok(std::borrow::Cow::Borrowed(_input))
+                }),
+        )
+        .build();
+
+    let _ = router.dispatch(&(), "macro_health", b"null", false).await.unwrap();
+    // L2 (o2, inner, added last) runs before-hook first, then L1 (o1, outer, added first)
+    // So final value = 1 (set by L1.before which runs second)
+    assert_eq!(order.load(Ordering::SeqCst), 1);
+}
+
+// ── Raw bytes handler tests ──────────────────────────────
+
+#[fnrpc::rpc_bytes]
+async fn test_noop_raw(input: &[u8]) -> &'static [u8] {
+    b"ok"
+}
+
+#[tokio::test]
+async fn test_noop_raw_dispatch() {
+    let router = RpcRouterBuilder::<()>::new().route_bytes(test_noop_raw).build();
+    let (bytes, is_json) = router.dispatch(&(), "test_noop_raw", b"hello", false).await.unwrap();
+    assert_eq!(&*bytes, b"ok");
+    assert!(!is_json); // raw bytes handler
+}
+
+// ── Echo GET handler test ──────────────────────────────
+
+#[fnrpc::rpc_query]
+async fn test_echo_get(input: String) -> String {
+    input
+}
+
+#[tokio::test]
+async fn test_echo_get_dispatch() {
+    let router = RpcRouterBuilder::<()>::new().route_fn(test_echo_get).build();
+    // GET dispatch: bytes are query string, handler parses `input` param
+    let (bytes, is_json) = router.dispatch(&(), "test_echo_get", b"input=%22hello%22", true).await.unwrap();
+    assert_eq!(&*bytes, br#""hello""#);
+    assert!(is_json); // RpcFn handler returns JSON
+}
+
+// ── Echo POST handler test ─────────────────────────────
+
+#[fnrpc::rpc_mutate]
+async fn test_echo_post(input: String) -> String {
+    input
+}
+
+#[tokio::test]
+async fn test_echo_post_dispatch() {
+    let router = RpcRouterBuilder::<()>::new().route_fn(test_echo_post).build();
+    let (bytes, is_json) = router.dispatch(&(), "test_echo_post", br#""world""#, false).await.unwrap();
+    assert_eq!(&*bytes, br#""world""#);
+    assert!(is_json);
+}
+
+// ── Echo with middleware test ──────────────────────────
+
+#[tokio::test]
+async fn test_echo_with_middleware() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let mw_called = Arc::new(AtomicUsize::new(0));
+    let mc = Arc::clone(&mw_called);
+
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(test_echo_get)
+        .layer(
+            HookLayer::new()
+                .before(move |_ctx, _path, _input, _is_get| {
+                    mc.fetch_add(1, Ordering::SeqCst);
+                    Ok(std::borrow::Cow::Borrowed(_input))
+                }),
+        )
+        .build();
+
+    let (bytes, is_json) = router.dispatch(&(), "test_echo_get", b"input=%22hi%22", true).await.unwrap();
+    assert_eq!(&*bytes, br#""hi""#);
+    assert!(is_json);
+    assert_eq!(mw_called.load(Ordering::SeqCst), 1);
+}
+
+// ── layer_fn test ────────────────────────────────────────
+
+#[tokio::test]
+async fn test_layer_fn_middleware() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let cc = Arc::clone(&call_count);
+
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(test_echo_get)
+        .layer_fn(move |inner, ctx, path, input, is_get, extensions| {
+            let cc = Arc::clone(&cc);
+            Box::pin(async move {
+                cc.fetch_add(1, Ordering::SeqCst);
+                inner.next(ctx, path, input, is_get, extensions).await
+            })
+        })
+        .build();
+
+    let (bytes, _is_json) = router.dispatch(&(), "test_echo_get", b"input=%22layer_fn%22", true).await.unwrap();
+    assert_eq!(&*bytes, br#""layer_fn""#);
+    assert_eq!(call_count.load(Ordering::SeqCst), 1);
+}

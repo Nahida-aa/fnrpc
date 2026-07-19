@@ -20,10 +20,11 @@
 //! ```
 
 use std::convert::Infallible;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
+use fnrpc::middleware::RpcService;
 use fnrpc::router::RpcRouter;
-use serde_json::Value;
 use xitca_http::body::{BodyExt, RequestBody, ResponseBody};
 use xitca_http::bytes::Bytes;
 use xitca_http::http::header::{HeaderValue, CONTENT_TYPE};
@@ -31,8 +32,6 @@ use xitca_http::http::{HeaderMap, Method, Request, RequestExt, Response, StatusC
 use xitca_http::HttpServiceBuilder;
 use xitca_server::Builder;
 use xitca_service::{fn_service, ServiceExt};
-
-use futures::StreamExt;
 
 // ── URL percent-decoding ────────────────────────────────
 
@@ -70,15 +69,20 @@ fn hex_val(b: u8) -> Option<u8> {
 /// Thin HTTP transport layer for fnrpc.
 ///
 /// Wraps a [`RpcRouter`] with HTTP request parsing and response building.
-/// No routing logic — all dispatch goes through `RpcRouter::call_handler`.
-pub struct App<Ctx: Send + Sync + 'static> {
-    router: RpcRouter<Ctx>,
+/// No routing logic — all dispatch goes through the middleware chain.
+///
+/// Generic over the service type `S` — the middleware chain is monomorphized
+/// at compile time with zero indirection overhead.
+pub struct App<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> {
+    router: RpcRouter<Ctx, S>,
     ctx_factory: Arc<dyn Fn(&HeaderMap) -> Ctx + Send + Sync>,
 }
 
-impl<Ctx: Send + Sync + 'static> App<Ctx> {
+impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx, Response = (std::borrow::Cow<'static, [u8]>, bool), Error = fnrpc::error::RpcErr> + Send + Sync>
+    App<Ctx, S>
+{
     /// Create a new app with a router and context factory.
-    pub fn new(router: RpcRouter<Ctx>, ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static) -> Self {
+    pub fn new(router: RpcRouter<Ctx, S>, ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static) -> Self {
         Self {
             router,
             ctx_factory: Arc::new(ctx_factory),
@@ -113,7 +117,7 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
 
         let path = req.uri().path().strip_prefix('/').unwrap_or("");
         let is_get = req.method() == Method::GET;
-        let result = self.router.call_handler(path, &ctx, &input, is_get).await;
+        let result = self.router.dispatch(&ctx, path, &input, is_get).await;
 
         match result {
             Ok((bytes, is_json)) => {
@@ -178,7 +182,7 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
 
                 let path = req.uri().path().strip_prefix('/').unwrap_or("");
                 let is_get = req.method() == Method::GET;
-                let result = router.call_handler(path, &ctx, &input, is_get).await;
+                let result = router.dispatch(&ctx, path, &input, is_get).await;
 
                 match result {
                     Ok((bytes, is_json)) => {

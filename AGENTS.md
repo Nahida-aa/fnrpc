@@ -4,8 +4,9 @@
 - Workspace: `crates/*`, examples excluded
 - Tests: `cargo test -p fnrpc` (26 tests)
 - Regenerate bindings: `cd examples/tauri-solid-tanstack/src-tauri && cargo run --bin gen-fnrpc`
-- Architecture, API, patterns → `SUMMARY.md`
+- Architecture, API, patterns → `SUMMARY.md` (may be outdated)
 - Benchmark guide → `.agents/benchmark-guide.md`
+- Roadmap → `ROADWAY.md`
 
 ## Design philosophy
 

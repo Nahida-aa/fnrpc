@@ -32,7 +32,9 @@ fn main() {
         "fnrpc-web-manual" => rt.block_on(compare::fnrpc_web::bench_manual(n)),
         "fnrpc-web-post" => rt.block_on(compare::fnrpc_web::bench_post(n)),
         "fnrpc-web-noop-raw" => rt.block_on(compare::fnrpc_web::bench_noop_raw(n)),
+        "fnrpc-web-mw" => rt.block_on(compare::fnrpc_web::bench_macro_mw(n)),
         "xitca-web" => rt.block_on(compare::xitca_web::bench(n)),
+        "xitca-web-mw" => rt.block_on(compare::xitca_web::bench_mw(n)),
         _ => {
             eprintln!("Unknown framework: {framework}");
             std::process::exit(1);

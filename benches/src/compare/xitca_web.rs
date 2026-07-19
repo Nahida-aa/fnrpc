@@ -3,10 +3,12 @@ use serde_json::Value;
 use xitca_web::App;
 use xitca_web::WebContext;
 use xitca_web::body::{BodyExt, RequestBody, ResponseBody};
+use xitca_web::handler::handler_service;
 use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
 use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
 use xitca_web::route::{get, post};
-use xitca_web::service::{Service, fn_service};
+use xitca_web::service::{Service, ServiceExt, fn_service};
+use xitca_service::ready::ReadyService;
 
 /// Ping — returns "pong" with JSON content type.
 async fn handler_ping(
@@ -20,7 +22,6 @@ async fn handler_ping(
 }
 
 /// Raw noop — no Content-Type header, plain text body.
-/// Matches the original xitca-web baseline (177B/3blks).
 async fn handler_noop_raw(
     _ctx: WebContext<'_, ()>,
 ) -> Result<WebResponse, xitca_web::error::Error> {
@@ -259,5 +260,90 @@ pub(crate) async fn bench(n: usize) {
     let _ = std::fs::copy(
         "./benches/target/dhat-heap.json",
         "./benches/target/dhat-xitca-web-echo-post.json",
+    );
+}
+
+// ── Benchmark with no-op middleware ──────────────────────
+// Uses xitca's stable `enclosed` API with a concrete struct,
+// NOT the nightly-only `enclosed_fn`.
+
+/// No-op middleware — zero-size struct, no inner service state.
+/// Uses `enclosed` API (stable Rust), not `enclosed_fn` (nightly).
+#[derive(Clone, Copy)]
+struct XitcaNoopMw;
+
+impl<S, E> Service<Result<S, E>> for XitcaNoopMw {
+    type Response = XitcaNoopMwService<S>;
+    type Error = E;
+    async fn call(&self, res: Result<S, E>) -> Result<Self::Response, Self::Error> {
+        res.map(XitcaNoopMwService)
+    }
+}
+
+struct XitcaNoopMwService<S>(S);
+
+impl<S, Req> Service<Req> for XitcaNoopMwService<S>
+where
+    S: Service<Req>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    async fn call(&self, req: Req) -> Result<Self::Response, Self::Error> {
+        eprintln!("[xitca-web MW] XitcaNoopMwService::call");
+        self.0.call(req).await
+    }
+}
+
+impl<S> ReadyService for XitcaNoopMwService<S> {
+    type Ready = ();
+    async fn ready(&self) -> Self::Ready {}
+}
+
+pub(crate) async fn bench_mw(n: usize) {
+    // xitca-web middleware on stable: use `enclosed` with a zero-size struct.
+    // The middleware is applied at the App level, not on individual handlers.
+    let app = App::new()
+        .at(
+            "/echo-get",
+            get(fn_service(handler_echo_get)),
+        )
+        .enclosed(XitcaNoopMw);
+    let svc = app.finish().call(()).await.unwrap();
+    let uri_echo_get: http::Uri = r#"/echo-get?input=%22hello%22"#.parse().unwrap();
+
+    fn build_get(uri: &http::Uri) -> http::Request<RequestExt<RequestBody>> {
+        let req_ext: RequestExt<RequestBody> = RequestExt::default();
+        http::Request::builder()
+            .method(Method::GET)
+            .uri(uri.clone())
+            .body(req_ext)
+            .unwrap()
+    }
+
+    // Run 3 warmup iterations first to verify middleware is hit
+    eprintln!("[xitca-web MW] warmup - 3 requests");
+    for _ in 0..3 {
+        let _ = svc.call(build_get(&uri_echo_get)).await.unwrap();
+    }
+    eprintln!("[xitca-web MW] warmup done - starting benchmark");
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let _ = svc.call(build_get(&uri_echo_get)).await.unwrap();
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "xitca-web/echo_get_mw: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+    let _ = std::fs::copy(
+        "./benches/target/dhat-heap.json",
+        "./benches/target/dhat-xitca-web-echo-get-mw.json",
     );
 }

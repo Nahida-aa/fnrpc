@@ -13,6 +13,7 @@ use xitca_http::http::{Method, Request, RequestExt, Uri};
 
 #[fnrpc::rpc_query]
 async fn echo_macro(input: String) -> String {
+    eprintln!("[fnrpc-web MW] echo_macro handler called");
     input
 }
 
@@ -164,7 +165,10 @@ use fnrpc::middleware::HookLayer;
 pub(crate) async fn bench_macro_mw(n: usize) {
     let router = RpcRouterBuilder::<()>::new()
         .route_fn(echo_macro)
-        .layer(HookLayer::new().before(|_ctx, _path, _input| Ok(())))
+        .layer(HookLayer::new().before(|_ctx, _path, input, _is_get| {
+            eprintln!("[fnrpc-web MW] before hook called for path: {_path}");
+            Ok(std::borrow::Cow::Borrowed(input))
+        }))
         .build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
@@ -173,8 +177,8 @@ pub(crate) async fn bench_macro_mw(n: usize) {
     let _p = Profiler::builder()
         .file_name("benches/target/dhat-heap.json")
         .build();
-    for req in &reqs {
-        let _ = app.call(build_get(&uri_echo_get)).await;
+    for req in reqs {
+        let _ = app.call(req).await;
     }
     let s = HeapStats::get();
     eprintln!(

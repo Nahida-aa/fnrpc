@@ -15,6 +15,7 @@ use specta::Type;
 use specta::datatype::{DataType, Primitive, Reference};
 
 use crate::handler::TsTypeInfo;
+use crate::middleware::RpcService;
 use crate::router::{ProcedureMeta, RpcRouter};
 
 /// Resolve a specta [`Type`] to a TypeScript type reference string.
@@ -72,8 +73,8 @@ pub fn type_ts<T: Type>() -> TsTypeInfo {
 /// - All specta-exported type definitions for input/output types.
 /// - A `Procedures` type mapping each procedure name to its `{ kind, method, input, output, error }`.
 /// - A `__procedureMeta` const map used at runtime by the TS client for dispatch.
-pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
-    router: &RpcRouter<Ctx>,
+pub fn generate_ts_client<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync>(
+    router: &RpcRouter<Ctx, S>,
     _rpc_url: &str,
 ) -> String {
     // No-op Format — doesn't modify types
