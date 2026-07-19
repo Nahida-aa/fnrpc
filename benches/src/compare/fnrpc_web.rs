@@ -160,7 +160,7 @@ pub(crate) async fn bench_noop_raw(n: usize) {
     drop(_p);
 }
 
-use fnrpc::middleware::HookLayer;
+use fnrpc::middlewares::hook::HookLayer;
 
 pub(crate) async fn bench_macro_mw(n: usize) {
     let router = RpcRouterBuilder::<()>::new()

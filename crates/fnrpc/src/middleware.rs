@@ -6,8 +6,8 @@
 //! - [`RpcLayer`] — a composable middleware layer (generic over inner `S`).
 //! - [`PipelineT`] — zero-cost middleware composition via phantom markers.
 //! - [`AsyncFnMiddleware`] — adapt an async function as middleware.
-//! - [`HookLayer`] — before/after hooks (convenience).
-//! - [`TracingLayer`] — structured logging (feature = `"tracing"`).
+//! - [`middlewares::hook::HookLayer`] — before/after hooks (convenience).
+//! - [`middlewares::tracing::TracingLayer`] — structured logging (feature = `"tracing"`).
 //!
 //! # How middleware works
 //!
@@ -42,7 +42,7 @@ use crate::error::RpcErr;
 /// indirection, zero vtable dispatch. See [`RpcRouter`](crate::router::RpcRouter)
 /// for the stored router type.
 pub trait RpcService<Ctx> {
-    /// The response type (always `Result<(Cow<'static, [u8]>, bool), RpcErr>`).
+    /// The response type (always `Result<Cow<'static, [u8]>, RpcErr>`).
     type Response;
     /// The error type (always `RpcErr`).
     type Error;
@@ -70,51 +70,6 @@ pub trait RpcService<Ctx> {
 /// Layers are applied LIFO — the last layer added to
 /// [`RpcRouterBuilder`](crate::router::RpcRouterBuilder) becomes the
 /// outermost (first to receive the call, last to produce the response).
-///
-/// # When to implement [`RpcLayer`] vs using [`HookLayer`]
-///
-/// | Situation | Recommendation |
-/// |---|---|
-/// | Simple before/after logic | [`HookLayer`] (closures, no boilerplate) |
-/// | Need to hold state (counters, config) | Implement [`RpcLayer`] yourself |
-/// | Need to short-circuit | Either — `HookLayer::before` returns `Err`, or custom returns early |
-/// | Want to replace the entire call | Implement [`RpcLayer`] — you control whether/when to call `inner` |
-///
-/// # Example — latency timer
-///
-/// ```ignore
-/// use std::time::Instant;
-/// use fnrpc::middleware::{RpcLayer, RpcService};
-///
-/// struct LatencyLayer;
-///
-/// struct LatencyService<Ctx, S> {
-///     inner: S,
-/// }
-///
-/// impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>>
-///     RpcService<Ctx> for LatencyService<Ctx, S>
-/// {
-///     type Response = Cow<'static, [u8]>;
-///     type Error = RpcErr;
-///
-///     async fn call(&self, ctx: &Ctx, path: &str, input: &[u8], is_get: bool, extensions: &mut Extensions) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
-///         let start = Instant::now();
-///         let result = self.inner.call(ctx, path, input, is_get, extensions).await;
-///         tracing::info!("{path} took {:?}", start.elapsed());
-///         result
-///     }
-/// }
-///
-/// impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>>
-///     RpcLayer<Ctx, S> for LatencyLayer
-/// {
-///     type Service = LatencyService<Ctx, S>;
-///     fn layer(&self, inner: S) -> LatencyService<Ctx, S> {
-///         LatencyService { inner }
-///     }
-/// }
-/// ```
 pub trait RpcLayer<Ctx, S: RpcService<Ctx>>: Send + Sync {
     /// The concrete service type produced by this layer.
     type Service: RpcService<Ctx> + Send + Sync;
@@ -171,25 +126,6 @@ impl<F: Clone, S: Clone, M> Clone for PipelineT<F, S, M> {
 /// The function receives `(&S, &Ctx, &str, &[u8], bool, &mut Extensions)` where
 /// `S` is the inner service. Call `inner.call(ctx, path, input, is_get, extensions).await`
 /// to delegate to the inner service.
-///
-/// # Example
-///
-/// ```ignore
-/// use std::sync::Arc;
-/// use fnrpc::middleware::{RpcLayer, RpcService, AsyncFnMiddleware};
-///
-/// async fn logging_mw<S>(inner: &S, ctx: &(), path: &str, input: &[u8], is_get: bool, extensions: &mut http::Extensions) -> Result<std::borrow::Cow<'static, [u8]>, fnrpc::error::RpcErr>
-/// where
-///     S: RpcService<(), Response = std::borrow::Cow<'static, [u8]>, Error = fnrpc::error::RpcErr>,
-/// {
-///     println!("calling {path}");
-///     let result = inner.call(ctx, path, input, is_get, extensions).await;
-///     println!("{path} done");
-///     result
-/// }
-///
-/// let layer = AsyncFnMiddleware(logging_mw);
-/// ```
 pub struct AsyncFnMiddleware<F>(pub F);
 
 impl<F> Clone for AsyncFnMiddleware<F>
@@ -202,7 +138,7 @@ where
 }
 
 /// Build phase: AsyncFnMiddleware as RpcLayer — wraps S into AsyncFnService<S, F>
-impl<Ctx: Send + Sync + 'static, S, F> RpcLayer<Ctx, S> for AsyncFnMiddleware<F>
+impl<Ctx, S, F> RpcLayer<Ctx, S> for AsyncFnMiddleware<F>
 where
     Ctx: Send + Sync + 'static,
     S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync + 'static,
@@ -313,144 +249,6 @@ impl<Ctx, S> NextExt<Ctx> for S where
 {
 }
 
-// ── Hook layer (convenience) ──────────────────────────
-
-type BeforeHook<Ctx> =
-    Arc<dyn for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<&'a [u8], RpcErr> + Send + Sync>;
-
-type AfterHook<Ctx> =
-    Arc<dyn Fn(&Ctx, &str, &mut Result<(Cow<'static, [u8]>, bool), RpcErr>) + Send + Sync>;
-
-/// A convenience layer with before/after hooks.
-///
-/// Use this when you don't need to hold state or write a full [`RpcLayer`]
-/// implementation — just attach closures for before/after logic.
-///
-/// The before-hook receives `&Ctx, &str, &mut Vec<u8>, bool` — the input bytes
-/// are mutable so you can modify them before passing to the inner service.
-///
-/// # Examples
-///
-/// Logging (before + after):
-///
-/// ```ignore
-/// RpcRouterBuilder::new()
-///     .route_fn(health)
-///     .layer(
-///         HookLayer::new()
-///             .before(|ctx, path, input, is_get| {
-///                 tracing::info!("calling {path}");
-///                 Ok(())
-///             })
-///             .after(|ctx, path, result| {
-///                 tracing::info!("{path} returned");
-///             }),
-///     )
-///     .build();
-/// ```
-///
-/// Auth guard — short-circuit with `Err`:
-///
-/// ```ignore
-/// HookLayer::new()
-///     .before(|ctx, path, input, is_get| {
-///         if !is_admin(ctx) {
-///             return Err(RpcErr::new("FORBIDDEN", "admin only"));
-///         }
-///         Ok(())
-///     });
-/// ```
-pub struct HookLayer<Ctx> {
-    before: Option<BeforeHook<Ctx>>,
-    after: Option<AfterHook<Ctx>>,
-}
-
-impl<Ctx> HookLayer<Ctx> {
-    pub fn new() -> Self {
-        Self {
-            before: None,
-            after: None,
-        }
-    }
-
-    /// Register a before-hook that runs before the inner service.
-    ///
-    /// The hook receives `(&Ctx, &str, &[u8], bool)` and returns
-    /// `Result<&[u8], RpcErr>`. Return `Ok(input)` to pass through unchanged
-    /// (zero allocation). Return `Err(RpcErr)` to short-circuit.
-    pub fn before<F>(mut self, f: F) -> Self
-    where
-        F: for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<&'a [u8], RpcErr> + Send + Sync + 'static,
-    {
-        self.before = Some(Arc::new(f));
-        self
-    }
-
-    /// Register an after-hook that runs after the inner service completes.
-    ///
-    /// The hook receives a mutable reference to the result (writable).
-    pub fn after<F>(mut self, f: F) -> Self
-    where
-        F: Fn(&Ctx, &str, &mut Result<(Cow<'static, [u8]>, bool), RpcErr>) + Send + Sync + 'static,
-    {
-        self.after = Some(Arc::new(f));
-        self
-    }
-}
-
-pub struct HookService<Ctx, S> {
-    inner: S,
-    before: Option<BeforeHook<Ctx>>,
-    after: Option<AfterHook<Ctx>>,
-}
-
-impl<Ctx: Send + Sync + 'static, S> RpcService<Ctx> for HookService<Ctx, S>
-where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>,
-{
-    type Response = (Cow<'static, [u8]>, bool);
-    type Error = RpcErr;
-
-    async fn call(
-        &self,
-        ctx: &Ctx,
-        path: &str,
-        input: &[u8],
-        is_get: bool,
-        extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
-        if let Some(ref before) = self.before {
-            let input = before(ctx, path, input, is_get)?;
-            let mut result = self.inner.call(ctx, path, input, is_get, extensions).await;
-            if let Some(ref after) = self.after {
-                after(ctx, path, &mut result);
-            }
-            result
-        } else {
-            let mut result = self.inner.call(ctx, path, input, is_get, extensions).await;
-            if let Some(ref after) = self.after {
-                after(ctx, path, &mut result);
-            }
-            result
-        }
-    }
-}
-
-impl<Ctx: Send + Sync + 'static, S> RpcLayer<Ctx, S> for HookLayer<Ctx>
-where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
-{
-    type Service = HookService<Ctx, S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        HookService {
-            inner,
-            before: self.before.clone(),
-            after: self.after.clone(),
-        }
-    }
-}
-
 // ── ClosureService (closure-based middleware) ─────────
 
 /// A middleware service wrapping an arbitrary closure.
@@ -459,22 +257,6 @@ where
 /// The closure receives `(&S, &Ctx, &str, &[u8], bool, &mut Extensions)` and returns
 /// `Pin<Box<dyn Future<...>>>`. Call `inner.call(ctx, path, input, is_get, extensions).await`
 /// to delegate to the inner service.
-///
-/// # Example — auth guard
-///
-/// ```ignore
-/// RpcRouterBuilder::<MyCtx>::new()
-///     .route_fn(protected_handler)
-///     .layer_fn(|inner, ctx, path, input, is_get, extensions| {
-///         Box::pin(async move {
-///             if !ctx.is_authenticated() {
-///                 return Err(RpcErr::new("UNAUTHORIZED", "login required"));
-///             }
-///             inner.call(ctx, path, input, is_get, extensions).await
-///         })
-///     })
-///     .build();
-/// ```
 pub struct ClosureService<Ctx, S, F> {
     pub(crate) inner: S,
     pub(crate) func: F,
@@ -506,79 +288,5 @@ where
         extensions: &mut Extensions,
     ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
         (self.func)(&self.inner, ctx, path, input, is_get, extensions).await
-    }
-}
-
-// ── Tracing layer (feature = "tracing") ───────────────
-
-/// A logging layer that emits structured [`tracing`] events per call.
-///
-/// Only available with `feature = "tracing"`.
-#[cfg(feature = "tracing")]
-pub struct TracingLayer;
-
-#[cfg(feature = "tracing")]
-pub struct TracingService<Ctx, S> {
-    inner: S,
-}
-
-#[cfg(feature = "tracing")]
-impl<Ctx: Send + Sync + 'static, S> RpcService<Ctx> for TracingService<Ctx, S>
-where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>,
-{
-    type Response = (Cow<'static, [u8]>, bool);
-    type Error = RpcErr;
-
-    async fn call(
-        &self,
-        ctx: &Ctx,
-        path: &str,
-        input: &[u8],
-        is_get: bool,
-        extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
-        let start = std::time::Instant::now();
-        let result = self.inner.call(ctx, path, input, is_get, extensions).await;
-        let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-        // Only allocate strings when tracing is enabled at info level
-        if tracing::level_enabled!(tracing::Level::INFO) {
-            match &result {
-                Ok((output, _is_json)) => {
-                    let output_str = String::from_utf8_lossy(output);
-                    let input_str = String::from_utf8_lossy(input);
-                    tracing::info!(
-                        path = %path,
-                        input = %input_str,
-                        output = %output_str,
-                        latency_ms = %latency_ms,
-                        "rpc_call",
-                    );
-                }
-                Err(e) => {
-                    let input_str = String::from_utf8_lossy(input);
-                    tracing::error!(
-                        path = %path,
-                        input = %input_str,
-                        error = %e,
-                        latency_ms = %latency_ms,
-                        "rpc_call",
-                    );
-                }
-            }
-        }
-        result
-    }
-}
-
-#[cfg(feature = "tracing")]
-impl<Ctx: Send + Sync + 'static, S> RpcLayer<Ctx, S> for TracingLayer
-where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>,
-{
-    type Service = TracingService<Ctx, S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        TracingService { inner }
     }
 }

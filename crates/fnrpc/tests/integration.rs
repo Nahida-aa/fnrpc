@@ -1,6 +1,6 @@
 use fnrpc::error::RpcErr;
 use fnrpc::handler::{RpcFn, RpcFnExt, SubscribeExt};
-use fnrpc::middleware::HookLayer;
+use fnrpc::middlewares::hook::HookLayer;
 use fnrpc::middleware::NextExt;
 use fnrpc::router::RpcRouterBuilder;
 use std::sync::Arc;
@@ -483,4 +483,21 @@ async fn test_layer_fn_middleware() {
     let (bytes, _is_json) = router.dispatch(&(), "test_echo_get", b"input=%22layer_fn%22", true).await.unwrap();
     assert_eq!(&*bytes, br#""layer_fn""#);
     assert_eq!(call_count.load(Ordering::SeqCst), 1);
+}
+
+// ── TracingLayer test ─────────────────────────────────────
+
+#[cfg(feature = "tracing")]
+#[tokio::test]
+async fn test_tracing_layer() {
+    use fnrpc::middlewares::tracing::TracingLayer;
+
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(test_echo_get)
+        .layer(TracingLayer)
+        .build();
+
+    let (bytes, is_json) = router.dispatch(&(), "test_echo_get", b"input=%22tracing%22", true).await.unwrap();
+    assert_eq!(&*bytes, br#""tracing""#);
+    assert!(is_json);
 }
