@@ -321,7 +321,7 @@ async fn test_middleware_modify_input() {
             HookLayer::new()
                 .before(|_ctx, _path, input, _is_get| {
                     // Return input unchanged
-                    Ok(std::borrow::Cow::Borrowed(input))
+                    Ok(input)
                 }),
         )
         .build();
@@ -370,14 +370,14 @@ async fn test_middleware_chain_order() {
             HookLayer::new()
                 .before(move |_ctx, _path, _input, _is_get| {
                     o1.store(1, Ordering::SeqCst);
-                    Ok(std::borrow::Cow::Borrowed(_input))
+                    Ok(_input)
                 }),
         )
         .layer(
             HookLayer::new()
                 .before(move |_ctx, _path, _input, _is_get| {
                     o2.store(2, Ordering::SeqCst);
-                    Ok(std::borrow::Cow::Borrowed(_input))
+                    Ok(_input)
                 }),
         )
         .build();
@@ -449,7 +449,7 @@ async fn test_echo_with_middleware() {
             HookLayer::new()
                 .before(move |_ctx, _path, _input, _is_get| {
                     mc.fetch_add(1, Ordering::SeqCst);
-                    Ok(std::borrow::Cow::Borrowed(_input))
+                    Ok(_input)
                 }),
         )
         .build();

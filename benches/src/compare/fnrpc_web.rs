@@ -167,7 +167,7 @@ pub(crate) async fn bench_macro_mw(n: usize) {
         .route_fn(echo_macro)
         .layer(HookLayer::new().before(|_ctx, _path, input, _is_get| {
             eprintln!("[fnrpc-web MW] before hook called for path: {_path}");
-            Ok(std::borrow::Cow::Borrowed(input))
+            Ok(input)
         }))
         .build();
     let app = App::new(router, |_| ());

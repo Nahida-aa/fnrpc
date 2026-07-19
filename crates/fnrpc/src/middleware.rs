@@ -316,7 +316,7 @@ impl<Ctx, S> NextExt<Ctx> for S where
 // ── Hook layer (convenience) ──────────────────────────
 
 type BeforeHook<Ctx> =
-    Arc<dyn for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<std::borrow::Cow<'a, [u8]>, RpcErr> + Send + Sync>;
+    Arc<dyn for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<&'a [u8], RpcErr> + Send + Sync>;
 
 type AfterHook<Ctx> =
     Arc<dyn Fn(&Ctx, &str, &mut Result<(Cow<'static, [u8]>, bool), RpcErr>) + Send + Sync>;
@@ -376,12 +376,11 @@ impl<Ctx> HookLayer<Ctx> {
     /// Register a before-hook that runs before the inner service.
     ///
     /// The hook receives `(&Ctx, &str, &[u8], bool)` and returns
-    /// `Result<Cow<'_, [u8]>, RpcErr>`. Return `Ok(Cow::Borrowed(input))` to
-    /// pass through unchanged (zero allocation). Return `Ok(Cow::Owned(...))`
-    /// to replace the input. Return `Err(RpcErr)` to short-circuit.
+    /// `Result<&[u8], RpcErr>`. Return `Ok(input)` to pass through unchanged
+    /// (zero allocation). Return `Err(RpcErr)` to short-circuit.
     pub fn before<F>(mut self, f: F) -> Self
     where
-        F: for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<std::borrow::Cow<'a, [u8]>, RpcErr> + Send + Sync + 'static,
+        F: for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<&'a [u8], RpcErr> + Send + Sync + 'static,
     {
         self.before = Some(Arc::new(f));
         self
@@ -422,7 +421,7 @@ where
     ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
         if let Some(ref before) = self.before {
             let input = before(ctx, path, input, is_get)?;
-            let mut result = self.inner.call(ctx, path, &input, is_get, extensions).await;
+            let mut result = self.inner.call(ctx, path, input, is_get, extensions).await;
             if let Some(ref after) = self.after {
                 after(ctx, path, &mut result);
             }
