@@ -59,6 +59,14 @@ pub(crate) fn rpc_bytes_impl(attr: TokenStream, item: TokenStream) -> TokenStrea
         call
     };
 
+    // Wrap reference return types in Cow::Borrowed
+    let is_ref_return = matches!(&input_fn.sig.output, syn::ReturnType::Type(_, ty) if matches!(ty.as_ref(), syn::Type::Reference(_)));
+    let exec_body = if is_ref_return {
+        quote! { Ok(::std::borrow::Cow::Borrowed(#call_expr)) }
+    } else {
+        quote! { Ok(#call_expr) }
+    };
+
     let expanded = if has_ctx {
         quote! {
             #impl_fn
@@ -68,8 +76,8 @@ pub(crate) fn rpc_bytes_impl(attr: TokenStream, item: TokenStream) -> TokenStrea
 
             impl fnrpc::handler::RawRpcFn<#ctx_ty> for #fn_name {
                 const KEY: &'static str = #key;
-                fn exec<'a>(ctx: &'a #ctx_ty, input: &'a [u8]) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Vec<u8>, fnrpc::error::RpcErr>> + Send + 'a>> {
-                    Box::pin(async move { Ok(#call_expr) })
+                fn exec<'a>(ctx: &'a #ctx_ty, input: &'a [u8]) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<::std::borrow::Cow<'static, [u8]>, fnrpc::error::RpcErr>> + Send + 'a>> {
+                    Box::pin(async move { #exec_body })
                 }
             }
         }
@@ -82,8 +90,8 @@ pub(crate) fn rpc_bytes_impl(attr: TokenStream, item: TokenStream) -> TokenStrea
 
             impl fnrpc::handler::RawRpcFn<()> for #fn_name {
                 const KEY: &'static str = #key;
-                fn exec<'a>(_ctx: &'a (), input: &'a [u8]) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Vec<u8>, fnrpc::error::RpcErr>> + Send + 'a>> {
-                    Box::pin(async move { Ok(#call_expr) })
+                fn exec<'a>(_ctx: &'a (), input: &'a [u8]) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<::std::borrow::Cow<'static, [u8]>, fnrpc::error::RpcErr>> + Send + 'a>> {
+                    Box::pin(async move { #exec_body })
                 }
             }
         }

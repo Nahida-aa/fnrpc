@@ -4,6 +4,7 @@
 //! [`build`](RpcRouterBuilder::build) to get a stored [`RpcRouter`].
 
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -45,7 +46,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     /// * For `Handler::Rpc`: `input` is raw query bytes (GET) or body bytes (POST),
     ///   `is_get` controls query string parsing.
     /// * For `Handler::Bytes`: `input` is passed directly.
-    pub async fn call_handler(&self, path: &str, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Vec<u8>, bool), RpcErr> {
+    pub async fn call_handler(&self, path: &str, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
         match self.router.at(path).ok() {
             Some(m) => m.value.call(ctx, input, is_get).await,
             None => Err(RpcErr::not_found(format!("unknown path: {path}"))),
@@ -117,10 +118,10 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         let skip_query = TypeId::of::<H::Input>() == TypeId::of::<()>();
         struct RpcHandler<Ctx, H: RpcFn<Ctx>>(H, PhantomData<Ctx>);
         impl<Ctx: Send + Sync + 'static, H: RpcFn<Ctx>> HandlerFn<Ctx> for RpcHandler<Ctx, H> {
-            fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> {
+            fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>> {
                 Box::pin(async move {
                     let result = self.0.call_value(ctx, input).await?;
-                    Ok(result.into_owned())
+                    Ok(result)
                 })
             }
         }
@@ -136,7 +137,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     pub fn route_bytes<F: crate::handler::RawRpcFn<Ctx> + 'static>(mut self, handler: F) -> Self {
         struct BytesHandler<Ctx, F: crate::handler::RawRpcFn<Ctx>>(F, PhantomData<Ctx>);
         impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>> BytesHandlerFn<Ctx> for BytesHandler<Ctx, F> {
-            fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>> {
+            fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>> {
                 Box::pin(async move {
                     let result = F::exec(ctx, input).await?;
                     Ok(result)

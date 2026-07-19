@@ -155,7 +155,7 @@ fn is_unit_type<T: 'static>() -> bool {
 /// Raw handlers are not included in codegen.
 pub trait RawRpcFn<Ctx>: Send + Sync {
     const KEY: &'static str;
-    fn exec<'a>(ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>>;
+    fn exec<'a>(ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
 }
 
 // ── Subscription traits ────────────────────────────────────
@@ -233,12 +233,12 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
 /// Object-safe handler trait that returns futures borrowing `&self`.
 /// Replaces `Arc<dyn Fn>` to avoid atomic reference counting overhead.
 pub trait HandlerFn<Ctx>: Send + Sync {
-    fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>>;
+    fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
 }
 
 /// Object-safe bytes handler trait.
 pub trait BytesHandlerFn<Ctx>: Send + Sync {
-    fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcErr>> + Send + 'a>>;
+    fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
 }
 
 // ── Handler enum (unified dispatch) ──────────────────────
@@ -257,7 +257,7 @@ pub enum Handler<Ctx: Send + Sync + 'static> {
 impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
     /// Call the handler. Returns (bytes, is_json) where is_json indicates
     /// whether the response should have Content-Type: application/json.
-    pub async fn call(&self, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Vec<u8>, bool), RpcErr> {
+    pub async fn call(&self, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
         match self {
             Handler::Rpc { f, skip_query } => {
                 let input_val: Value = if *skip_query {

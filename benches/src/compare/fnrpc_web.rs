@@ -37,8 +37,8 @@ async fn echo_post(input: String) -> String {
 }
 
 #[fnrpc::rpc_bytes]
-async fn noop_raw(input: &[u8]) -> Vec<u8> {
-    b"ok".to_vec()
+async fn noop_raw(input: &[u8]) -> &'static [u8] {
+    b"ok"
 }
 
 fn build_get(uri: &Uri) -> Request<RequestExt<RequestBody>> {

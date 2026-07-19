@@ -121,7 +121,11 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                 if is_json {
                     builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                 }
-                let resp_body = ResponseBody::bytes(Bytes::from(bytes));
+                let resp_body = match &bytes {
+                    std::borrow::Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
+                    std::borrow::Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(slice)),
+                    std::borrow::Cow::Owned(vec) => ResponseBody::bytes(Bytes::copy_from_slice(vec)),
+                };
                 builder.body(resp_body).unwrap()
             }
             Err(e) => {
@@ -182,7 +186,11 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
                         if is_json {
                             builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                         }
-                        let resp_body = ResponseBody::bytes(Bytes::from(bytes));
+                        let resp_body = match &bytes {
+                            std::borrow::Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
+                            std::borrow::Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(slice)),
+                            std::borrow::Cow::Owned(vec) => ResponseBody::bytes(Bytes::copy_from_slice(vec)),
+                        };
                         Ok::<_, Infallible>(builder.body(resp_body).unwrap())
                     }
                     Err(e) => {
