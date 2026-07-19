@@ -174,7 +174,7 @@ pub(crate) async fn bench_macro_mw(n: usize) {
         .file_name("benches/target/dhat-heap.json")
         .build();
     for req in &reqs {
-        let _ = app.call(req.clone()).await;
+        let _ = app.call(build_get(&uri_echo_get)).await;
     }
     let s = HeapStats::get();
     eprintln!(
