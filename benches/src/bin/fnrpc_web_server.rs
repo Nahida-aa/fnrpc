@@ -18,37 +18,37 @@ type AppCtx = Arc<RwLock<HashMap<String, f64>>>;
 
 // ── Small payload: noop ────────────────────────────────
 
-struct Noop;
-impl RpcFn<AppCtx> for Noop {
-    type Input = ();
-    type Output = ();
-    const KEY: &'static str = "noop";
-    fn exec<'a>(
-        _ctx: &'a AppCtx,
-        _input: (),
-    ) -> impl Future<Output = Result<(), RpcErr>> + Send + 'a {
-        async move { Ok(()) }
-    }
-}
+// struct Noop;
+// impl RpcFn<AppCtx> for Noop {
+//     type Input = ();
+//     type Output = ();
+//     const KEY: &'static str = "noop";
+//     fn exec<'a>(
+//         _ctx: &'a AppCtx,
+//         _input: (),
+//     ) -> impl Future<Output = Result<(), RpcErr>> + Send + 'a {
+//         async move { Ok(()) }
+//     }
+// }
 
-#[rpc_query]
+#[fnrpc::rpc_query]
 async fn noop() -> () {}
 
 // ── Small payload: echo string (POST) ──────────────────
 
-struct Echo;
-impl RpcFn<AppCtx> for Echo {
-    type Input = String;
-    type Output = String;
-    const KEY: &'static str = "echo";
-    const METHOD: &'static str = "POST";
-    fn exec<'a>(
-        _ctx: &'a AppCtx,
-        input: String,
-    ) -> impl Future<Output = Result<String, RpcErr>> + Send + 'a {
-        async move { Ok(input) }
-    }
-}
+// struct Echo;
+// impl RpcFn<AppCtx> for Echo {
+//     type Input = String;
+//     type Output = String;
+//     const KEY: &'static str = "echo";
+//     const METHOD: &'static str = "POST";
+//     fn exec<'a>(
+//         _ctx: &'a AppCtx,
+//         input: String,
+//     ) -> impl Future<Output = Result<String, RpcErr>> + Send + 'a {
+//         async move { Ok(input) }
+//     }
+// }
 
 #[fnrpc::rpc_query]
 async fn echo(input: String) -> String {
@@ -66,18 +66,23 @@ struct MediumPayload {
     score: f64,
 }
 
-struct Medium;
-impl RpcFn<AppCtx> for Medium {
-    type Input = MediumPayload;
-    type Output = MediumPayload;
-    const KEY: &'static str = "medium";
-    const METHOD: &'static str = "POST";
-    fn exec<'a>(
-        _ctx: &'a AppCtx,
-        input: MediumPayload,
-    ) -> impl Future<Output = Result<MediumPayload, RpcErr>> + Send + 'a {
-        async move { Ok(input) }
-    }
+// struct Medium;
+// impl RpcFn<AppCtx> for Medium {
+//     type Input = MediumPayload;
+//     type Output = MediumPayload;
+//     const KEY: &'static str = "medium";
+//     const METHOD: &'static str = "POST";
+//     fn exec<'a>(
+//         _ctx: &'a AppCtx,
+//         input: MediumPayload,
+//     ) -> impl Future<Output = Result<MediumPayload, RpcErr>> + Send + 'a {
+//         async move { Ok(input) }
+//     }
+// }
+
+#[fnrpc::rpc_mutate]
+async fn medium(input: MediumPayload) -> MediumPayload {
+    input
 }
 
 // ── Large payload: batch data (~10KB JSON, POST) ──────
@@ -99,46 +104,71 @@ struct LargeItem {
     metadata: HashMap<String, String>,
 }
 
-struct Large;
-impl RpcFn<AppCtx> for Large {
-    type Input = LargePayload;
-    type Output = LargePayload;
-    const KEY: &'static str = "large";
-    const METHOD: &'static str = "POST";
-    fn exec<'a>(
-        _ctx: &'a AppCtx,
-        input: LargePayload,
-    ) -> impl Future<Output = Result<LargePayload, RpcErr>> + Send + 'a {
-        async move { Ok(input) }
-    }
+#[fnrpc::rpc_mutate]
+async fn large(input: LargePayload) -> LargePayload {
+    input
 }
+
+// struct Large;
+// impl RpcFn<AppCtx> for Large {
+//     type Input = LargePayload;
+//     type Output = LargePayload;
+//     const KEY: &'static str = "large";
+//     const METHOD: &'static str = "POST";
+//     fn exec<'a>(
+//         _ctx: &'a AppCtx,
+//         input: LargePayload,
+//     ) -> impl Future<Output = Result<LargePayload, RpcErr>> + Send + 'a {
+//         async move { Ok(input) }
+//     }
+// }
 
 // ── Lookup (HashMap read + JSON response) ──────────────
 
-struct Lookup;
-impl RawRpcFn<AppCtx> for Lookup {
-    const KEY: &'static str = "in";
-    fn exec(ctx: &AppCtx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
-        let query_str = std::str::from_utf8(input).unwrap_or("");
-        let key = query_str
-            .split('&')
-            .find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                if parts.next() == Some("key") {
-                    parts.next()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("");
-        let n = ctx.read().unwrap().get(key).copied().unwrap_or(0.0);
-        let output = LookupOutput {
-            entity: key.to_string(),
-            n,
-        };
-        serde_json::to_vec(&output).map_err(|_| RpcErr::internal("serialize error"))
-    }
-}
+// struct Lookup;
+// impl RawRpcFn<AppCtx> for Lookup {
+//     const KEY: &'static str = "in";
+//     fn exec(ctx: &AppCtx, input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+//         let query_str = std::str::from_utf8(input).unwrap_or("");
+//         let key = query_str
+//             .split('&')
+//             .find_map(|pair| {
+//                 let mut parts = pair.splitn(2, '=');
+//                 if parts.next() == Some("key") {
+//                     parts.next()
+//                 } else {
+//                     None
+//                 }
+//             })
+//             .unwrap_or("");
+//         let n = ctx.read().unwrap().get(key).copied().unwrap_or(0.0);
+//         let output = LookupOutput {
+//             entity: key.to_string(),
+//             n,
+//         };
+//         serde_json::to_vec(&output).map_err(|_| RpcErr::internal("serialize error"))
+//     }
+// }
+// #[fnrpc::rpc_bytes]
+// async fn in_fn(input: &[u8]) -> Vec<u8> {
+//     let query_str = std::str::from_utf8(input).unwrap_or("");
+//     let key = query_str
+//         .split('&')
+//         .find_map(|pair| {
+//             let mut parts = pair.splitn(2, '=');
+//             if parts.next() == Some("key") {
+//                 parts.next()
+//             } else {
+//                 None
+//             }
+//         })
+//         .unwrap_or("");
+//     let n = ctx.read().unwrap().get(key).copied().unwrap_or(0.0);
+//     let output = LookupOutput {
+//         entity: key.to_string(),
+//         n,
+//     };
+// }
 
 #[derive(Serialize, Type)]
 struct LookupOutput {
@@ -148,20 +178,27 @@ struct LookupOutput {
 
 // ── TechEmpower-style endpoints ────────────────────────
 
-struct JsonEndpoint;
-impl RpcFn<AppCtx> for JsonEndpoint {
-    type Input = ();
-    type Output = JsonMessage;
-    const KEY: &'static str = "json";
-    fn exec<'a>(
-        _ctx: &'a AppCtx,
-        _input: (),
-    ) -> impl Future<Output = Result<JsonMessage, RpcErr>> + Send + 'a {
-        async move {
-            Ok(JsonMessage {
-                message: "Hello, World!",
-            })
-        }
+// struct JsonEndpoint;
+// impl RpcFn<AppCtx> for JsonEndpoint {
+//     type Input = ();
+//     type Output = JsonMessage;
+//     const KEY: &'static str = "json";
+//     fn exec<'a>(
+//         _ctx: &'a AppCtx,
+//         _input: (),
+//     ) -> impl Future<Output = Result<JsonMessage, RpcErr>> + Send + 'a {
+//         async move {
+//             Ok(JsonMessage {
+//                 message: "Hello, World!",
+//             })
+//         }
+//     }
+// }
+
+#[fnrpc::rpc_query]
+async fn json_get() -> JsonMessage {
+    JsonMessage {
+        message: "Hello, World!",
     }
 }
 
@@ -170,22 +207,31 @@ struct JsonMessage {
     message: &'static str,
 }
 
-struct PlaintextEndpoint;
-impl RawRpcFn<AppCtx> for PlaintextEndpoint {
-    const KEY: &'static str = "plaintext";
-    fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
-        Ok(b"Hello, World!".to_vec())
-    }
+#[fnrpc::rpc_bytes]
+async fn plaintext(_input: &[u8]) -> &'static [u8] {
+    b"Hello, World!"
 }
+// struct PlaintextEndpoint;
+// impl RawRpcFn<AppCtx> for PlaintextEndpoint {
+//     const KEY: &'static str = "plaintext";
+//     fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+//         Ok(b"Hello, World!".to_vec())
+//     }
+// }
 
 // ── Raw handler ─────────────────────────────────────────
 
-struct RawNoop;
-impl RawRpcFn<AppCtx> for RawNoop {
-    const KEY: &'static str = "raw_noop";
-    fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
-        Ok(b"ok".to_vec())
-    }
+// struct RawNoop;
+// impl RawRpcFn<AppCtx> for RawNoop {
+//     const KEY: &'static str = "raw_noop";
+//     fn exec(_ctx: &AppCtx, _input: &[u8]) -> Result<Vec<u8>, RpcErr> {
+//         Ok(b"ok".to_vec())
+//     }
+// }
+
+#[fnrpc::rpc_bytes]
+async fn raw_noop(_input: &[u8]) -> &'static [u8] {
+    b"ok"
 }
 
 // ── Generate test data ──────────────────────────────────
@@ -264,14 +310,14 @@ async fn main() {
 
     let config = RpcWebConfig {
         router: RpcRouterBuilder::<AppCtx>::new()
-            .query(Noop)
+            .query(noop)
             .query(echo)
-            .query(Medium)
-            .query(Large)
-            .raw(Lookup)
-            .raw(RawNoop)
-            .query(JsonEndpoint)
-            .raw(PlaintextEndpoint)
+            .query(medium)
+            .query(large)
+            // .raw(Lookup)
+            .raw(raw_noop)
+            .query(json_get)
+            .raw(plaintext)
             .build(),
         ctx_from_headers: Arc::new(move |_| data.clone()),
     };

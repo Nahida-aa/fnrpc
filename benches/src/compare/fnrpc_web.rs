@@ -158,3 +158,34 @@ pub(crate) async fn bench_noop_raw(n: usize) {
     );
     drop(_p);
 }
+
+
+use fnrpc::middleware::HookLayer;
+
+pub(crate) async fn bench_macro_mw(n: usize) {
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(echo_macro)
+        .layer(HookLayer::new().before(|_ctx, _path, _input| {
+            Ok(())
+        }))
+        .build();
+    let app = App::new(router, |_| ());
+    let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
+    let reqs = prebuild_get(&uri_echo_get, n);
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for req in &reqs {
+        let _ = app.call(req.clone()).await;
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "fnrpc-web/echo_macro_mw: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+}
