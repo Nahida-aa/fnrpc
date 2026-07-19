@@ -159,15 +159,12 @@ pub(crate) async fn bench_noop_raw(n: usize) {
     drop(_p);
 }
 
-
 use fnrpc::middleware::HookLayer;
 
 pub(crate) async fn bench_macro_mw(n: usize) {
     let router = RpcRouterBuilder::<()>::new()
         .route_fn(echo_macro)
-        .layer(HookLayer::new().before(|_ctx, _path, _input| {
-            Ok(())
-        }))
+        .layer(HookLayer::new().before(|_ctx, _path, _input| Ok(())))
         .build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();

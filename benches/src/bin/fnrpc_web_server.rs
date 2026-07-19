@@ -310,14 +310,14 @@ async fn main() {
 
     let config = RpcWebConfig {
         router: RpcRouterBuilder::<AppCtx>::new()
-            .query(noop)
-            .query(echo)
-            .query(medium)
-            .query(large)
+            .route_fn(noop)
+            .route_fn(echo)
+            .route_fn(medium)
+            .route_fn(large)
             // .raw(Lookup)
-            .raw(raw_noop)
-            .query(json_get)
-            .raw(plaintext)
+            .route_bytes(raw_noop)
+            .route_fn(json_get)
+            .route_bytes(plaintext)
             .build(),
         ctx_from_headers: Arc::new(move |_| data.clone()),
     };
