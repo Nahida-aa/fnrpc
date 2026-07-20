@@ -524,7 +524,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "benches"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "actix-rt",
  "actix-web",
@@ -1599,7 +1599,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fnrpc-macros",
  "futures",
@@ -1615,7 +1615,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-axum"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1632,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-macros"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1641,7 +1641,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-tauri"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fnrpc",
  "futures",
@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-web"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "fnrpc",
@@ -1672,7 +1672,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-xitca"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "fnrpc",
