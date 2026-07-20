@@ -86,24 +86,29 @@ static ACTIVE_SUBS: LazyLock<Mutex<HashMap<u32, CancellationToken>>> =
 
 // ── generate_handler! macro ─────────────────────────
 
-/// Generate a Tauri invoke handler array for the three fnrpc commands.
+/// Generate Tauri invoke handler functions for the three fnrpc commands.
 ///
-/// This macro generates three concrete `#[tauri::command]` functions and
-/// wraps them with [`tauri::generate_handler!`]. The functions are named
-/// with a `__fnrpc_` prefix to avoid collisions.
+/// This macro generates three concrete `#[tauri::command]` functions
+/// (prefixed with `__fnrpc_`) and returns an array of
+/// [`tauri::ipc::InvokeHandler`] that can be passed directly to
+/// [`tauri::Builder::invoke_handler`].
 ///
 /// # Arguments
 ///
 /// * `$ctx_ty` — The application context type (e.g. `MyCtx`).
 ///
-/// Register the state first:
+/// Combine with custom commands:
 ///
 /// ```ignore
 /// use fnrpc_tauri::{FnrpcTauriState, generate_handler};
 ///
+/// #[tauri::command]
+/// async fn my_custom() -> String { "hello".into() }
+///
 /// tauri::Builder::default()
 ///     .manage(FnrpcTauriState::<MyCtx>::new(router, || MyCtx { ... }))
 ///     .invoke_handler(generate_handler!(MyCtx))
+///     .invoke_handler(tauri::generate_handler![my_custom])
 ///     .run(tauri::generate_context!())
 /// ```
 #[macro_export]

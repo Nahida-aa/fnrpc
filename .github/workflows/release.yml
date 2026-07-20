@@ -67,6 +67,9 @@ jobs:
             cargo publish -p fnrpc-macros
             cargo publish -p fnrpc
             cargo publish -p fnrpc-axum
+            cargo publish -p fnrpc-xitca
+            cargo publish -p fnrpc-web
+            cargo publish -p fnrpc-tauri
 
             git push
           fi
