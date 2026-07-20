@@ -81,6 +81,7 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
 
         const iterable: AsyncIterable<unknown> = {
           [Symbol.asyncIterator]() {
+            const channelId = channel.id;
             return {
               next(): Promise<IteratorResult<unknown>> {
                 if (done) {
@@ -100,6 +101,8 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
                   resolveNext({ done: true, value: undefined as any });
                   resolveNext = null;
                 }
+                // Notify Rust side to cancel the subscription
+                mod.invoke("rpc_cancel_sub", { channelId }).catch(() => {});
                 return Promise.resolve({ done: true, value: undefined as any });
               },
             };

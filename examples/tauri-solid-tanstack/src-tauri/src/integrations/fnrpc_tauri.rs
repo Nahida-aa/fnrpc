@@ -1,11 +1,19 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use fnrpc::router::RpcRouter;
 use fnrpc::serializer::unpack_meta;
 use futures::StreamExt;
 use serde_json::Value;
 use tauri::ipc::Channel;
+use tokio_util::sync::CancellationToken;
 
 use crate::ctx::{AppState, Ctx};
 use axum::http::HeaderMap;
+
+/// Tracks active subscriptions so they can be cancelled on client disconnect.
+static ACTIVE_SUBS: std::sync::LazyLock<Mutex<HashMap<u32, CancellationToken>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[tauri::command]
 pub async fn rpc_fn(
@@ -44,26 +52,45 @@ pub async fn rpc_sub(
         .dispatch_subscribe(&ctx, &path, &input_bytes)
         .map_err(|e| serde_json::to_string(&e).unwrap())?;
 
+    let cancel = CancellationToken::new();
+    ACTIVE_SUBS.lock().unwrap().insert(channel.id(), cancel.clone());
+
     tauri::async_runtime::spawn(async move {
-        while let Some(item) = stream.next().await {
-            match item {
-                Ok(bytes) => {
-                    if let Ok(s) = String::from_utf8(bytes.into_owned()) {
-                        // When the client disconnects, the JS channel object is
-                        // GC'd. Tauri drops the Rust-side channel handle,
-                        // making send() return Err.
-                        if channel.send(s).is_err() {
+        loop {
+            tokio::select! {
+                item = stream.next() => {
+                    match item {
+                        Some(Ok(bytes)) => {
+                            if let Ok(s) = String::from_utf8(bytes.into_owned()) {
+                                if channel.send(s).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Some(Err(e)) => {
+                            let _ = channel.send(serde_json::to_string(&e).unwrap());
                             break;
                         }
+                        None => break,
                     }
                 }
-                Err(e) => {
-                    let _ = channel.send(serde_json::to_string(&e).unwrap());
+                _ = cancel.cancelled() => {
                     break;
                 }
             }
         }
+        ACTIVE_SUBS.lock().unwrap().remove(&channel.id());
     });
 
+    Ok(())
+}
+
+/// Cancel a subscription by channel ID. Called from the JS side when the
+/// client cancels the async iterator (e.g. via consumeEventIterator's cancel).
+#[tauri::command]
+pub async fn rpc_cancel_sub(channel_id: u32) -> Result<(), String> {
+    if let Some(cancel) = ACTIVE_SUBS.lock().unwrap().remove(&channel_id) {
+        cancel.cancel();
+    }
     Ok(())
 }

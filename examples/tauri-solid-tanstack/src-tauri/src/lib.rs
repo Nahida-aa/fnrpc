@@ -19,6 +19,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             integrations::fnrpc_tauri::rpc_fn,
             integrations::fnrpc_tauri::rpc_sub,
+            integrations::fnrpc_tauri::rpc_cancel_sub,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

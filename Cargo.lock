@@ -5206,6 +5206,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tower-http",
  "tracing-subscriber",
 ]
