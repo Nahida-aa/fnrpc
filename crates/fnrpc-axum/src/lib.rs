@@ -77,7 +77,7 @@ where
 
     // Check if this path is a subscribe handler
     if state.router.has_subscribe(&path) {
-        let input: Vec<u8> = if method == Method::GET {
+        let raw_input: Vec<u8> = if method == Method::GET {
             // Extract and URL-decode the "input" query parameter
             raw_query
                 .unwrap_or_default()
@@ -106,6 +106,11 @@ where
             }
             buf
         };
+
+        // Unpack meta envelope (BigInt → number, etc.) and re-serialize
+        let val: serde_json::Value = serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
+        let unpacked = fnrpc::serializer::unpack_meta(val);
+        let input = serde_json::to_vec(&unpacked).unwrap_or_default();
 
         match state.router.dispatch_subscribe(&ctx, &path, &input) {
             Ok(stream) => {

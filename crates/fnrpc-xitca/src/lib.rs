@@ -114,7 +114,7 @@ where
     if state.router.has_subscribe(&path) {
         // For subscribe, re-parse input from query string on GET to extract
         // the URL-decoded "input" parameter, matching dispatch's behavior.
-        let sub_input = if method == Method::GET {
+        let raw_input = if method == Method::GET {
             std::str::from_utf8(&input).unwrap_or("").split('&').find_map(|pair| {
                 let mut parts = pair.splitn(2, '=');
                 let key = parts.next()?;
@@ -124,6 +124,10 @@ where
         } else {
             input.to_vec()
         };
+        // Unpack meta envelope (BigInt → number, etc.) and re-serialize
+        let val: serde_json::Value = serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
+        let unpacked = fnrpc::serializer::unpack_meta(val);
+        let sub_input = serde_json::to_vec(&unpacked).unwrap_or_default();
         match state.router.dispatch_subscribe(&app_ctx, &path, &sub_input) {
             Ok(stream) => {
                 let sse_stream = stream.map(|item| {

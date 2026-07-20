@@ -287,7 +287,10 @@ async fn single_call<Ctx: Send + Sync + 'static>(
                 let val = parts.next()?;
                 if key == "input" { Some(percent_decode(val)) } else { None }
             }).unwrap_or_default();
-            input_str.into_bytes().into()
+            // Unpack meta envelope (BigInt → number, etc.) and re-serialize
+            let val: serde_json::Value = serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
+            let unpacked = fnrpc::serializer::unpack_meta(val);
+            serde_json::to_vec(&unpacked).unwrap_or_default().into()
         } else {
             let mut body_buf = Vec::new();
             while let Some(chunk) = req.body_mut().data().await {
@@ -305,6 +308,10 @@ async fn single_call<Ctx: Send + Sync + 'static>(
             }
             body_buf.into()
         };
+        // Unpack meta envelope (BigInt → number, etc.) and re-serialize
+        let val: serde_json::Value = serde_json::from_slice(&input).unwrap_or(serde_json::Value::Null);
+        let unpacked = fnrpc::serializer::unpack_meta(val);
+        let input = serde_json::to_vec(&unpacked).unwrap_or_default();
         return build_sse_response(router.dispatch_subscribe(&ctx, &path, &input));
     }
 
@@ -461,7 +468,7 @@ async fn run_single<Ctx: Send + Sync + 'static>(
             let path = req.uri().path().strip_prefix('/').unwrap_or("").to_owned();
 
             if router.has_subscribe(&path) {
-                let input: Cow<'_, [u8]> = if req.method() == Method::GET {
+                let raw_input: Cow<'_, [u8]> = if req.method() == Method::GET {
                     // Extract and URL-decode the "input" query parameter
                     let input_str = req.uri().query().unwrap_or("").split('&').find_map(|pair| {
                         let mut parts = pair.splitn(2, '=');
@@ -487,6 +494,10 @@ async fn run_single<Ctx: Send + Sync + 'static>(
                     }
                     body_buf.into()
                 };
+                // Unpack meta envelope (BigInt → number, etc.) and re-serialize
+                let val: serde_json::Value = serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
+                let unpacked = fnrpc::serializer::unpack_meta(val);
+                let input = serde_json::to_vec(&unpacked).unwrap_or_default();
                 return Ok::<_, Infallible>(build_sse_response(router.dispatch_subscribe(&ctx, &path, &input)));
             }
 
