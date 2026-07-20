@@ -44,7 +44,7 @@ function QuerySection() {
   const greet = useQuery(() => client.greet.queryOptions(name(), {
 
   }));
- 
+
   // const greet = fnrpcHook.createQuery(() => ['greet', name()]);
 
 
@@ -77,7 +77,7 @@ function QuerySection() {
 
       <Row label="greet(name)">
         <input class="border rounded px-2 py-0.5 bg-background text-sm" value={name()} onInput={e => setName(e.currentTarget.value)} />
-   
+
         <QueryResult query={greet} />
       </Row>
 
@@ -155,6 +155,14 @@ function SubscriptionSection() {
   );
 }
 
+function Row(props: { label: string; children: any }) {
+  return (
+    <div class="flex items-center gap-2 flex-wrap min-h-9 px-3 py-2 rounded-lg bg-card border text-sm">
+      <span class="font-mono text-xs text-muted-foreground shrink-0 w-36">{props.label}</span>
+      {props.children}
+    </div>
+  );
+}
 function TickTest() {
   const [count, setCount] = createSignal<number | null>(null);
   const [running, setRunning] = createSignal(false);
@@ -297,7 +305,7 @@ function EchoWithConsumeEventIterator() {
     const iter = fnrpc.echo_stream(prefix());
     const cancel = consumeEventIterator(iter, {
       onEvent: v => setMsgs(prev => [...prev, String(v)]),
-    
+
     });
     onCleanup(() => cancel());
   });
@@ -331,7 +339,7 @@ function RunButton(props: { running: boolean; setRunning: (v: boolean) => void
           props.setRunning(false);
           props.cancel();
           return
-        } 
+        }
         props.setRunning(true);
       }}
     >
@@ -487,14 +495,7 @@ function WatchTest() {
   );
 }
 
-function Row(props: { label: string; children: any }) {
-  return (
-    <div class="flex items-center gap-2 flex-wrap min-h-9 px-3 py-2 rounded-lg bg-card border text-sm">
-      <span class="font-mono text-xs text-muted-foreground shrink-0 w-36">{props.label}</span>
-      {props.children}
-    </div>
-  );
-}
+
 
 function QueryResult(props: { query: CreateQueryResult }) {
   console.log('QueryResult')

@@ -44,23 +44,27 @@ pub async fn rpc_sub(
         .dispatch_subscribe(&ctx, &path, &input_bytes)
         .map_err(|e| serde_json::to_string(&e).unwrap())?;
 
-    // Run the stream directly in the command. When the client disconnects,
-    // Tauri cancels the command and drops this future, stopping the stream.
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(bytes) => {
-                if let Ok(s) = String::from_utf8(bytes.into_owned()) {
-                    if channel.send(s).is_err() {
-                        break;
+    tauri::async_runtime::spawn(async move {
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(bytes) => {
+                    if let Ok(s) = String::from_utf8(bytes.into_owned()) {
+                        // When the client disconnects, the JS side clears
+                        // channel.onmessage, allowing the channel to be GC'd.
+                        // Tauri then drops the Rust-side channel handle,
+                        // making send() return Err.
+                        if channel.send(s).is_err() {
+                            break;
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                let _ = channel.send(serde_json::to_string(&e).unwrap());
-                break;
+                Err(e) => {
+                    let _ = channel.send(serde_json::to_string(&e).unwrap());
+                    break;
+                }
             }
         }
-    }
+    });
 
     Ok(())
 }
