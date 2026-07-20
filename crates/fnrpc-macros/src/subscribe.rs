@@ -218,7 +218,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
     };
 
     let struct_name = fn_name.clone();
-    let path_val = path_str.clone();
+    let _path_val = path_str.clone();
 
     let expanded = if has_ctx {
         quote! {
