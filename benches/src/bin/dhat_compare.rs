@@ -32,6 +32,8 @@ fn main() {
         "fnrpc-web-manual" => rt.block_on(compare::fnrpc_web::bench_manual(n)),
         "fnrpc-web-post" => rt.block_on(compare::fnrpc_web::bench_post(n)),
         "fnrpc-web-noop-raw" => rt.block_on(compare::fnrpc_web::bench_noop_raw(n)),
+        "fnrpc-web-subscribe" => rt.block_on(compare::fnrpc_web::bench_subscribe(n)),
+        "fnrpc-web-sse" => rt.block_on(compare::fnrpc_web::bench_sse(n)),
         "fnrpc-web-mw" => rt.block_on(compare::fnrpc_web::bench_macro_mw(n)),
         "fnrpc-web-multi" => rt.block_on(compare::fnrpc_web::bench_macro_multi(n)),
         "fnrpc-xitca-web" => rt.block_on(compare::fnrpc_xitca_web::bench_macro(n)),

@@ -125,6 +125,8 @@ pub struct RpcRouter<Ctx: Send + Sync + 'static> {
     pub(crate) procedures: Vec<ProcedureMeta>,
     /// Frozen radix tree.
     handler_router: Arc<Router<HandlerSlot<Ctx>>>,
+    /// Subscribe handlers, keyed by path.
+    subscribe_handlers: Vec<(&'static str, Arc<dyn crate::handler::ErasedSubscribeHandler<Ctx>>)>,
     /// Shared specta type registry for TypeScript codegen.
     pub(crate) types: specta::Types,
 }
@@ -158,6 +160,25 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
                 handler.call(ctx, path, input, is_get, &mut extensions).await
             }
         }
+    }
+
+    /// Dispatch a subscribe call and return a stream of values.
+    pub fn dispatch_subscribe(
+        &self,
+        ctx: &Ctx,
+        path: &str,
+        input: &[u8],
+    ) -> Result<
+        Pin<Box<dyn futures::Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>,
+        RpcErr,
+    > {
+        let path = path.strip_prefix('/').unwrap_or(path);
+        for (key, handler) in &self.subscribe_handlers {
+            if *key == path {
+                return Ok(handler.call_bytes(ctx, input));
+            }
+        }
+        Err(RpcErr::not_found(format!("unknown subscribe path: {path}")))
     }
 
     /// Convert this router into a boxed erased handler (for multi-router mode).
@@ -264,6 +285,8 @@ pub struct RpcRouterBuilder<Ctx: Send + Sync + 'static> {
     types: specta::Types,
     /// Pending middleware layers to apply to each handler.
     middlewares: Vec<Box<dyn Fn(Box<dyn ErasedHandler<Ctx>>) -> Box<dyn ErasedHandler<Ctx>> + Send + Sync>>,
+    /// Subscribe handlers.
+    subscribe_handlers: Vec<(&'static str, Arc<dyn crate::handler::ErasedSubscribeHandler<Ctx>>)>,
 }
 
 impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
@@ -276,6 +299,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
             router: Router::new(),
             types,
             middlewares: Vec::new(),
+            subscribe_handlers: Vec::new(),
         }
     }
 
@@ -422,8 +446,9 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     /// Register a subscribe handler.
     pub fn subscribe<H: crate::handler::RpcSubscribe<Ctx> + 'static>(
         mut self,
-        _handler: H,
+        handler: H,
     ) -> Self {
+        use crate::handler::SubscribeExt;
         self.procedures.push(ProcedureMeta {
             key: H::KEY,
             kind: "subscribe",
@@ -431,6 +456,22 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
             input: gen_ts_client::type_ts::<H::Input>(),
             output: gen_ts_client::type_ts::<H::Output>(),
         });
+        // Create an erased subscribe handler for runtime dispatch
+        struct ErasedSub<H>(H);
+        impl<Ctx: Send + Sync + 'static, H: crate::handler::RpcSubscribe<Ctx>> crate::handler::ErasedSubscribeHandler<Ctx>
+            for ErasedSub<H>
+        {
+            fn call_bytes(
+                &self,
+                ctx: &Ctx,
+                input: &[u8],
+            ) -> Pin<Box<dyn futures::Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>
+            {
+                use crate::handler::SubscribeExt;
+                self.0.call_bytes(ctx, input)
+            }
+        }
+        self.subscribe_handlers.push((H::KEY, Arc::new(ErasedSub(handler))));
         self
     }
 
@@ -501,6 +542,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         RpcRouter {
             procedures: self.procedures,
             handler_router: Arc::new(self.router),
+            subscribe_handlers: self.subscribe_handlers,
             types: self.types,
         }
     }

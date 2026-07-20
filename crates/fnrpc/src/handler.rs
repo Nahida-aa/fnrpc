@@ -228,6 +228,21 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
     }
 }
 
+// ── ErasedSubscribeHandler ─────────────────────────────────
+
+/// Object-safe subscribe handler trait for runtime dispatch.
+///
+/// This is the subscribe analogue of [`ErasedHandler`] in the router module.
+/// Subscribe handlers return `Stream` instead of `Future`, so they can't share
+/// the same erased trait as query/mutate handlers.
+pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
+    fn call_bytes(
+        &self,
+        ctx: &Ctx,
+        input: &[u8],
+    ) -> Pin<Box<dyn Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>;
+}
+
 // ── HandlerFn trait (avoids Arc::clone by borrowing &self) ──
 
 /// Object-safe handler trait that returns futures borrowing `&self`.

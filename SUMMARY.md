@@ -1,7 +1,7 @@
 # fnrpc Architecture Reference
 
 > This document describes the current architecture after the zero-erasure middleware refactor.
-> Last updated: 2026-07-19
+> Last updated: 2026-07-20
 
 ## Core crate (`fnrpc`)
 
@@ -11,8 +11,8 @@
 |---|---|
 | `middleware.rs` | `RpcService`, `RpcLayer`, `PipelineT`, `AsyncFnMiddleware`, `ServiceExt`, `NextExt`, `ClosureService` |
 | `middlewares/` | Built-in middleware: `hook::HookLayer`, `tracing::TracingLayer` (feature = "tracing") |
-| `router.rs` | `RpcRouter<Ctx, S>`, `RpcRouterBuilder<Ctx, S>`, `InnerService<Ctx>` |
-| `handler.rs` | `RpcFn<Ctx>`, `RpcFnExt<Ctx>`, `RawRpcFn<Ctx>`, `Handler<Ctx>`, `HandlerFn<Ctx>`, `BytesHandlerFn<Ctx>` |
+| `router.rs` | `RpcRouter<Ctx>`, `RpcRouterBuilder<Ctx>`, `ErasedHandler<Ctx>`, `HandlerSlot<Ctx>` |
+| `handler.rs` | `RpcFn<Ctx>`, `RpcFnExt<Ctx>`, `RawRpcFn<Ctx>`, `RpcSubscribe<Ctx>`, `SubscribeExt<Ctx>`, `ErasedSubscribeHandler<Ctx>`, `Handler<Ctx>`, `HandlerFn<Ctx>`, `BytesHandlerFn<Ctx>` |
 | `error.rs` | `RpcErr` |
 | `codec.rs` | `JsonCodec` |
 | `serializer.rs` | BigInt unpacking |
@@ -53,8 +53,16 @@ RpcRouterBuilder::<Ctx>::new()
 - **LIFO layer order**: last `.layer()` added = outermost middleware.
 - **Layer order matters**: add layers before registering handlers. Layers only affect handlers registered after them.
 - `router.dispatch(ctx, path, input, is_get)` — calls through middleware chain
+- `router.dispatch_subscribe(ctx, path, input)` — returns a stream for subscribe handlers
 - `router.procedures()` — metadata for TS codegen
 - `router.generate_ts_client(url)` — generate TS client code
+
+Builder methods:
+- `builder.route_fn(handler)` — register typed RPC function
+- `builder.route_bytes(handler)` — register raw bytes handler
+- `builder.subscribe(handler)` — register subscribe handler
+- `builder.layer(layer)` — add middleware layer
+- `builder.layer_fn(func)` — add closure-based middleware
 
 ### Proc macros
 
@@ -120,6 +128,9 @@ See `AGENTS.md` or run:
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-macro 1000
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-mw 1000
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-multi 1000
+cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-noop-raw 1000
+cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-subscribe 1000
+cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-sse 1000
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-xitca-web 1000
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-axum 1000
 cargo run -p benches --bin dhat_compare --features dhat-heap -- xitca-web 1000
@@ -130,7 +141,7 @@ cargo run -p benches --bin dhat_compare --features dhat-heap -- axum 1000
 
 | Command | Tests |
 |---|---|
-| `cargo test -p fnrpc` | 24 tests (core + middleware) |
+| `cargo test -p fnrpc` | 23 tests (core + middleware + subscribe) |
 | `cargo test -p fnrpc --features tracing` | +1 TracingLayer test |
 | `cargo test -p fnrpc-web` | 6 tests (single/multi router) |
 | `cargo test -p fnrpc-web --features file` | +2 static file tests |

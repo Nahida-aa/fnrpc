@@ -1,8 +1,9 @@
 use dhat::{HeapStats, Profiler};
+use futures::StreamExt;
 use serde_json::Value;
 use xitca_web::App;
 use xitca_web::WebContext;
-use xitca_web::body::{BodyExt, RequestBody, ResponseBody};
+use xitca_web::body::{BodyExt, Frame, RequestBody, ResponseBody, StreamBody};
 use xitca_web::handler::handler_service;
 use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
 use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
@@ -122,6 +123,26 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
+// ── SSE handler ─────────────────────────────────────────
+
+/// SSE handler that streams `n` events, each containing a number.
+/// This is a minimal SSE endpoint for benchmarking streaming response overhead.
+async fn handler_sse(ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_web::error::Error> {
+    let n: u32 = 10;
+
+    let items: Vec<_> = (1..=n)
+        .map(|i| Ok::<_, xitca_web::error::Error>(Frame::Data(xitca_web::bytes::Bytes::from(format!("data: {i}\n\n")))))
+        .collect();
+    let stream = futures::stream::iter(items);
+
+    let body = ResponseBody::body(StreamBody::new(stream)).into_boxed();
+    Ok(WebResponse::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"))
+        .body(body)
+        .unwrap())
+}
+
 fn make_post_req(uri: &str, body: RequestBody) -> http::Request<RequestExt<RequestBody>> {
     let req_ext: RequestExt<RequestBody> =
         <RequestExt<RequestBody>>::default().replace_body(body).0;
@@ -147,7 +168,8 @@ pub(crate) async fn bench(n: usize) {
         .at("/noop-raw", get(fn_service(handler_noop_raw)))
         .at("/noop-json", get(fn_service(handler_noop_json)))
         .at("/echo_post", post(fn_service(handler_echo_post)))
-        .at("/echo-get", get(fn_service(handler_echo_get)));
+        .at("/echo-get", get(fn_service(handler_echo_get)))
+        .at("/sse", get(fn_service(handler_sse)));
     let svc = app.finish().call(()).await.unwrap();
 
     // Pre-parse URIs outside profiler
@@ -261,6 +283,28 @@ pub(crate) async fn bench(n: usize) {
     let _ = std::fs::copy(
         "./benches/target/dhat-heap.json",
         "./benches/target/dhat-xitca-web-echo-post.json",
+    );
+
+    // — sse —
+    let uri_sse: http::Uri = "/sse".parse().unwrap();
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let _ = svc.call(build_get(&uri_sse)).await.unwrap();
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "xitca-web/sse: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+    let _ = std::fs::copy(
+        "./benches/target/dhat-heap.json",
+        "./benches/target/dhat-xitca-web-sse.json",
     );
 }
 

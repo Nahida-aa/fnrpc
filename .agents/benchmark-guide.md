@@ -10,6 +10,8 @@ cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-multi 
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-noop-raw 1000
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-post 1000
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-manual 1000
+cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-subscribe 1000  # fnrpc-web subscribe dispatch
+cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-web-sse 1000       # fnrpc-web SSE response (1 event)
 cargo run -p benches --bin dhat_compare --features dhat-heap -- fnrpc-xitca-web 1000   # fnrpc on xitca-web
 cargo run -p benches --bin dhat_compare --features dhat-heap -- xitca-web 1000          # plain xitca-web
 cargo run -p benches --bin dhat_compare --features dhat-heap -- xitca-web-mw 1000       # xitca-web + middleware
@@ -24,6 +26,9 @@ cargo run -p benches --bin dhat_compare --features dhat-heap -- xitca-web-multi 
 | echo_get + mw | 845B, 6blks | — | — | 1,048B, 8blks | — |
 | echo_get (multi + static) | 1,042B, 8blks | — | — | 1,048B, 8blks | — |
 | noop_raw | **96B, 2blks** | 624B, 5blks | — | 176B, 2blks | — |
+| subscribe | **28B, 2blks** | — | — | — | — |
+| sse (1 event) | **852B, 7blks** | — | — | — | — |
+| sse (10 events) | — | — | — | 2,224B, 26blks | — |
 
 Key insight:
 - fnrpc-web single router has zero Box::pin (845B) — fastest of all frameworks

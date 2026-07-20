@@ -34,32 +34,33 @@ export type User = {
 	name: string,
 	email: string,
 };
+
 export type Procedures = {
-  add: { kind: "query"; method: "GET"; input: [number, number]; output: number; error: RpcErr };
-  create_user: { kind: "mutate"; method: "POST"; input: CreateUserInput; output: User; error: RpcErr };
-  divide: { kind: "query"; method: "GET"; input: [number | null, number | null]; output: number | null; error: RpcErr };
   get_count: { kind: "query"; method: "GET"; input: null; output: string; error: RpcErr };
-  get_user: { kind: "query"; method: "GET"; input: number; output: User; error: RpcErr };
-  greet: { kind: "query"; method: "GET"; input: string; output: string; error: RpcErr };
-  health_check: { kind: "query"; method: "GET"; input: null; output: string; error: RpcErr };
   reset_count: { kind: "mutate"; method: "POST"; input: null; output: null; error: RpcErr };
-  echo_stream: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
-  post_echo_stream: { kind: "subscribe"; method: "POST"; input: string; output: string; error: RpcErr };
+  health_check: { kind: "query"; method: "GET"; input: null; output: string; error: RpcErr };
+  greet: { kind: "query"; method: "GET"; input: string; output: string; error: RpcErr };
+  add: { kind: "query"; method: "GET"; input: [number, number]; output: number; error: RpcErr };
+  get_user: { kind: "query"; method: "GET"; input: number; output: User; error: RpcErr };
+  divide: { kind: "query"; method: "GET"; input: [number | null, number | null]; output: number | null; error: RpcErr };
+  create_user: { kind: "mutate"; method: "POST"; input: CreateUserInput; output: User; error: RpcErr };
   tick: { kind: "subscribe"; method: "GET"; input: bigint; output: bigint; error: RpcErr };
+  echo_stream: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
+  post_echo_stream: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
   watch_status: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
 }
 
 export const __procedureMeta = {
-  add: { kind: "query", method: "GET" },
-  create_user: { kind: "mutate", method: "POST" },
-  divide: { kind: "query", method: "GET" },
   get_count: { kind: "query", method: "GET" },
-  get_user: { kind: "query", method: "GET" },
-  greet: { kind: "query", method: "GET" },
-  health_check: { kind: "query", method: "GET" },
   reset_count: { kind: "mutate", method: "POST" },
-  echo_stream: { kind: "subscribe", method: "GET" },
-  post_echo_stream: { kind: "subscribe", method: "POST" },
+  health_check: { kind: "query", method: "GET" },
+  greet: { kind: "query", method: "GET" },
+  add: { kind: "query", method: "GET" },
+  get_user: { kind: "query", method: "GET" },
+  divide: { kind: "query", method: "GET" },
+  create_user: { kind: "mutate", method: "POST" },
   tick: { kind: "subscribe", method: "GET" },
+  echo_stream: { kind: "subscribe", method: "GET" },
+  post_echo_stream: { kind: "subscribe", method: "GET" },
   watch_status: { kind: "subscribe", method: "GET" },
 } as const;

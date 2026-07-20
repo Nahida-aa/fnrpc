@@ -191,6 +191,91 @@ pub(crate) async fn bench_macro_mw(n: usize) {
 
 /// Benchmark: AppBuilder multi-router with RPC + static route, RPC path.
 /// Measures the cost of routing through AppBuilder vs direct App::new.
+// ── Subscribe handler ──────────────────────────────────
+
+#[fnrpc::rpc_subscribe]
+fn echo_sub(input: u32) -> impl futures::Stream<Item = u32> {
+    futures::stream::iter(1..=input)
+}
+
+/// Benchmark subscribe dispatch via RpcRouter::dispatch_subscribe.
+/// This measures the cost of looking up and calling a subscribe handler
+/// through the erased trait object, including stream creation.
+pub(crate) async fn bench_subscribe(n: usize) {
+    use futures::StreamExt;
+    use fnrpc::handler::SubscribeExt;
+    let router = RpcRouterBuilder::<()>::new().subscribe(echo_sub).build();
+    let input = br#"0"#; // valid JSON input for u32
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let _ = router.dispatch_subscribe(&(), "echo_sub", input);
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "fnrpc-web/subscribe: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+}
+
+/// Benchmark SSE response built from a subscribe handler.
+///
+/// This simulates what a transport layer would do: call dispatch_subscribe,
+/// format each item as SSE `data: ...\n\n`, and build a Response.
+/// Unlike bench_subscribe, this includes the overhead of SSE framing and
+/// Response construction — comparable to xitca-web/sse.
+pub(crate) async fn bench_sse(n: usize) {
+    use futures::StreamExt;
+    use fnrpc::handler::SubscribeExt;
+    use xitca_http::body::{Frame, ResponseBody, StreamBody};
+    use xitca_http::bytes::Bytes;
+    use xitca_http::http::{Response, StatusCode};
+    use xitca_http::http::header::{CONTENT_TYPE, HeaderValue};
+
+    let router = RpcRouterBuilder::<()>::new().subscribe(echo_sub).build();
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let mut stream = router.dispatch_subscribe(&(), "echo_sub", br#"10"#).unwrap();
+        // Build SSE response: read first item, format as SSE, construct Response
+        // We only consume one item to keep the benchmark focused on dispatch + SSE framing,
+        // not on the full stream iteration (which would dominate with 10 items).
+        let item = stream.next().await;
+        let body = match item {
+            Some(Ok(bytes)) => {
+                let sse = format!("data: {}\n\n", String::from_utf8_lossy(&bytes));
+                ResponseBody::body(StreamBody::new(futures::stream::once(
+                    futures::future::ready(Ok::<_, std::convert::Infallible>(Frame::Data(Bytes::from(sse)))),
+                )))
+            }
+            _ => ResponseBody::body(StreamBody::new(futures::stream::once(
+                futures::future::ready(Ok::<_, std::convert::Infallible>(Frame::Data(Bytes::from_static(b"data: error\n\n")))),
+            ))),
+        };
+        let _ = Response::builder()
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"))
+            .body(body);
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "fnrpc-web/sse: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+}
+
 pub(crate) async fn bench_macro_multi(n: usize) {
     use std::path::PathBuf;
     let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();

@@ -1,5 +1,6 @@
 use fnrpc::router::RpcRouter;
 use fnrpc::serializer::unpack_meta;
+use futures::StreamExt;
 use serde_json::Value;
 use tauri::ipc::Channel;
 
@@ -38,8 +39,26 @@ pub async fn rpc_sub(
     let input = unpack_meta(input);
     let ctx = Ctx { state, headers: HeaderMap::new() };
 
-    // For subscribe, we call dispatch and let the middleware chain handle it.
-    // The subscribe handler is registered in the router's procedure metadata
-    // but dispatch currently only handles query/mutate. For now, return an error.
-    Err("subscribe not supported in this version".to_string())
+    let input_bytes = serde_json::to_vec(&input).map_err(|e| e.to_string())?;
+    let mut stream = router
+        .dispatch_subscribe(&ctx, &path, &input_bytes)
+        .map_err(|e| serde_json::to_string(&e).unwrap())?;
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(bytes) => {
+                    if let Ok(s) = String::from_utf8(bytes.into_owned()) {
+                        let _ = channel.send(s);
+                    }
+                }
+                Err(e) => {
+                    let _ = channel.send(serde_json::to_string(&e).unwrap());
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(())
 }
