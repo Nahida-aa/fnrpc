@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use http::Extensions;
 use serde_json::Value;
+use specta::Type;
 use xitca_router::Router;
 
 use crate::error::RpcErr;
@@ -37,7 +38,8 @@ pub struct ProcedureMeta {
 /// at compile time with zero indirection overhead.
 pub struct RpcRouter<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static = InnerService<Ctx>> {
     pub(crate) procedures: Vec<ProcedureMeta>,
-    pub(crate) inner: S,
+    pub inner: S,
+    pub(crate) types: specta::Types,
     _ctx: PhantomData<Ctx>,
 }
 
@@ -125,6 +127,8 @@ pub struct RpcRouterBuilder<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Sen
     procedures: Vec<ProcedureMeta>,
     /// Shared router — builder and InnerService both hold clones of this Arc.
     shared_router: Arc<std::sync::Mutex<Router<Arc<Handler<Ctx>>>>>,
+    /// Shared specta type registry for TypeScript codegen.
+    types: specta::Types,
     service: S,
 }
 
@@ -132,9 +136,13 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     /// Create an empty router builder.
     pub fn new() -> Self {
         let shared_router = Arc::new(std::sync::Mutex::new(Router::new()));
+        let mut types = specta::Types::default();
+        // Register RpcErr so it appears in TypeScript type definitions
+        crate::error::RpcErr::definition(&mut types);
         Self {
             procedures: Vec::new(),
             shared_router: Arc::clone(&shared_router),
+            types,
             service: InnerService {
                 router: shared_router,
             },
@@ -144,13 +152,37 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
 
 impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> RpcRouterBuilder<Ctx, S> {
     /// Register a typed RPC function (query or mutate).
+    ///
+    /// The handler must implement [`RpcFn<Ctx>`]. Use the proc macros
+    /// `#[rpc_query]` or `#[rpc_mutate]` to generate the implementation.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use fnrpc::router::RpcRouterBuilder;
+    ///
+    /// #[fnrpc::rpc_query]
+    /// async fn health() -> &'static str { "ok" }
+    ///
+    /// RpcRouterBuilder::<()>::new()
+    ///     .route_fn(health)
+    ///     .build();
+    /// ```
     pub fn route_fn<H: RpcFn<Ctx> + 'static>(mut self, handler: H) -> Self {
+        // Register input/output types into shared specta registry
+        let input_dt = H::Input::definition(&mut self.types);
+        let output_dt = H::Output::definition(&mut self.types);
+
         self.procedures.push(ProcedureMeta {
             key: H::KEY,
             kind: H::KIND,
             method: H::METHOD,
-            input: gen_ts_client::type_ts::<H::Input>(),
-            output: gen_ts_client::type_ts::<H::Output>(),
+            input: TsTypeInfo {
+                ts_ref: gen_ts_client::resolve_ts_ref(&input_dt, &self.types),
+            },
+            output: TsTypeInfo {
+                ts_ref: gen_ts_client::resolve_ts_ref(&output_dt, &self.types),
+            },
         });
 
         let skip_query = TypeId::of::<H::Input>() == TypeId::of::<()>();
@@ -177,6 +209,9 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> Rpc
     }
 
     /// Register a bytes handler (bypasses JSON serialization).
+    ///
+    /// Use `#[rpc_bytes]` to generate the implementation.
+    /// Raw handlers are not included in TypeScript codegen.
     pub fn route_bytes<F: crate::handler::RawRpcFn<Ctx> + 'static>(mut self, handler: F) -> Self {
         struct BytesHandler<Ctx, F: crate::handler::RawRpcFn<Ctx>>(F, PhantomData<Ctx>);
         impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>> BytesHandlerFn<Ctx>
@@ -224,11 +259,25 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> Rpc
         RpcRouter {
             procedures: self.procedures,
             inner: self.service,
+            types: self.types,
             _ctx: PhantomData,
         }
     }
 
     /// Attach a middleware layer.
+    ///
+    /// Layers are applied LIFO — the last layer added becomes the outermost.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use fnrpc::middlewares::hook::HookLayer;
+    ///
+    /// RpcRouterBuilder::<()>::new()
+    ///     .route_fn(health)
+    ///     .layer(HookLayer::new().before(|_ctx, _path, input, _is_get| Ok(input)))
+    ///     .build();
+    /// ```
     pub fn layer<L: RpcLayer<Ctx, S> + 'static>(
         self,
         layer: L,
@@ -236,6 +285,7 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> Rpc
         RpcRouterBuilder {
             procedures: self.procedures,
             shared_router: self.shared_router,
+            types: self.types,
             service: layer.layer(self.service),
         }
     }
@@ -257,6 +307,7 @@ impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> Rpc
         RpcRouterBuilder {
             procedures: self.procedures,
             shared_router: self.shared_router,
+            types: self.types,
             service: crate::middleware::ClosureService {
                 inner: self.service,
                 func,

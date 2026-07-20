@@ -1621,6 +1621,7 @@ dependencies = [
  "axum",
  "fnrpc",
  "futures",
+ "http-body",
  "http-body-util",
  "serde",
  "serde_json",
@@ -1645,6 +1646,7 @@ dependencies = [
  "async-trait",
  "fnrpc",
  "futures",
+ "http-file",
  "serde",
  "serde_json",
  "tokio",
@@ -2259,6 +2261,29 @@ dependencies = [
  "http-body",
  "pin-project-lite",
 ]
+
+[[package]]
+name = "http-file"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75f62c0f558d11df15a23ae32be5b392daaea3af085b7e5ed47793e4b79dc362"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "http 1.4.2",
+ "http-range-header",
+ "httpdate",
+ "mime_guess",
+ "percent-encoding",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "http-range-header"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9171a2ea8a68358193d15dd5d70c1c10a2afc3e7e4c5bc92bc9f025cebd7359c"
 
 [[package]]
 name = "httparse"
@@ -2881,6 +2906,16 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "mime_guess"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
+dependencies = [
+ "mime",
+ "unicase",
+]
 
 [[package]]
 name = "miniz_oxide"
@@ -5777,6 +5812,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicase"
+version = "2.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6590,6 +6631,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "with-axum"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "fnrpc",
+ "fnrpc-axum",
+ "serde",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "with-xitca"
+version = "0.1.0"
+dependencies = [
+ "fnrpc",
+ "fnrpc-xitca",
+ "serde",
+ "tokio",
+ "xitca-unsafe-collection",
+ "xitca-web",
+]
+
+[[package]]
 name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6749,6 +6814,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8f42d699162538b2fce6b6ed51f7c36afa9a80fa6b17f5b24b9c0c5b3ba30ca"
 dependencies = [
  "futures-core",
+ "http-file",
  "pin-project-lite",
  "serde_core",
  "serde_json",

@@ -7,6 +7,7 @@ use xitca_web::handler::handler_service;
 use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
 use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
 use xitca_web::route::{get, post};
+use xitca_web::service::file::ServeDir;
 use xitca_web::service::{Service, ServiceExt, fn_service};
 use xitca_service::ready::ReadyService;
 
@@ -336,5 +337,45 @@ pub(crate) async fn bench_mw(n: usize) {
     let _ = std::fs::copy(
         "./benches/target/dhat-heap.json",
         "./benches/target/dhat-xitca-web-echo-get-mw.json",
+    );
+}
+
+// ── Benchmark with RPC + static dir ─────────────────────
+
+pub(crate) async fn bench_multi(n: usize) {
+    let app = App::new()
+        .at("/api/{*path}", get(fn_service(handler_echo_get)))
+        .at("/echo", get(fn_service(handler_echo_get)))
+        .at("/static", ServeDir::new("./"));
+    let svc = app.finish().call(()).await.unwrap();
+    let uri_echo_get: http::Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
+
+    fn build_get(uri: &http::Uri) -> http::Request<RequestExt<RequestBody>> {
+        let req_ext: RequestExt<RequestBody> = RequestExt::default();
+        http::Request::builder()
+            .method(Method::GET)
+            .uri(uri.clone())
+            .body(req_ext)
+            .unwrap()
+    }
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let _ = svc.call(build_get(&uri_echo_get)).await.unwrap();
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "xitca-web/echo_multi: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+    let _ = std::fs::copy(
+        "./benches/target/dhat-heap.json",
+        "./benches/target/dhat-xitca-web-echo-multi.json",
     );
 }

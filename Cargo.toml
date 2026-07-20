@@ -3,7 +3,9 @@ members = [
     "crates/*",
     "benches",
     "examples/tauri-solid-tanstack/src-tauri",
-    "examples/axum-react-query/server"
+    "examples/with-axum",
+    "examples/with-react-query/server",
+    "examples/with-xitca"
 ]
 default-members = ["crates/*"]
 resolver = "3"

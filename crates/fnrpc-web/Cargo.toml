@@ -14,6 +14,12 @@ xitca-router = "0.4"
 serde_json = "1"
 url = "2"
 futures = "0.3"
+http-file = { version = "0.3", optional = true }
+tokio = { version = "1", features = ["fs"], optional = true }
+
+[features]
+default = []
+file = ["dep:http-file", "dep:tokio"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "rt"] }

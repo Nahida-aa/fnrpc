@@ -17,14 +17,14 @@ dhat-heap = ["dep:dhat"]
 [dependencies]
 # fnrpc variants (always available via path)
 fnrpc = { path = "../crates/fnrpc" }
-fnrpc-web = { path = "../crates/fnrpc-web" }
+fnrpc-web = { path = "../crates/fnrpc-web", features = ["file"] }
 fnrpc-xitca = { path = "../crates/fnrpc-xitca" }
 fnrpc-axum = { path = "../crates/fnrpc-axum" }
 
 # Framework deps for fnrpc variants (already transitive)
-xitca-web = { version = "0.8", features = ["json", "params", "urlencoded", "codegen", "io-uring"] }
-xitca-http = { version = "0.9", features = ["http1", "io-uring"] }
-xitca-server = { version = "0.7", features = ["io-uring"] }
+xitca-web = { version = "0.8", features = ["json", "params", "urlencoded", "codegen", "file"] }
+xitca-http = { version = "0.9", features = ["http1"] }
+xitca-server = { version = "0.7" }
 xitca-service = "0.3"
 xitca-unsafe-collection = "0.2"
 axum = "0.8"

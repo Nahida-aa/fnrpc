@@ -188,3 +188,32 @@ pub(crate) async fn bench_macro_mw(n: usize) {
     );
     drop(_p);
 }
+
+/// Benchmark: AppBuilder multi-router with RPC + static route, RPC path.
+/// Measures the cost of routing through AppBuilder vs direct App::new.
+pub(crate) async fn bench_macro_multi(n: usize) {
+    use std::path::PathBuf;
+    let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();
+    let app = App::build(|_| ())
+        .rpc("/api/{*path}", router)
+        .rpc("/echo", RpcRouterBuilder::<()>::new().route_fn(echo_macro).build())
+        .static_dir("/static", "./");
+    let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
+    let reqs = prebuild_get(&uri_echo_get, n);
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for req in reqs {
+        let _ = app.call(req).await;
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "fnrpc-web/echo_macro_multi: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+}
