@@ -56,25 +56,4 @@ jobs:
         if: steps.changesets.outputs.published == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          NEW_VERSION=$(jq -r '.version' packages/fnrpc-client/package.json)
-          CURRENT_RUST_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
-
-          if [ "$NEW_VERSION" != "$CURRENT_RUST_VERSION" ]; then
-            sed -i "s/^version = \"$CURRENT_RUST_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
-            # Update workspace dependency versions so published crates resolve correctly
-            sed -i "s/fnrpc = { version = \"$CURRENT_RUST_VERSION\"/fnrpc = { version = \"$NEW_VERSION\"/" Cargo.toml
-            sed -i "s/fnrpc-macros = { version = \"$CURRENT_RUST_VERSION\"/fnrpc-macros = { version = \"$NEW_VERSION\"/" Cargo.toml
-            git add Cargo.toml
-            git commit -m "chore: bump Rust crates to v$NEW_VERSION"
-
-            cargo publish -p fnrpc-macros
-            cargo publish -p fnrpc
-            cargo publish -p fnrpc-axum
-            cargo publish -p fnrpc-xitca
-            cargo publish -p fnrpc-web
-            cargo publish -p fnrpc-tauri
-            cargo publish -p fnrpc-tauri
-
-            git push
-          fi
+        run: ./scripts/publish-rust.sh
