@@ -49,7 +49,9 @@ pub async fn rpc_sub(
             match item {
                 Ok(bytes) => {
                     if let Ok(s) = String::from_utf8(bytes.into_owned()) {
-                        let _ = channel.send(s);
+                        if channel.send(s).is_err() {
+                            break; // client disconnected
+                        }
                     }
                 }
                 Err(e) => {
