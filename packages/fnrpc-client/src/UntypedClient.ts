@@ -99,7 +99,7 @@ function createSSEIterable(
     body = safeStringify(flattenForRust(serialized))
     url = `${baseUrl}/${path}`
   } else {
-    const params = new URLSearchParams({ input: safeStringify(serialized) })
+    const params = new URLSearchParams({ input: safeStringify(flattenForRust(serialized)) })
     url = `${baseUrl}/${path}?${params}`
   }
 
