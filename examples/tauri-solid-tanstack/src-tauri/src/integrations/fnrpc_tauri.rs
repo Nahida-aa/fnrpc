@@ -49,9 +49,8 @@ pub async fn rpc_sub(
             match item {
                 Ok(bytes) => {
                     if let Ok(s) = String::from_utf8(bytes.into_owned()) {
-                        // When the client disconnects, the JS side clears
-                        // channel.onmessage, allowing the channel to be GC'd.
-                        // Tauri then drops the Rust-side channel handle,
+                        // When the client disconnects, the JS channel object is
+                        // GC'd. Tauri drops the Rust-side channel handle,
                         // making send() return Err.
                         if channel.send(s).is_err() {
                             break;

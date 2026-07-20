@@ -94,18 +94,6 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
                   rejectNext = rej;
                 });
               },
-              return(): Promise<IteratorResult<unknown>> {
-                done = true;
-                if (resolveNext) {
-                  resolveNext({ done: true, value: undefined as any });
-                  resolveNext = null;
-                }
-                // Clear the channel callback so it can be GC'd.
-                // When Tauri's Rust side detects the channel is dropped,
-                // channel.send() will return Err, stopping the stream.
-                channel.onmessage = null;
-                return Promise.resolve({ done: true, value: undefined as any });
-              },
             };
           },
         } satisfies AsyncIterable<unknown>;
