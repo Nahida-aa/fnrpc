@@ -94,6 +94,14 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
                   rejectNext = rej;
                 });
               },
+              return(): Promise<IteratorResult<unknown>> {
+                done = true;
+                if (resolveNext) {
+                  resolveNext({ done: true, value: undefined as any });
+                  resolveNext = null;
+                }
+                return Promise.resolve({ done: true, value: undefined as any });
+              },
             };
           },
         } satisfies AsyncIterable<unknown>;
