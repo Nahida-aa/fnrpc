@@ -28,10 +28,9 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use fnrpc::middleware::RpcService;
 use fnrpc::router::RpcRouter;
 use futures::StreamExt;
-use xitca_web::body::{BodyExt, Frame, RequestBody, ResponseBody, StreamBody};
+use xitca_web::body::{BodyExt, Frame, ResponseBody, StreamBody};
 use xitca_web::bytes::Bytes;
 use xitca_web::http::header::{HeaderValue, CONTENT_TYPE};
 use xitca_web::http::HeaderMap;

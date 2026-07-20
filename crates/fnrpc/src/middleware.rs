@@ -22,7 +22,6 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::Arc;
 
 use http::Extensions;
 
@@ -231,6 +230,7 @@ impl<Ctx, S> ServiceExt<Ctx> for S where
 /// In a [`layer_fn`](crate::router::RpcRouterBuilder::layer_fn) closure, call
 /// `inner.next(ctx, path, input, is_get, extensions).await` to delegate to the
 /// inner service — no need to import or qualify the trait method.
+#[allow(async_fn_in_trait)]
 pub trait NextExt<Ctx>: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> {
     /// Delegate to the next (inner) service in the middleware chain.
     async fn next<'a>(

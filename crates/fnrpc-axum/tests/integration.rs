@@ -5,7 +5,6 @@ use fnrpc::error::RpcErr;
 use fnrpc::handler::RpcFn;
 use fnrpc::router::RpcRouterBuilder;
 use fnrpc_axum::{FnrpcState, handle};
-use futures::StreamExt;
 use http_body_util::BodyExt;
 use std::pin::Pin;
 use tower::ServiceExt;

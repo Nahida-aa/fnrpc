@@ -10,7 +10,6 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::Stream;

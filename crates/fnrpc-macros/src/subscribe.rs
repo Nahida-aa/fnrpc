@@ -7,23 +7,24 @@ use syn::{
 
 struct RpcSubscribeAttr {
     method: Option<String>,
-    path: Option<String>,
+    #[allow(dead_code)]
+    key: Option<String>,
 }
 
 impl Parse for RpcSubscribeAttr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut method = None;
-        let mut path = None;
+        let mut key = None;
 
         if !input.is_empty() {
             method = Some(input.parse::<LitStr>()?.value());
             if input.peek(syn::Token![,]) {
                 let _: syn::Token![,] = input.parse()?;
-                path = Some(input.parse::<LitStr>()?.value());
+                key = Some(input.parse::<LitStr>()?.value());
             }
         }
 
-        Ok(RpcSubscribeAttr { method, path })
+        Ok(RpcSubscribeAttr { method, key })
     }
 }
 
@@ -124,7 +125,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
     // Parse attribute
     let sub_attr: RpcSubscribeAttr = parse_macro_input!(attr as RpcSubscribeAttr);
     let method_str = sub_attr.method.as_deref().unwrap_or("get");
-    let path_str = sub_attr.path.unwrap_or_else(|| fn_name.to_string());
+    // let path_str = sub_attr.key.unwrap_or_else(|| fn_name.to_string());
     let http_method = if method_str == "post" { "POST" } else { "GET" };
 
     // --- Analyse parameters (same as rpc_fn_impl) ---

@@ -39,9 +39,6 @@
 
 use std::borrow::Cow;
 use std::convert::Infallible;
-use std::future::Future;
-use std::marker::PhantomData;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -209,6 +206,7 @@ impl<Ctx: Send + Sync + 'static> AppBuilder<Ctx> {
 
 /// Handler wrapper for RpcRouter in multi-router mode.
 /// Strips the route prefix before dispatching to the inner router.
+#[allow(dead_code)]
 struct RpcRouterHandler<Ctx: Send + Sync + 'static> {
     router: RpcRouter<Ctx>,
     prefix_len: usize,

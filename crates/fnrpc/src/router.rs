@@ -431,7 +431,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 ctx: &Ctx,
                 _path: &str,
                 input: &[u8],
-                is_get: bool,
+                _is_get: bool,
                 _extensions: &mut Extensions,
             ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
                 let result = F::exec(ctx, input).await?;
@@ -459,7 +459,6 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         mut self,
         handler: H,
     ) -> Self {
-        use crate::handler::SubscribeExt;
         self.procedures.push(ProcedureMeta {
             key: H::KEY,
             kind: "subscribe",

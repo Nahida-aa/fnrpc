@@ -1,7 +1,10 @@
+// Allow dead_code for macro-generated impl structs that are used
+// indirectly via trait dispatch.
+#![allow(dead_code)]
+
 use fnrpc::error::RpcErr;
-use fnrpc::handler::{RpcFn, RpcFnExt, SubscribeExt};
+use fnrpc::handler::{RpcFn, RpcFnExt};
 use fnrpc::middlewares::hook::HookLayer;
-use fnrpc::middleware::NextExt;
 use fnrpc::router::RpcRouterBuilder;
 use std::sync::Arc;
 use futures::StreamExt;
@@ -123,7 +126,7 @@ async fn test_manual_rpc() {
 
 #[tokio::test]
 async fn test_ctx_rpc() {
-    let router = RpcRouterBuilder::<AppCtx>::new().route_fn(CtxGreet).build();
+    let _router = RpcRouterBuilder::<AppCtx>::new().route_fn(CtxGreet).build();
 
     let ctx = AppCtx {
         prefix: "yo ".to_string(),
@@ -391,7 +394,7 @@ async fn test_middleware_chain_order() {
 // ── Raw bytes handler tests ──────────────────────────────
 
 #[fnrpc::rpc_bytes]
-async fn test_noop_raw(input: &[u8]) -> &'static [u8] {
+async fn test_noop_raw(_input: &[u8]) -> &'static [u8] {
     b"ok"
 }
 

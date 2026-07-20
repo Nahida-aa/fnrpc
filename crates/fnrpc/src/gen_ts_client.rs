@@ -15,7 +15,6 @@ use specta::Type;
 use specta::datatype::{DataType, Primitive, Reference};
 
 use crate::handler::TsTypeInfo;
-use crate::middleware::RpcService;
 use crate::router::RpcRouter;
 
 /// Register a type into the shared specta Types registry.

@@ -2,13 +2,12 @@ use fnrpc::error::RpcErr;
 use fnrpc::handler::RpcFn;
 use fnrpc::router::RpcRouterBuilder;
 use fnrpc_xitca::{FnrpcState, handle};
-use futures::StreamExt;
 use xitca_unsafe_collection::futures::NowOrPanic;
 use xitca_web::body::{BodyExt, RequestBody};
 use xitca_web::http::{Method, StatusCode};
 use xitca_web::route::get;
 use xitca_web::service::{Service, fn_service};
-use xitca_web::{App, WebContext};
+use xitca_web::App;
 use std::pin::Pin;
 
 // ── Handlers ──────────────────────────────────────────
