@@ -30,7 +30,8 @@ use std::sync::Arc;
 
 use fnrpc::middleware::RpcService;
 use fnrpc::router::RpcRouter;
-use xitca_web::body::{BodyExt, RequestBody, ResponseBody};
+use futures::StreamExt;
+use xitca_web::body::{BodyExt, Frame, RequestBody, ResponseBody, StreamBody};
 use xitca_web::bytes::Bytes;
 use xitca_web::http::header::{HeaderValue, CONTENT_TYPE};
 use xitca_web::http::HeaderMap;
@@ -74,6 +75,9 @@ impl<Ctx: Send + Sync + 'static> FnrpcState<Ctx> {
 ///
 /// The application state must be a [`FnrpcState<Ctx>`](FnrpcState). Pass it via
 /// `App::with_state(state)`.
+///
+/// Regular query/mutate handlers return a buffered JSON response.
+/// Subscribe handlers return a streaming SSE (`text/event-stream`) response.
 pub async fn handle<Ctx>(
     mut ctx: WebContext<'_, FnrpcState<Ctx>>,
 ) -> Result<WebResponse, xitca_web::error::Error>
@@ -105,34 +109,69 @@ where
 
     let state: &FnrpcState<Ctx> = ctx.state();
     let app_ctx = (state.ctx_factory)(ctx.req().headers());
-    let is_get = method == Method::GET;
-    let result = state.router.dispatch(&app_ctx, &path, &input, is_get).await;
 
-    match result {
-        Ok((bytes, is_json)) => {
-            let mut builder = xitca_web::http::Response::builder().status(StatusCode::OK);
-            if is_json {
-                builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    // Check if this path is a subscribe handler
+    if state.router.has_subscribe(&path) {
+        match state.router.dispatch_subscribe(&app_ctx, &path, &input) {
+            Ok(stream) => {
+                let sse_stream = stream.map(|item| {
+                    let data = match item {
+                        Ok(bytes) => format!("data: {}\n\n", String::from_utf8_lossy(&bytes)),
+                        Err(e) => format!("data: {}\n\n", serde_json::to_string(&e).unwrap_or_default()),
+                    };
+                    Ok::<_, std::convert::Infallible>(Frame::Data(Bytes::from(data)))
+                });
+                let body = ResponseBody::body(StreamBody::new(sse_stream)).into_boxed();
+                Ok(xitca_web::http::Response::builder()
+                    .status(StatusCode::OK)
+                    .header(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"))
+                    .header("cache-control", HeaderValue::from_static("no-cache"))
+                    .body(body)
+                    .unwrap())
             }
-            let resp_body = match &bytes {
-                Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
-                Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(*slice)),
-                Cow::Owned(vec) => ResponseBody::bytes(Bytes::copy_from_slice(vec)),
-            };
-            Ok(builder.body(resp_body).unwrap())
+            Err(e) => {
+                let status = match e.code.as_str() {
+                    "NOT_FOUND" => StatusCode::NOT_FOUND,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                };
+                let body = serde_json::to_vec(&e).unwrap_or_default();
+                Ok(xitca_web::http::Response::builder()
+                    .status(status)
+                    .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                    .body(ResponseBody::bytes(Bytes::from(body)))
+                    .unwrap())
+            }
         }
-        Err(e) => {
-            let status = match e.code.as_str() {
-                "BAD_REQUEST" => StatusCode::BAD_REQUEST,
-                "NOT_FOUND" => StatusCode::NOT_FOUND,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            let body = serde_json::to_vec(&e).unwrap_or_default();
-            Ok(xitca_web::http::Response::builder()
-                .status(status)
-                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                .body(ResponseBody::bytes(Bytes::from(body)))
-                .unwrap())
+    } else {
+        let is_get = method == Method::GET;
+        let result = state.router.dispatch(&app_ctx, &path, &input, is_get).await;
+
+        match result {
+            Ok((bytes, is_json)) => {
+                let mut builder = xitca_web::http::Response::builder().status(StatusCode::OK);
+                if is_json {
+                    builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                }
+                let resp_body = match &bytes {
+                    Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
+                    Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(*slice)),
+                    Cow::Owned(vec) => ResponseBody::bytes(Bytes::copy_from_slice(vec)),
+                };
+                Ok(builder.body(resp_body).unwrap())
+            }
+            Err(e) => {
+                let status = match e.code.as_str() {
+                    "BAD_REQUEST" => StatusCode::BAD_REQUEST,
+                    "NOT_FOUND" => StatusCode::NOT_FOUND,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                };
+                let body = serde_json::to_vec(&e).unwrap_or_default();
+                Ok(xitca_web::http::Response::builder()
+                    .status(status)
+                    .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                    .body(ResponseBody::bytes(Bytes::from(body)))
+                    .unwrap())
+            }
         }
     }
 }

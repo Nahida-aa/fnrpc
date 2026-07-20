@@ -82,14 +82,16 @@ Ctx inference: first param `&T` → `Ctx = T`; otherwise `Ctx = ()`.
 Two modes:
 
 1. **Single router** (`App::new(router, ctx_factory)`) — zero `Box::pin`
-   - `App::call(req)` → direct `router.dispatch()`
+   - `App::call(req)` → direct `router.dispatch()` or `router.dispatch_subscribe()` for SSE
    - `App::run(addr)` — bind HTTP server
+   - Subscribe handlers automatically served as SSE (`text/event-stream`)
 
 2. **Multi router** (`App::build(ctx_factory).rpc(...).static_dir(...).run(addr)`)
    - `AppBuilder<Ctx>` — add RPC routes and static dirs
    - Radix tree routing via `xitca_router::Router`
    - One `Box::pin` at route boundary
    - Static file serving with `feature = "file"`
+   - Subscribe not yet supported in multi-router mode
 
 ### `fnrpc-xitca` — integration with xitca-web
 
@@ -104,7 +106,7 @@ App::new()
 ```
 
 - `FnrpcState<Ctx>` — holds router + ctx_factory
-- `handle::<Ctx>` — async fn that extracts request from `WebContext`, calls `router.dispatch()`
+- `handle::<Ctx>` — async fn that extracts request from `WebContext`, calls `router.dispatch()` or `router.dispatch_subscribe()` for SSE
 
 ### `fnrpc-axum` — integration with Axum
 
@@ -118,7 +120,8 @@ let app = Router::new()
 ```
 
 - `FnrpcState<Ctx>` — holds router + ctx_factory
-- `handle::<Ctx>` — async fn, Axum extractor-based, calls `router.dispatch()`
+- `handle::<Ctx>` — async fn, Axum extractor-based, calls `router.dispatch()` or `router.dispatch_subscribe()` for SSE
+- Subscribe handlers are automatically detected by path and served as SSE streams
 
 ## Benchmark results
 

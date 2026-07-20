@@ -181,6 +181,17 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
         Err(RpcErr::not_found(format!("unknown subscribe path: {path}")))
     }
 
+    /// Check whether a subscribe handler exists for the given path.
+    ///
+    /// This is used by transport layers to decide whether to call
+    /// [`dispatch_subscribe`](Self::dispatch_subscribe) vs
+    /// [`dispatch`](Self::dispatch). It performs the same linear scan
+    /// as `dispatch_subscribe` but returns a boolean — no stream is created.
+    pub fn has_subscribe(&self, path: &str) -> bool {
+        let path = path.strip_prefix('/').unwrap_or(path);
+        self.subscribe_handlers.iter().any(|(key, _)| *key == path)
+    }
+
     /// Convert this router into a boxed erased handler (for multi-router mode).
     ///
     /// The returned handler dispatches through this router's radix tree.

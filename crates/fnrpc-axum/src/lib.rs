@@ -1,8 +1,11 @@
 //! Axum integration for fnrpc.
 //!
 //! Provides a [`handle`] async fn that dispatches an HTTP request through
-//! a [`fnrpc::router::RpcRouter`]. Use it to mount fnrpc endpoints into
-//! an Axum application:
+//! a [`fnrpc::router::RpcRouter`]. Both regular query/mutate and subscribe
+//! (SSE) procedures are supported. Subscribe handlers return a streaming
+//! `text/event-stream` response.
+//!
+//! Use it to mount fnrpc endpoints into an Axum application:
 //!
 //! ```ignore
 //! use std::sync::Arc;
@@ -12,6 +15,7 @@
 //!
 //! let router = RpcRouterBuilder::<MyCtx>::new()
 //!     .route_fn(my_handler)
+//!     .subscribe(my_sub)
 //!     .build();
 //!
 //! let state = FnrpcState::new(router, |_headers| MyCtx { ... });
@@ -20,6 +24,9 @@
 //!     .route("/{*path}", get(handle::<MyCtx>).post(handle::<MyCtx>))
 //!     .with_state(Arc::new(state));
 //! ```
+//!
+//! Subscribe handlers are automatically detected by path and served as SSE
+//! streams. No separate route configuration is needed.
 
 use std::sync::Arc;
 
@@ -29,6 +36,7 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use fnrpc::error::RpcErr;
 use fnrpc::router::RpcRouter;
+use futures::StreamExt;
 use http_body_util::BodyExt;
 
 /// Application state holding a router and a context factory.
@@ -51,6 +59,9 @@ impl<Ctx: Send + Sync + 'static> FnrpcState<Ctx> {
 }
 
 /// Dispatch an RPC call through the router stored in Axum application state.
+///
+/// Regular query/mutate handlers return a buffered JSON response.
+/// Subscribe handlers return a streaming SSE (`text/event-stream`) response.
 pub async fn handle<Ctx>(
     State(state): State<Arc<FnrpcState<Ctx>>>,
     headers: HeaderMap,
@@ -64,43 +75,91 @@ where
 {
     let ctx = (state.ctx_factory)(&headers);
 
-    let input: Vec<u8> = if method == Method::GET {
-        raw_query.unwrap_or_default().into_bytes()
-    } else {
-        let mut buf = Vec::new();
-        let mut body = body;
-        while let Some(frame) = body.frame().await {
-            match frame {
-                Ok(frame) => if let Ok(data) = frame.into_data() {
-                    buf.extend_from_slice(&data)
-                },
-                Err(_) => {
-                    let err = RpcErr::bad_request("body read error");
-                    return (StatusCode::BAD_REQUEST, axum::Json(err)).into_response();
+    // Check if this path is a subscribe handler
+    if state.router.has_subscribe(&path) {
+        let input: Vec<u8> = if method == Method::GET {
+            raw_query.unwrap_or_default().into_bytes()
+        } else {
+            let mut buf = Vec::new();
+            let mut body = body;
+            while let Some(frame) = body.frame().await {
+                match frame {
+                    Ok(frame) => if let Ok(data) = frame.into_data() {
+                        buf.extend_from_slice(&data)
+                    },
+                    Err(_) => {
+                        let err = RpcErr::bad_request("body read error");
+                        return (StatusCode::BAD_REQUEST, axum::Json(err)).into_response();
+                    }
                 }
             }
-        }
-        buf
-    };
+            buf
+        };
 
-    let is_get = method == Method::GET;
-    let result = state.router.dispatch(&ctx, &path, &input, is_get).await;
-
-    match result {
-        Ok((bytes, is_json)) => {
-            let mut builder = Response::builder().status(StatusCode::OK);
-            if is_json {
-                builder = builder.header("content-type", "application/json");
+        match state.router.dispatch_subscribe(&ctx, &path, &input) {
+            Ok(stream) => {
+                let sse_stream = stream.map(|item| {
+                    let data = match item {
+                        Ok(bytes) => format!("data: {}\n\n", String::from_utf8_lossy(&bytes)),
+                        Err(e) => format!("data: {}\n\n", serde_json::to_string(&e).unwrap_or_default()),
+                    };
+                    Ok::<_, std::convert::Infallible>(data)
+                });
+                let body = axum::body::Body::from_stream(sse_stream);
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .header("cache-control", "no-cache")
+                    .body(body)
+                    .unwrap()
             }
-            builder.body(axum::body::Body::from(bytes.into_owned())).unwrap()
+            Err(e) => {
+                let status = match e.code.as_str() {
+                    "NOT_FOUND" => StatusCode::NOT_FOUND,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                };
+                (status, axum::Json(e)).into_response()
+            }
         }
-        Err(e) => {
-            let status = match e.code.as_str() {
-                "BAD_REQUEST" => StatusCode::BAD_REQUEST,
-                "NOT_FOUND" => StatusCode::NOT_FOUND,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            (status, axum::Json(e)).into_response()
+    } else {
+        let input: Vec<u8> = if method == Method::GET {
+            raw_query.unwrap_or_default().into_bytes()
+        } else {
+            let mut buf = Vec::new();
+            let mut body = body;
+            while let Some(frame) = body.frame().await {
+                match frame {
+                    Ok(frame) => if let Ok(data) = frame.into_data() {
+                        buf.extend_from_slice(&data)
+                    },
+                    Err(_) => {
+                        let err = RpcErr::bad_request("body read error");
+                        return (StatusCode::BAD_REQUEST, axum::Json(err)).into_response();
+                    }
+                }
+            }
+            buf
+        };
+
+        let is_get = method == Method::GET;
+        let result = state.router.dispatch(&ctx, &path, &input, is_get).await;
+
+        match result {
+            Ok((bytes, is_json)) => {
+                let mut builder = Response::builder().status(StatusCode::OK);
+                if is_json {
+                    builder = builder.header("content-type", "application/json");
+                }
+                builder.body(axum::body::Body::from(bytes.into_owned())).unwrap()
+            }
+            Err(e) => {
+                let status = match e.code.as_str() {
+                    "BAD_REQUEST" => StatusCode::BAD_REQUEST,
+                    "NOT_FOUND" => StatusCode::NOT_FOUND,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                };
+                (status, axum::Json(e)).into_response()
+            }
         }
     }
 }

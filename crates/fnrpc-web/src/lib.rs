@@ -48,7 +48,8 @@ use std::sync::Arc;
 use fnrpc::error::RpcErr;
 use fnrpc::router::ErasedHandler;
 use fnrpc::router::RpcRouter;
-use xitca_http::body::{BodyExt, RequestBody, ResponseBody};
+use futures::StreamExt;
+use xitca_http::body::{BodyExt, Frame, RequestBody, ResponseBody, StreamBody};
 use xitca_http::bytes::Bytes;
 use xitca_http::http::Extensions;
 use xitca_http::http::header::{HeaderValue, CONTENT_TYPE};
@@ -275,6 +276,30 @@ async fn single_call<Ctx: Send + Sync + 'static>(
     mut req: Request<RequestExt<RequestBody>>,
 ) -> Response<ResponseBody> {
     let ctx = ctx_factory(req.headers());
+    let path = req.uri().path().strip_prefix('/').unwrap_or("").to_owned();
+
+    if router.has_subscribe(&path) {
+        let input: Cow<'_, [u8]> = if req.method() == Method::GET {
+            req.uri().query().unwrap_or("").as_bytes().into()
+        } else {
+            let mut body_buf = Vec::new();
+            while let Some(chunk) = req.body_mut().data().await {
+                match chunk {
+                    Ok(c) => body_buf.extend_from_slice(c.as_ref()),
+                    Err(_) => {
+                        let body = serde_json::to_vec(&RpcErr::bad_request("body read error")).unwrap_or_default();
+                        return Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                            .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
+                            .unwrap();
+                    }
+                }
+            }
+            body_buf.into()
+        };
+        return build_sse_response(router.dispatch_subscribe(&ctx, &path, &input));
+    }
 
     let input: Cow<'_, [u8]> = if req.method() == Method::GET {
         req.uri().query().unwrap_or("").as_bytes().into()
@@ -296,9 +321,8 @@ async fn single_call<Ctx: Send + Sync + 'static>(
         body_buf.into()
     };
 
-    let path = req.uri().path().strip_prefix('/').unwrap_or("");
     let is_get = req.method() == Method::GET;
-    let result = router.dispatch(&ctx, path, &input, is_get).await;
+    let result = router.dispatch(&ctx, &path, &input, is_get).await;
     build_response(result)
 }
 
@@ -372,6 +396,51 @@ fn build_response(result: Result<(Cow<'static, [u8]>, bool), RpcErr>) -> Respons
     }
 }
 
+/// Build an SSE response from a subscribe stream result.
+///
+/// On success, returns a streaming response with `Content-Type: text/event-stream`.
+/// Each stream item is formatted as `data: <json>\n\n`.
+/// On error, returns a JSON error response.
+fn build_sse_response(
+    result: Result<
+        Pin<Box<dyn futures::Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>,
+        RpcErr,
+    >,
+) -> Response<ResponseBody> {
+    match result {
+        Ok(stream) => {
+            let sse_stream = stream.map(|item| match item {
+                Ok(bytes) => Ok::<_, Infallible>(Frame::Data(Bytes::from(format!(
+                    "data: {}\n\n",
+                    String::from_utf8_lossy(&bytes)
+                )))),
+                Err(e) => Ok::<_, Infallible>(Frame::Data(Bytes::from(format!(
+                    "data: {}\n\n",
+                    serde_json::to_string(&e).unwrap_or_default()
+                )))),
+            });
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"))
+                .header("cache-control", HeaderValue::from_static("no-cache"))
+                .body(ResponseBody::body(StreamBody::new(sse_stream)).into_boxed())
+                .unwrap()
+        }
+        Err(e) => {
+            let status = match e.code.as_str() {
+                "NOT_FOUND" => StatusCode::NOT_FOUND,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            let body = serde_json::to_vec(&e).unwrap_or_default();
+            Response::builder()
+                .status(status)
+                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                .body(ResponseBody::bytes(Bytes::from(body)))
+                .unwrap()
+        }
+    }
+}
+
 async fn run_single<Ctx: Send + Sync + 'static>(
     router: Arc<RpcRouter<Ctx>>,
     ctx_factory: Arc<dyn Fn(&HeaderMap) -> Ctx + Send + Sync>,
@@ -382,6 +451,30 @@ async fn run_single<Ctx: Send + Sync + 'static>(
         let ctx_factory = Arc::clone(&ctx_factory);
         async move {
             let ctx = ctx_factory(req.headers());
+            let path = req.uri().path().strip_prefix('/').unwrap_or("").to_owned();
+
+            if router.has_subscribe(&path) {
+                let input: Cow<'_, [u8]> = if req.method() == Method::GET {
+                    req.uri().query().unwrap_or("").as_bytes().into()
+                } else {
+                    let mut body_buf = Vec::new();
+                    while let Some(chunk) = req.body_mut().data().await {
+                        match chunk {
+                            Ok(c) => body_buf.extend_from_slice(c.as_ref()),
+                            Err(_) => {
+                                let body = serde_json::to_vec(&RpcErr::bad_request("body read error")).unwrap_or_default();
+                                return Ok(Response::builder()
+                                    .status(StatusCode::BAD_REQUEST)
+                                    .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                                    .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
+                                    .unwrap());
+                            }
+                        }
+                    }
+                    body_buf.into()
+                };
+                return Ok::<_, Infallible>(build_sse_response(router.dispatch_subscribe(&ctx, &path, &input)));
+            }
 
             let input: Cow<'_, [u8]> = if req.method() == Method::GET {
                 req.uri().query().unwrap_or("").as_bytes().into()
@@ -403,9 +496,8 @@ async fn run_single<Ctx: Send + Sync + 'static>(
                 body_buf.into()
             };
 
-            let path = req.uri().path().strip_prefix('/').unwrap_or("");
             let is_get = req.method() == Method::GET;
-            let result = router.dispatch(&ctx, path, &input, is_get).await;
+            let result = router.dispatch(&ctx, &path, &input, is_get).await;
             Ok::<_, Infallible>(build_response(result))
         }
     })
