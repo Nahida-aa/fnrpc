@@ -3,6 +3,5 @@
 
 #[tokio::main]
 async fn main() {
-    tokio::spawn(tauri_solid_tanstack_lib::run_axum());
     tauri_solid_tanstack_lib::run();
 }

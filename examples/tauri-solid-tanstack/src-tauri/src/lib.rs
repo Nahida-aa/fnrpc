@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 mod ctx;
 pub mod feat;
 pub mod integrations;
@@ -9,8 +11,21 @@ pub fn run() {
     let app_state = ctx::AppState {
         app_dir: std::path::PathBuf::from("."),
     };
-    let fnrpc_router =
-        integrations::fnrpc_func::build_fn_rpc_router();
+    let fnrpc_router = Arc::new(integrations::fnrpc_func::build_fn_rpc_router());
+
+    // Start axum HTTP server in background, sharing the same router
+    let axum_router = integrations::fnrpc_axum::build_axum_router(
+        Arc::clone(&fnrpc_router),
+        app_state.clone(),
+    );
+    tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:19110")
+            .await
+            .expect("failed to bind");
+        axum::serve(listener, axum_router)
+            .await
+            .expect("failed to serve");
+    });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -23,19 +38,4 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-pub async fn run_axum() {
-    let app_state = ctx::AppState {
-        app_dir: std::path::PathBuf::from("."),
-    };
-    let fnrpc_router = integrations::fnrpc_func::build_fn_rpc_router();
-
-    let router = integrations::fnrpc_axum::build_axum_router(fnrpc_router, app_state);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:19110")
-        .await
-        .expect("failed to bind");
-    axum::serve(listener, router)
-        .await
-        .expect("failed to serve");
 }

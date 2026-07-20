@@ -56,6 +56,17 @@ impl<Ctx: Send + Sync + 'static> FnrpcState<Ctx> {
             ctx_factory: Arc::new(ctx_factory),
         }
     }
+
+    /// Create a new state from an already-arc'd router (for sharing).
+    pub fn from_arc(
+        router: Arc<RpcRouter<Ctx>>,
+        ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            router,
+            ctx_factory: Arc::new(ctx_factory),
+        }
+    }
 }
 
 /// Dispatch an RPC call through the router stored in Axum application state.
