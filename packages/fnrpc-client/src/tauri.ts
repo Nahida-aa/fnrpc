@@ -9,7 +9,7 @@ import { RpcError } from "./error";
  */
 export interface TauriCore {
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-  Channel: new <T = unknown>() => { onmessage: ((msg: T) => void) | null };
+  Channel: new <T = unknown>() => { id: number; onmessage: ((msg: T) => void) | null };
 }
 
 function parseError(msg: string): RpcError {
