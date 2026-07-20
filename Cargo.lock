@@ -1640,6 +1640,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "fnrpc-tauri"
+version = "0.2.0"
+dependencies = [
+ "fnrpc",
+ "futures",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "fnrpc-web"
 version = "0.2.0"
 dependencies = [
@@ -5197,6 +5210,7 @@ dependencies = [
  "axum",
  "fnrpc",
  "fnrpc-axum",
+ "fnrpc-tauri",
  "futures",
  "serde",
  "serde_json",

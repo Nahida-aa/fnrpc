@@ -32,6 +32,7 @@ tower-http = { version = "0.6", features = ["cors"] }
 tokio-stream = "0.1"
 fnrpc = { path = "../../../crates/fnrpc", features = ["tracing"] }
 fnrpc-axum = { path = "../../../crates/fnrpc-axum" }
+fnrpc-tauri = { path = "../../../crates/fnrpc-tauri" }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"

@@ -11,12 +11,13 @@ pub fn run() {
     let app_state = ctx::AppState {
         app_dir: std::path::PathBuf::from("."),
     };
+    let app_state_axum = app_state.clone();
     let fnrpc_router = Arc::new(integrations::fnrpc_func::build_fn_rpc_router());
 
     // Start axum HTTP server in background, sharing the same router
     let axum_router = integrations::fnrpc_axum::build_axum_router(
         Arc::clone(&fnrpc_router),
-        app_state.clone(),
+        app_state_axum,
     );
     tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind("0.0.0.0:19110")
@@ -27,15 +28,18 @@ pub fn run() {
             .expect("failed to serve");
     });
 
+    let tauri_state = fnrpc_tauri::FnrpcTauriState::from_arc(fnrpc_router, move || {
+        use axum::http::HeaderMap;
+        ctx::Ctx {
+            state: app_state.clone(),
+            headers: HeaderMap::new(),
+        }
+    });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(fnrpc_router)
-        .manage(app_state)
-        .invoke_handler(tauri::generate_handler![
-            integrations::fnrpc_tauri::rpc_fn,
-            integrations::fnrpc_tauri::rpc_sub,
-            integrations::fnrpc_tauri::rpc_cancel_sub,
-        ])
+        .manage(tauri_state)
+        .invoke_handler(fnrpc_tauri::generate_handler!(ctx::Ctx))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
