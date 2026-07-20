@@ -79,6 +79,47 @@ async fn test_single_not_found() {
     assert_eq!(res.status(), xitca_http::http::StatusCode::NOT_FOUND);
 }
 
+// ── Subscribe (SSE) tests ─────────────────────────────
+
+#[fnrpc::rpc_subscribe]
+fn tick(interval_ms: u64) -> impl futures::Stream<Item = u64> {
+    futures::stream::unfold(0u64, move |count| async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
+        Some((count, count + 1))
+    })
+}
+
+#[tokio::test]
+async fn test_subscribe_sse() {
+    use xitca_http::body::BodyExt;
+
+    let router = RpcRouterBuilder::<()>::new().subscribe(tick).build();
+    let app = App::new(router, |_| ());
+    // Use 1ms interval so the stream yields quickly, read first event
+    let res = app.call(get_req("/tick?input=1")).await;
+    assert_eq!(res.status(), xitca_http::http::StatusCode::OK);
+    assert_eq!(
+        res.headers().get("content-type").unwrap(),
+        "text/event-stream"
+    );
+
+    // Read the body stream and verify SSE data
+    let mut body = res.into_body();
+    // xitca-http BodyExt::data() returns the next data frame
+    if let Some(Ok(chunk)) = body.data().await {
+        let s = String::from_utf8_lossy(&chunk);
+        assert!(s.starts_with("data: "), "expected SSE data frame, got: {s:?}");
+    }
+}
+
+#[tokio::test]
+async fn test_subscribe_not_found() {
+    let router = RpcRouterBuilder::<()>::new().subscribe(tick).build();
+    let app = App::new(router, |_| ());
+    let res = app.call(get_req("/nonexistent")).await;
+    assert_eq!(res.status(), xitca_http::http::StatusCode::NOT_FOUND);
+}
+
 // ── Multi router tests ───────────────────────────────
 
 #[tokio::test]

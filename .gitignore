@@ -212,7 +212,7 @@ packages/subtitle-ocr/.test-frames/
 **/results/**/*.json
 
 
-packages/cli/input.json 
+packages/cli/input.json
 tmp
 **/build2
 *.zip
@@ -220,4 +220,3 @@ build/
 out/benches/target/
 benches/target/
 benches/logs/
-*.json
