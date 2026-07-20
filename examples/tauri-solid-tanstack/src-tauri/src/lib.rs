@@ -10,7 +10,7 @@ pub fn run() {
         app_dir: std::path::PathBuf::from("."),
     };
     let fnrpc_router =
-        integrations::fnrpc_func::build_fn_rpc_router().layer(fnrpc::middleware::TracingLayer);
+        integrations::fnrpc_func::build_fn_rpc_router();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

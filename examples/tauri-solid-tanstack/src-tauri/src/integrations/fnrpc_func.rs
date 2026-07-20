@@ -1,4 +1,5 @@
 use crate::{ctx::Ctx, feat::demo::func::post_echo_stream};
+use fnrpc::middlewares::tracing::TracingLayer;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[fnrpc::rpc_query]
@@ -21,18 +22,18 @@ pub async fn reset_count() -> () {
 
 pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<Ctx> {
     fnrpc::router::RpcRouterBuilder::<Ctx>::new()
-        .query(get_count)
-        .mutate(reset_count)
-        .query(health_check)
-        .query(crate::feat::demo::func::greet)
-        .query(crate::feat::demo::func::add)
-        .query(crate::feat::demo::func::get_user)
-        .query(crate::feat::demo::func::divide)
-        .mutate(crate::feat::demo::func::create_user)
+        .route_fn(get_count)
+        .route_fn(reset_count)
+        .route_fn(health_check)
+        .route_fn(crate::feat::demo::func::greet)
+        .route_fn(crate::feat::demo::func::add)
+        .route_fn(crate::feat::demo::func::get_user)
+        .route_fn(crate::feat::demo::func::divide)
+        .route_fn(crate::feat::demo::func::create_user)
         .subscribe(crate::feat::demo::func::tick)
         .subscribe(crate::feat::demo::func::echo_stream)
         .subscribe(post_echo_stream)
         .subscribe(crate::feat::demo::func::watch_status)
-        .layer(fnrpc::middleware::TracingLayer)
+        .layer(TracingLayer)
         .build()
 }

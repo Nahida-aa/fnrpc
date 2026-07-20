@@ -10,17 +10,16 @@ use crate::ctx::{AppState, Ctx};
 pub fn build_axum_router(router: RpcRouter<Ctx>, app_state: AppState) -> Router {
     let cors = CorsLayer::permissive();
 
+    let state = Arc::new(FnrpcState::new(router, move |headers| Ctx {
+        state: app_state.clone(),
+        headers: headers.clone(),
+    }));
+
     Router::new()
         .route(
             "/fnrpc/{*path}",
             axum::routing::get(handle::<Ctx>).post(handle::<Ctx>),
         )
-        .with_state(Arc::new(FnrpcState {
-            router: Arc::new(router),
-            ctx_from_headers: Arc::new(move |headers| Ctx {
-                state: app_state.clone(),
-                headers,
-            }),
-        }))
+        .with_state(state)
         .layer(cors)
 }
