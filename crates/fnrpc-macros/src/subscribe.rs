@@ -1,9 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    FnArg, GenericArgument, ItemFn, LitStr, PathArguments, ReturnType, Type, TypePath, TypeReference,
-    parse_macro_input,
-    parse::Parse, parse::ParseStream,
+    FnArg, GenericArgument, ItemFn, LitStr, PathArguments, ReturnType, Type, TypePath,
+    TypeReference, parse::Parse, parse::ParseStream, parse_macro_input,
 };
 
 struct RpcSubscribeAttr {
@@ -218,7 +217,7 @@ pub(crate) fn rpc_subscribe_impl(attr: TokenStream, item: TokenStream) -> TokenS
     };
 
     let struct_name = fn_name.clone();
-    let _path_val = path_str.clone();
+    // let _path_val = path_str.clone();
 
     let expanded = if has_ctx {
         quote! {
