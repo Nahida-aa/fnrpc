@@ -71,20 +71,33 @@ export function serializableStreamedQuery<
       (prev = []) => limitArraySize(prev, maxChunks),
     );
 
-    for await (const chunk of stream) {
-      if (context.signal.aborted) {
-        throw context.signal.reason;
+    const iterator = stream[Symbol.asyncIterator]();
+    let done = false;
+    const abortHandler = () => {
+      if (!done) {
+        done = true;
+        iterator.return?.();
       }
+    };
+    context.signal?.addEventListener("abort", abortHandler, { once: true });
 
-      result.push(chunk);
-      result = limitArraySize(result, maxChunks);
+    try {
+      for await (const chunk of { [Symbol.asyncIterator]() { return iterator; } }) {
+        if (context.signal.aborted) break;
 
-      if (shouldUpdateCacheDuringStream) {
-        context.client.setQueryData<Array<TQueryFnData>>(
-          context.queryKey,
-          (prev = []) => limitArraySize([...prev, chunk], maxChunks),
-        );
+        result.push(chunk);
+        result = limitArraySize(result, maxChunks);
+
+        if (shouldUpdateCacheDuringStream) {
+          context.client.setQueryData<Array<TQueryFnData>>(
+            context.queryKey,
+            (prev = []) => limitArraySize([...prev, chunk], maxChunks),
+          );
+        }
       }
+    } finally {
+      done = true;
+      context.signal?.removeEventListener("abort", abortHandler);
     }
 
     if (!shouldUpdateCacheDuringStream) {

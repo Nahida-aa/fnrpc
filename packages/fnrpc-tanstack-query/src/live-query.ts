@@ -30,10 +30,33 @@ export function liveQuery<
     const stream = await queryFn(context);
     let last: { chunk: TQueryFnData } | undefined;
 
-    for await (const chunk of stream) {
-      context.signal?.throwIfAborted();
-      last = { chunk };
-      context.client.setQueryData<TQueryFnData>(context.queryKey, chunk);
+    const iterator = stream[Symbol.asyncIterator]();
+
+    const signal = context.signal;
+    if (signal?.aborted) {
+      await iterator.return?.();
+      throw new Error("Query was cancelled");
+    }
+
+    // Listen for abort to cancel the iterator
+    let done = false;
+    const abortHandler = () => {
+      if (!done) {
+        done = true;
+        iterator.return?.();
+      }
+    };
+    signal?.addEventListener("abort", abortHandler, { once: true });
+
+    try {
+      for await (const chunk of { [Symbol.asyncIterator]() { return iterator; } }) {
+        if (signal?.aborted) break;
+        last = { chunk };
+        context.client.setQueryData<TQueryFnData>(context.queryKey, chunk);
+      }
+    } finally {
+      done = true;
+      signal?.removeEventListener("abort", abortHandler);
     }
 
     if (!last) {
