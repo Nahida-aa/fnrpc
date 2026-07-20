@@ -296,7 +296,6 @@ async fn test_middleware_before_hook_short_circuit() {
     let cc = Arc::clone(&call_count);
 
     let router = RpcRouterBuilder::<()>::new()
-        .route_fn(macro_health)
         .layer(
             HookLayer::new()
                 .before(move |_ctx, _path, _input, _is_get| {
@@ -304,6 +303,7 @@ async fn test_middleware_before_hook_short_circuit() {
                     Err(RpcErr::new("BLOCKED", "blocked by middleware"))
                 }),
         )
+        .route_fn(macro_health)
         .build();
 
     let result = router.dispatch(&(), "macro_health", b"null", false).await;
@@ -316,7 +316,6 @@ async fn test_middleware_before_hook_short_circuit() {
 #[tokio::test]
 async fn test_middleware_modify_input() {
     let router = RpcRouterBuilder::<()>::new()
-        .route_fn(macro_health)
         .layer(
             HookLayer::new()
                 .before(|_ctx, _path, input, _is_get| {
@@ -324,6 +323,7 @@ async fn test_middleware_modify_input() {
                     Ok(input)
                 }),
         )
+        .route_fn(macro_health)
         .build();
 
     let result = router.dispatch(&(), "macro_health", b"null", false).await;
@@ -338,13 +338,13 @@ async fn test_middleware_after_hook() {
     let ac = Arc::clone(&after_called);
 
     let router = RpcRouterBuilder::<()>::new()
-        .route_fn(macro_health)
         .layer(
             HookLayer::new()
                 .after(move |_ctx, _path, _result| {
                     ac.fetch_add(1, Ordering::SeqCst);
                 }),
         )
+        .route_fn(macro_health)
         .build();
 
     let result = router.dispatch(&(), "macro_health", b"null", false).await;
@@ -365,7 +365,6 @@ async fn test_middleware_chain_order() {
     // .layer(L2) → service = L2.layer(L1.layer(InnerService))
     // Execution: L2.before → L1.before → handler → L1.after → L2.after
     let router = RpcRouterBuilder::<()>::new()
-        .route_fn(macro_health)
         .layer(
             HookLayer::new()
                 .before(move |_ctx, _path, _input, _is_get| {
@@ -380,12 +379,13 @@ async fn test_middleware_chain_order() {
                     Ok(_input)
                 }),
         )
+        .route_fn(macro_health)
         .build();
 
     let _ = router.dispatch(&(), "macro_health", b"null", false).await.unwrap();
-    // L2 (o2, inner, added last) runs before-hook first, then L1 (o1, outer, added first)
-    // So final value = 1 (set by L1.before which runs second)
-    assert_eq!(order.load(Ordering::SeqCst), 1);
+    // L1 (first added, rev() makes it outermost) runs before-hook first, then L2 (inner)
+    // So final value = 2 (set by L2.before which runs second)
+    assert_eq!(order.load(Ordering::SeqCst), 2);
 }
 
 // ── Raw bytes handler tests ──────────────────────────────
@@ -444,7 +444,6 @@ async fn test_echo_with_middleware() {
     let mc = Arc::clone(&mw_called);
 
     let router = RpcRouterBuilder::<()>::new()
-        .route_fn(test_echo_get)
         .layer(
             HookLayer::new()
                 .before(move |_ctx, _path, _input, _is_get| {
@@ -452,6 +451,7 @@ async fn test_echo_with_middleware() {
                     Ok(_input)
                 }),
         )
+        .route_fn(test_echo_get)
         .build();
 
     let (bytes, is_json) = router.dispatch(&(), "test_echo_get", b"input=%22hi%22", true).await.unwrap();
@@ -470,14 +470,15 @@ async fn test_layer_fn_middleware() {
     let cc = Arc::clone(&call_count);
 
     let router = RpcRouterBuilder::<()>::new()
-        .route_fn(test_echo_get)
         .layer_fn(move |inner, ctx, path, input, is_get, extensions| {
             let cc = Arc::clone(&cc);
             Box::pin(async move {
                 cc.fetch_add(1, Ordering::SeqCst);
-                inner.next(ctx, path, input, is_get, extensions).await
+                use fnrpc::router::ErasedHandler;
+                inner.call(ctx, path, input, is_get, extensions).await
             })
         })
+        .route_fn(test_echo_get)
         .build();
 
     let (bytes, _is_json) = router.dispatch(&(), "test_echo_get", b"input=%22layer_fn%22", true).await.unwrap();

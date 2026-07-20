@@ -43,11 +43,15 @@ Layer ordering: **LIFO** — last `.layer()` added = outermost.
 RpcRouterBuilder::<Ctx>::new()
     .route_fn(my_query)          // typed handler (RpcFn)
     .route_bytes(my_raw)         // raw bytes handler
-    .layer(HookLayer::new()...)
-    .build()                     // returns RpcRouter<Ctx, S>
+    .layer(HookLayer::new()...)  // middleware (applied to handlers registered AFTER this)
+    .build()                     // returns RpcRouter<Ctx>
 ```
 
-- `RpcRouter<Ctx, S>` — generic over service type `S` (the monomorphized middleware chain)
+- **Two-phase routing**: middleware is applied to each handler at `route_fn` time (not wrapped around the whole router). This matches xitca's approach.
+- **Zero `Box::pin` without middleware**: handlers are stored as `Arc<Handler<Ctx>>` directly, called via `Handler::call` with no indirection.
+- **One `Box::pin` with middleware**: handlers are type-erased to `Box<dyn ErasedHandler>`, called via vtable dispatch — one `Box::pin` at the dispatch boundary.
+- **LIFO layer order**: last `.layer()` added = outermost middleware.
+- **Layer order matters**: add layers before registering handlers. Layers only affect handlers registered after them.
 - `router.dispatch(ctx, path, input, is_get)` — calls through middleware chain
 - `router.procedures()` — metadata for TS codegen
 - `router.generate_ts_client(url)` — generate TS client code

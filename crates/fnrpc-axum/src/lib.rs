@@ -28,20 +28,19 @@ use axum::extract::{Path, RawQuery, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use fnrpc::error::RpcErr;
-use fnrpc::middleware::RpcService;
 use fnrpc::router::RpcRouter;
 use http_body_util::BodyExt;
 
 /// Application state holding a router and a context factory.
-pub struct FnrpcState<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static = fnrpc::router::InnerService<Ctx>> {
-    router: Arc<RpcRouter<Ctx, S>>,
+pub struct FnrpcState<Ctx: Send + Sync + 'static> {
+    router: Arc<RpcRouter<Ctx>>,
     ctx_factory: Arc<dyn Fn(&HeaderMap) -> Ctx + Send + Sync>,
 }
 
-impl<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync + 'static> FnrpcState<Ctx, S> {
+impl<Ctx: Send + Sync + 'static> FnrpcState<Ctx> {
     /// Create a new state with a router and a context factory.
     pub fn new(
-        router: RpcRouter<Ctx, S>,
+        router: RpcRouter<Ctx>,
         ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static,
     ) -> Self {
         Self {
@@ -66,15 +65,12 @@ where
     let ctx = (state.ctx_factory)(&headers);
 
     let input: Vec<u8> = if method == Method::GET {
-        // GET: use query string as input bytes (handler parses `input` param)
         raw_query.unwrap_or_default().into_bytes()
     } else {
-        // POST: read body
-        use axum::body::HttpBody;
         let mut buf = Vec::new();
         let mut body = body;
-        while let Some(chunk) = body.frame().await {
-            match chunk {
+        while let Some(frame) = body.frame().await {
+            match frame {
                 Ok(frame) => if let Ok(data) = frame.into_data() {
                     buf.extend_from_slice(&data)
                 },

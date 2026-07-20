@@ -66,6 +66,7 @@ fnrpc-macros → fnrpc → fnrpc-web
 
 - fnrpc-web single router: zero `Box::pin`, fastest path (845B vs xitca-web 1,048B, axum 2,373B)
 - fnrpc-web multi router: one `Box::pin`, matches xitca-web (1,042B vs 1,048B)
+- fnrpc-web noop_raw: **96B, 2blks** — matches the theoretical minimum (Handler::call directly)
 - fnrpc-xitca-web: xitca-web framework tax (+321B vs fnrpc-web)
 - fnrpc-axum: ≈ axum native (+123B, mostly Path+RawQuery extractors)
 - **fnrpc-web is 2.8× more allocation-efficient than axum**

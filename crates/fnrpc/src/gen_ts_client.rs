@@ -112,8 +112,8 @@ impl specta::Format for NoFmt {
 /// - All specta-exported type definitions for input/output types.
 /// - A `Procedures` type mapping each procedure name to its `{ kind, method, input, output, error }`.
 /// - A `__procedureMeta` const map used at runtime by the TS client for dispatch.
-pub fn generate_ts_client<Ctx: Send + Sync + 'static, S: RpcService<Ctx> + Send + Sync>(
-    router: &RpcRouter<Ctx, S>,
+pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
+    router: &RpcRouter<Ctx>,
     _rpc_url: &str,
 ) -> String {
     // Export all types from the shared registry at once

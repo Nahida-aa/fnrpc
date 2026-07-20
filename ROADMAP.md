@@ -5,6 +5,7 @@
 - [x] **中间件零开销重构** — 去掉 `Arc<dyn ErasedRpcService>`，`RpcRouter` 泛型化，中间件链 monomorphized
 - [x] **`HookLayer` 消除 `input.to_vec()`** — before hook 签名改为 `(&[u8]) -> Result<&[u8], RpcErr>`，不修改 input 时零分配
 - [x] **`fnrpc-web` 多路由支持** — `App::build().rpc().static_dir()`，radix tree 匹配，一次 `Box::pin`
+- [x] **`HandlerSlot` 优化** — 无中间件时存 `Arc<Handler>` 直接调用（96B/2blks），有中间件时走 `ErasedHandler`（128B/2blks）
 - [ ] **`layer_fn` 消除 `Box::pin` 样板** — 当 Rust 稳定 `AsyncFn` trait（`async fn` in traits）后，`layer_fn` 的闭包可以写成 `async |inner, ctx, path, input, is_get, extensions| { ... }`，不需要 `Box::pin(async move { ... })`。跟踪 issue: <https://github.com/rust-lang/rust/issues/29625>
 
 ## Development

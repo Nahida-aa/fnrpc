@@ -18,7 +18,7 @@ pub struct TracingService<Ctx, S> {
 
 impl<Ctx: Send + Sync + 'static, S> RpcService<Ctx> for TracingService<Ctx, S>
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>,
+    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
 {
     type Response = (Cow<'static, [u8]>, bool);
     type Error = RpcErr;

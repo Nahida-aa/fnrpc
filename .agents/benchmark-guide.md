@@ -23,10 +23,11 @@ cargo run -p benches --bin dhat_compare --features dhat-heap -- xitca-web-multi 
 | echo_get | 845B, 6blks | 1,369B, 9blks | 2,496B, 22blks | 1,048B, 8blks | 2,373B, 20blks |
 | echo_get + mw | 845B, 6blks | — | — | 1,048B, 8blks | — |
 | echo_get (multi + static) | 1,042B, 8blks | — | — | 1,048B, 8blks | — |
-| noop_raw | 96B, 2blks | 624B, 5blks | — | 176B, 2blks | — |
+| noop_raw | **96B, 2blks** | 624B, 5blks | — | 176B, 2blks | — |
 
 Key insight:
 - fnrpc-web single router has zero Box::pin (845B) — fastest of all frameworks
+- fnrpc-web noop_raw: **96B/2blks** — matches theoretical minimum (Handler::call directly)
 - fnrpc-web multi router adds one Box::pin at route boundary (1,042B), matching xitca-web
 - fnrpc-xitca-web has xitca-web framework tax (+321B vs fnrpc-web)
 - fnrpc-axum ≈ axum native (+123B), framework tax already high

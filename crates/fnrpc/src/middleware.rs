@@ -54,7 +54,7 @@ pub trait RpcService<Ctx> {
         input: &'a [u8],
         is_get: bool,
         extensions: &'a mut Extensions,
-    ) -> impl Future<Output = Result<Self::Response, Self::Error>> + 'a;
+    ) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send + 'a;
 }
 
 // ── RpcLayer trait ─────────────────────────────────────
@@ -172,7 +172,7 @@ pub struct AsyncFnService<Ctx, S, F> {
 
 impl<Ctx: Send + Sync + 'static, S, F> RpcService<Ctx> for AsyncFnService<Ctx, S, F>
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>,
+    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
     F: for<'a> Fn(
         &'a S,
         &'a Ctx,
@@ -180,7 +180,8 @@ where
         &'a [u8],
         bool,
         &'a mut Extensions,
-    ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>,
+    ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
+        + Send + Sync,
 {
     type Response = (Cow<'static, [u8]>, bool);
     type Error = RpcErr;

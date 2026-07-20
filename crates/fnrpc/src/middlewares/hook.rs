@@ -92,7 +92,7 @@ pub struct HookService<Ctx, S> {
 
 impl<Ctx: Send + Sync + 'static, S> RpcService<Ctx> for HookService<Ctx, S>
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>,
+    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
 {
     type Response = (Cow<'static, [u8]>, bool);
     type Error = RpcErr;
