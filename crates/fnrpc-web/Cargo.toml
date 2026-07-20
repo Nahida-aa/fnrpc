@@ -6,7 +6,7 @@ description = "Standalone fnrpc HTTP server on xitca-http + xitca-server — zer
 license = "MIT"
 
 [dependencies]
-fnrpc = { version = "0.2.0", path = "../fnrpc" }
+fnrpc.workspace = true
 xitca-server = { version = "0.7", features = ["io-uring"] }
 xitca-http = { version = "0.9", features = ["http1", "io-uring"] }
 xitca-service = "0.3"
