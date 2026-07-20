@@ -112,7 +112,19 @@ where
 
     // Check if this path is a subscribe handler
     if state.router.has_subscribe(&path) {
-        match state.router.dispatch_subscribe(&app_ctx, &path, &input) {
+        // For subscribe, re-parse input from query string on GET to extract
+        // the URL-decoded "input" parameter, matching dispatch's behavior.
+        let sub_input = if method == Method::GET {
+            std::str::from_utf8(&input).unwrap_or("").split('&').find_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                let key = parts.next()?;
+                let val = parts.next()?;
+                if key == "input" { Some(percent_decode(val)) } else { None }
+            }).unwrap_or_default().into_bytes()
+        } else {
+            input.to_vec()
+        };
+        match state.router.dispatch_subscribe(&app_ctx, &path, &sub_input) {
             Ok(stream) => {
                 let sse_stream = stream.map(|item| {
                     let data = match item {
@@ -173,5 +185,35 @@ where
                     .unwrap())
             }
         }
+    }
+}
+
+/// Minimal percent-decoding for query values.
+fn percent_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        match b {
+            b'+' => result.push(' '),
+            b'%' => {
+                let hi = bytes.next().and_then(|c| hex_val(c));
+                let lo = bytes.next().and_then(|c| hex_val(c));
+                match (hi, lo) {
+                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
+                    _ => result.push('%'),
+                }
+            }
+            _ => result.push(b as char),
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
     }
 }

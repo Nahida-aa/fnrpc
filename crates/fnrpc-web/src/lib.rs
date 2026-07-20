@@ -280,7 +280,14 @@ async fn single_call<Ctx: Send + Sync + 'static>(
 
     if router.has_subscribe(&path) {
         let input: Cow<'_, [u8]> = if req.method() == Method::GET {
-            req.uri().query().unwrap_or("").as_bytes().into()
+            // Extract and URL-decode the "input" query parameter
+            let input_str = req.uri().query().unwrap_or("").split('&').find_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                let key = parts.next()?;
+                let val = parts.next()?;
+                if key == "input" { Some(percent_decode(val)) } else { None }
+            }).unwrap_or_default();
+            input_str.into_bytes().into()
         } else {
             let mut body_buf = Vec::new();
             while let Some(chunk) = req.body_mut().data().await {
@@ -455,7 +462,14 @@ async fn run_single<Ctx: Send + Sync + 'static>(
 
             if router.has_subscribe(&path) {
                 let input: Cow<'_, [u8]> = if req.method() == Method::GET {
-                    req.uri().query().unwrap_or("").as_bytes().into()
+                    // Extract and URL-decode the "input" query parameter
+                    let input_str = req.uri().query().unwrap_or("").split('&').find_map(|pair| {
+                        let mut parts = pair.splitn(2, '=');
+                        let key = parts.next()?;
+                        let val = parts.next()?;
+                        if key == "input" { Some(percent_decode(val)) } else { None }
+                    }).unwrap_or_default();
+                    input_str.into_bytes().into()
                 } else {
                     let mut body_buf = Vec::new();
                     while let Some(chunk) = req.body_mut().data().await {
