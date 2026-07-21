@@ -39,6 +39,8 @@
 
 use std::borrow::Cow;
 use std::convert::Infallible;
+#[cfg(feature = "file")]
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -46,15 +48,15 @@ use fnrpc::error::RpcErr;
 use fnrpc::router::ErasedHandler;
 use fnrpc::router::RpcRouter;
 use futures::StreamExt;
+use xitca_http::HttpServiceBuilder;
 use xitca_http::body::{BodyExt, Frame, RequestBody, ResponseBody, StreamBody};
 use xitca_http::bytes::Bytes;
 use xitca_http::http::Extensions;
-use xitca_http::http::header::{HeaderValue, CONTENT_TYPE};
+use xitca_http::http::header::{CONTENT_TYPE, HeaderValue};
 use xitca_http::http::{HeaderMap, Method, Request, RequestExt, Response, StatusCode};
-use xitca_http::HttpServiceBuilder;
 use xitca_router::Router;
 use xitca_server::Builder;
-use xitca_service::{fn_service, ServiceExt};
+use xitca_service::{ServiceExt, fn_service};
 
 // ── URL percent-decoding ────────────────────────────────
 
@@ -103,7 +105,10 @@ pub struct App<Ctx: Send + Sync + 'static> {
 
 impl<Ctx: Send + Sync + 'static> App<Ctx> {
     /// Create a single-router app.
-    pub fn new(router: RpcRouter<Ctx>, ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static) -> Self {
+    pub fn new(
+        router: RpcRouter<Ctx>,
+        ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static,
+    ) -> Self {
         Self {
             router,
             ctx_factory: Arc::new(ctx_factory),
@@ -123,7 +128,9 @@ impl<Ctx: Send + Sync + 'static> App<Ctx> {
     }
 
     /// Create a multi-router builder.
-    pub fn build(ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static) -> AppBuilder<Ctx> {
+    pub fn build(
+        ctx_factory: impl Fn(&HeaderMap) -> Ctx + Send + Sync + 'static,
+    ) -> AppBuilder<Ctx> {
         AppBuilder {
             ctx_factory: Arc::new(ctx_factory),
             router: Router::new(),
@@ -168,10 +175,12 @@ impl<Ctx: Send + Sync + 'static> AppBuilder<Ctx> {
         let dir = Arc::new(dir.into());
         let prefix_len = path_prefix.trim_end_matches('/').len();
         let handler = StaticDirHandler { dir, prefix_len };
-        self.router.insert(
-            format!("{}/{{*path}}", path_prefix.trim_end_matches('/')),
-            Box::new(handler),
-        ).unwrap();
+        self.router
+            .insert(
+                format!("{}/{{*path}}", path_prefix.trim_end_matches('/')),
+                Box::new(handler),
+            )
+            .unwrap();
         self
     }
 
@@ -230,7 +239,9 @@ impl<Ctx: Send + Sync + 'static> fnrpc::middleware::RpcService<Ctx> for RpcRoute
             path
         };
         let dispatch_path = dispatch_path.strip_prefix('/').unwrap_or(dispatch_path);
-        self.router.dispatch(ctx, dispatch_path, input, is_get).await
+        self.router
+            .dispatch(ctx, dispatch_path, input, is_get)
+            .await
     }
 }
 
@@ -279,14 +290,25 @@ async fn single_call<Ctx: Send + Sync + 'static>(
     if router.has_subscribe(&path) {
         let input: Cow<'_, [u8]> = if req.method() == Method::GET {
             // Extract and URL-decode the "input" query parameter
-            let input_str = req.uri().query().unwrap_or("").split('&').find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                let key = parts.next()?;
-                let val = parts.next()?;
-                if key == "input" { Some(percent_decode(val)) } else { None }
-            }).unwrap_or_default();
+            let input_str = req
+                .uri()
+                .query()
+                .unwrap_or("")
+                .split('&')
+                .find_map(|pair| {
+                    let mut parts = pair.splitn(2, '=');
+                    let key = parts.next()?;
+                    let val = parts.next()?;
+                    if key == "input" {
+                        Some(percent_decode(val))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
             // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-            let val: serde_json::Value = serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
+            let val: serde_json::Value =
+                serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
             let unpacked = fnrpc::serializer::unpack_meta(val);
             serde_json::to_vec(&unpacked).unwrap_or_default().into()
         } else {
@@ -295,7 +317,8 @@ async fn single_call<Ctx: Send + Sync + 'static>(
                 match chunk {
                     Ok(c) => body_buf.extend_from_slice(c.as_ref()),
                     Err(_) => {
-                        let body = serde_json::to_vec(&RpcErr::bad_request("body read error")).unwrap_or_default();
+                        let body = serde_json::to_vec(&RpcErr::bad_request("body read error"))
+                            .unwrap_or_default();
                         return Response::builder()
                             .status(StatusCode::BAD_REQUEST)
                             .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
@@ -307,7 +330,8 @@ async fn single_call<Ctx: Send + Sync + 'static>(
             body_buf.into()
         };
         // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-        let val: serde_json::Value = serde_json::from_slice(&input).unwrap_or(serde_json::Value::Null);
+        let val: serde_json::Value =
+            serde_json::from_slice(&input).unwrap_or(serde_json::Value::Null);
         let unpacked = fnrpc::serializer::unpack_meta(val);
         let input = serde_json::to_vec(&unpacked).unwrap_or_default();
         return build_sse_response(router.dispatch_subscribe(&ctx, &path, &input));
@@ -321,7 +345,8 @@ async fn single_call<Ctx: Send + Sync + 'static>(
             match chunk {
                 Ok(c) => body_buf.extend_from_slice(c.as_ref()),
                 Err(_) => {
-                    let body = serde_json::to_vec(&RpcErr::bad_request("body read error")).unwrap_or_default();
+                    let body = serde_json::to_vec(&RpcErr::bad_request("body read error"))
+                        .unwrap_or_default();
                     return Response::builder()
                         .status(StatusCode::BAD_REQUEST)
                         .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
@@ -354,7 +379,8 @@ async fn multi_call<Ctx: Send + Sync + 'static>(
                 match chunk {
                     Ok(c) => buf.extend_from_slice(c.as_ref()),
                     Err(_) => {
-                        let body = serde_json::to_vec(&RpcErr::bad_request("body read error")).unwrap_or_default();
+                        let body = serde_json::to_vec(&RpcErr::bad_request("body read error"))
+                            .unwrap_or_default();
                         return Response::builder()
                             .status(StatusCode::BAD_REQUEST)
                             .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
@@ -368,7 +394,10 @@ async fn multi_call<Ctx: Send + Sync + 'static>(
 
         let is_get = req.method() == Method::GET;
         let mut extensions = Extensions::new();
-        let result = m.value.call(ctx, &path, &input, is_get, &mut extensions).await;
+        let result = m
+            .value
+            .call(ctx, &path, &input, is_get, &mut extensions)
+            .await;
         build_response(result)
     } else {
         Response::builder()
@@ -383,7 +412,8 @@ fn build_response(result: Result<(Cow<'static, [u8]>, bool), RpcErr>) -> Respons
         Ok((bytes, is_json)) => {
             let mut builder = Response::builder().status(StatusCode::OK);
             if is_json {
-                builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                builder =
+                    builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
             }
             let resp_body = match &bytes {
                 Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
@@ -468,12 +498,22 @@ async fn run_single<Ctx: Send + Sync + 'static>(
             if router.has_subscribe(&path) {
                 let raw_input: Cow<'_, [u8]> = if req.method() == Method::GET {
                     // Extract and URL-decode the "input" query parameter
-                    let input_str = req.uri().query().unwrap_or("").split('&').find_map(|pair| {
-                        let mut parts = pair.splitn(2, '=');
-                        let key = parts.next()?;
-                        let val = parts.next()?;
-                        if key == "input" { Some(percent_decode(val)) } else { None }
-                    }).unwrap_or_default();
+                    let input_str = req
+                        .uri()
+                        .query()
+                        .unwrap_or("")
+                        .split('&')
+                        .find_map(|pair| {
+                            let mut parts = pair.splitn(2, '=');
+                            let key = parts.next()?;
+                            let val = parts.next()?;
+                            if key == "input" {
+                                Some(percent_decode(val))
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
                     input_str.into_bytes().into()
                 } else {
                     let mut body_buf = Vec::new();
@@ -481,10 +521,15 @@ async fn run_single<Ctx: Send + Sync + 'static>(
                         match chunk {
                             Ok(c) => body_buf.extend_from_slice(c.as_ref()),
                             Err(_) => {
-                                let body = serde_json::to_vec(&RpcErr::bad_request("body read error")).unwrap_or_default();
+                                let body =
+                                    serde_json::to_vec(&RpcErr::bad_request("body read error"))
+                                        .unwrap_or_default();
                                 return Ok(Response::builder()
                                     .status(StatusCode::BAD_REQUEST)
-                                    .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                                    .header(
+                                        CONTENT_TYPE,
+                                        HeaderValue::from_static("application/json"),
+                                    )
                                     .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
                                     .unwrap());
                             }
@@ -493,10 +538,13 @@ async fn run_single<Ctx: Send + Sync + 'static>(
                     body_buf.into()
                 };
                 // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-                let val: serde_json::Value = serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
+                let val: serde_json::Value =
+                    serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
                 let unpacked = fnrpc::serializer::unpack_meta(val);
                 let input = serde_json::to_vec(&unpacked).unwrap_or_default();
-                return Ok::<_, Infallible>(build_sse_response(router.dispatch_subscribe(&ctx, &path, &input)));
+                return Ok::<_, Infallible>(build_sse_response(
+                    router.dispatch_subscribe(&ctx, &path, &input),
+                ));
             }
 
             let input: Cow<'_, [u8]> = if req.method() == Method::GET {
@@ -507,7 +555,8 @@ async fn run_single<Ctx: Send + Sync + 'static>(
                     match chunk {
                         Ok(c) => body_buf.extend_from_slice(c.as_ref()),
                         Err(_) => {
-                            let body = serde_json::to_vec(&RpcErr::bad_request("body read error")).unwrap_or_default();
+                            let body = serde_json::to_vec(&RpcErr::bad_request("body read error"))
+                                .unwrap_or_default();
                             return Ok(Response::builder()
                                 .status(StatusCode::BAD_REQUEST)
                                 .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
