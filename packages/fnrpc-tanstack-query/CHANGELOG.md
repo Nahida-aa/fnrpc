@@ -1,5 +1,12 @@
 # @fnrpc/tanstack-query
 
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [[`f299612`](https://github.com/Nahida-aa/fnrpc/commit/f299612c3403b97b0137206180dc9e3890bfc45d)]:
+  - @fnrpc/client@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes
