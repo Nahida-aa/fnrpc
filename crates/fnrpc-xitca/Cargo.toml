@@ -8,7 +8,7 @@ license = "MIT"
 [dependencies]
 fnrpc.workspace = true
 xitca-web = { version = "0.8", features = ["json", "params", "urlencoded"] }
-serde_json = "1"
+serde_json.workspace = true
 futures = "0.3"
 url = "2"
 

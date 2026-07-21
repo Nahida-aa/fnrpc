@@ -30,12 +30,12 @@ use std::sync::Arc;
 
 use fnrpc::router::RpcRouter;
 use futures::StreamExt;
+use xitca_web::WebContext;
 use xitca_web::body::{BodyExt, Frame, ResponseBody, StreamBody};
 use xitca_web::bytes::Bytes;
-use xitca_web::http::header::{HeaderValue, CONTENT_TYPE};
 use xitca_web::http::HeaderMap;
+use xitca_web::http::header::{CONTENT_TYPE, HeaderValue};
 use xitca_web::http::{Method, StatusCode, WebResponse};
-use xitca_web::WebContext;
 
 /// Application state holding a router and a context factory.
 ///
@@ -114,25 +114,36 @@ where
         // For subscribe, re-parse input from query string on GET to extract
         // the URL-decoded "input" parameter, matching dispatch's behavior.
         let raw_input = if method == Method::GET {
-            std::str::from_utf8(&input).unwrap_or("").split('&').find_map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                let key = parts.next()?;
-                let val = parts.next()?;
-                if key == "input" { Some(percent_decode(val)) } else { None }
-            }).unwrap_or_default().into_bytes()
+            std::str::from_utf8(&input)
+                .unwrap_or("")
+                .split('&')
+                .find_map(|pair| {
+                    let mut parts = pair.splitn(2, '=');
+                    let key = parts.next()?;
+                    let val = parts.next()?;
+                    if key == "input" {
+                        Some(percent_decode(val))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default()
+                .into_bytes()
         } else {
             input.to_vec()
         };
-        // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-        let val: serde_json::Value = serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
-        let unpacked = fnrpc::serializer::unpack_meta(val);
-        let sub_input = serde_json::to_vec(&unpacked).unwrap_or_default();
+        // BigInt fields (sent as strings) are converted to numbers by the
+        // handler using its own schema — no client `meta` envelope needed.
+        let sub_input = raw_input;
         match state.router.dispatch_subscribe(&app_ctx, &path, &sub_input) {
             Ok(stream) => {
                 let sse_stream = stream.map(|item| {
                     let data = match item {
                         Ok(bytes) => format!("data: {}\n\n", String::from_utf8_lossy(&bytes)),
-                        Err(e) => format!("data: {}\n\n", serde_json::to_string(&e).unwrap_or_default()),
+                        Err(e) => format!(
+                            "data: {}\n\n",
+                            serde_json::to_string(&e).unwrap_or_default()
+                        ),
                     };
                     Ok::<_, std::convert::Infallible>(Frame::Data(Bytes::from(data)))
                 });
@@ -165,7 +176,8 @@ where
             Ok((bytes, is_json)) => {
                 let mut builder = xitca_web::http::Response::builder().status(StatusCode::OK);
                 if is_json {
-                    builder = builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                    builder =
+                        builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                 }
                 let resp_body = match &bytes {
                     Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),

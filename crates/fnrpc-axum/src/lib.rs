@@ -97,7 +97,11 @@ where
                     let mut parts = pair.splitn(2, '=');
                     let key = parts.next()?;
                     let val = parts.next()?;
-                    if key == "input" { Some(urlencoding_decode(val)) } else { None }
+                    if key == "input" {
+                        Some(urlencoding_decode(val))
+                    } else {
+                        None
+                    }
                 })
                 .unwrap_or_default()
                 .into_bytes()
@@ -106,9 +110,11 @@ where
             let mut body = body;
             while let Some(frame) = body.frame().await {
                 match frame {
-                    Ok(frame) => if let Ok(data) = frame.into_data() {
-                        buf.extend_from_slice(&data)
-                    },
+                    Ok(frame) => {
+                        if let Ok(data) = frame.into_data() {
+                            buf.extend_from_slice(&data)
+                        }
+                    }
                     Err(_) => {
                         let err = RpcErr::bad_request("body read error");
                         return (StatusCode::BAD_REQUEST, axum::Json(err)).into_response();
@@ -118,17 +124,19 @@ where
             buf
         };
 
-        // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-        let val: serde_json::Value = serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
-        let unpacked = fnrpc::serializer::unpack_meta(val);
-        let input = serde_json::to_vec(&unpacked).unwrap_or_default();
+        // BigInt fields (sent as strings) are converted to numbers by the
+        // handler using its own schema — no client `meta` envelope needed.
+        let input = raw_input;
 
         match state.router.dispatch_subscribe(&ctx, &path, &input) {
             Ok(stream) => {
                 let sse_stream = stream.map(|item| {
                     let data = match item {
                         Ok(bytes) => format!("data: {}\n\n", String::from_utf8_lossy(&bytes)),
-                        Err(e) => format!("data: {}\n\n", serde_json::to_string(&e).unwrap_or_default()),
+                        Err(e) => format!(
+                            "data: {}\n\n",
+                            serde_json::to_string(&e).unwrap_or_default()
+                        ),
                     };
                     Ok::<_, std::convert::Infallible>(data)
                 });
@@ -156,9 +164,11 @@ where
             let mut body = body;
             while let Some(frame) = body.frame().await {
                 match frame {
-                    Ok(frame) => if let Ok(data) = frame.into_data() {
-                        buf.extend_from_slice(&data)
-                    },
+                    Ok(frame) => {
+                        if let Ok(data) = frame.into_data() {
+                            buf.extend_from_slice(&data)
+                        }
+                    }
                     Err(_) => {
                         let err = RpcErr::bad_request("body read error");
                         return (StatusCode::BAD_REQUEST, axum::Json(err)).into_response();
@@ -177,7 +187,9 @@ where
                 if is_json {
                     builder = builder.header("content-type", "application/json");
                 }
-                builder.body(axum::body::Body::from(bytes.into_owned())).unwrap()
+                builder
+                    .body(axum::body::Body::from(bytes.into_owned()))
+                    .unwrap()
             }
             Err(e) => {
                 let status = match e.code.as_str() {

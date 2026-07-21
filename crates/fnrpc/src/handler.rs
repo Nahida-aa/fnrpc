@@ -49,7 +49,10 @@ pub trait RpcFn<Ctx>: Send + Sync {
     /// HTTP method: "GET" (default, input from query string) or "POST" (input from body).
     const METHOD: &'static str = "GET";
 
-    fn exec(ctx: &Ctx, input: Self::Input) -> Pin<Box<dyn Future<Output = Result<Self::Output, RpcErr>> + Send + '_>>;
+    fn exec(
+        ctx: &Ctx,
+        input: Self::Input,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, RpcErr>> + Send + '_>>;
 }
 
 // ── RpcFnExt ──────────────────────────────────────────────
@@ -94,7 +97,11 @@ impl<Ctx: Send + Sync + 'static, T: RpcFn<Ctx>> RpcFnExt<Ctx> for T {
             let input = if is_unit_type::<T::Input>() {
                 unsafe { std::mem::zeroed() }
             } else {
-                JsonCodec::decode::<T::Input>(input)?
+                let value = serde_json::from_slice(input)
+                    .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?;
+                let value = crate::serializer::decode_bigint_by_schema::<T::Input>(value);
+                serde_json::from_value(value)
+                    .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
             };
             let output = T::exec(ctx, input).await?;
             Ok(JsonCodec::encode(&output).map(Cow::Owned).unwrap())
@@ -110,6 +117,7 @@ impl<Ctx: Send + Sync + 'static, T: RpcFn<Ctx>> RpcFnExt<Ctx> for T {
             let input = if is_unit_type::<T::Input>() {
                 unsafe { std::mem::zeroed() }
             } else {
+                let input = crate::serializer::decode_bigint_by_schema::<T::Input>(input);
                 serde_json::from_value(input)
                     .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
             };
@@ -128,6 +136,7 @@ impl<Ctx: Send + Sync + 'static, T: RpcFn<Ctx>> RpcFnExt<Ctx> for T {
             let input = if is_unit_type::<T::Input>() {
                 unsafe { std::mem::zeroed() }
             } else {
+                let input = crate::serializer::decode_bigint_by_schema::<T::Input>(input);
                 serde_json::from_value(input)
                     .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
             };
@@ -154,7 +163,10 @@ fn is_unit_type<T: 'static>() -> bool {
 /// Raw handlers are not included in codegen.
 pub trait RawRpcFn<Ctx>: Send + Sync {
     const KEY: &'static str;
-    fn exec<'a>(ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
+    fn exec<'a>(
+        ctx: &'a Ctx,
+        input: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
 }
 
 // ── Subscription traits ────────────────────────────────────
@@ -194,7 +206,10 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
         ctx: &Ctx,
         input: Value,
     ) -> Pin<Box<dyn Stream<Item = Result<Value, RpcErr>> + Send + 'static>> {
-        let input = match serde_json::from_value(input) {
+        let input = match serde_json::from_value(crate::serializer::decode_bigint_by_schema::<
+            F::Input,
+        >(input))
+        {
             Ok(v) => v,
             Err(e) => {
                 return Box::pin(futures::stream::once(futures::future::ready(Err(
@@ -203,10 +218,12 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
             }
         };
         let stream = F::exec(ctx, input);
-        Box::pin(stream.map(|item| match item {
-            Ok(v) => serde_json::to_value(v)
-                .map_err(|e| RpcErr::internal(format!("serialize output: {e}"))),
-            Err(e) => Err(e),
+        Box::pin(stream.map(|item| {
+            match item {
+                Ok(v) => serde_json::to_value(v)
+                    .map_err(|e| RpcErr::internal(format!("serialize output: {e}"))),
+                Err(e) => Err(e),
+            }
         }))
     }
 
@@ -215,9 +232,24 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
         ctx: &Ctx,
         input: &[u8],
     ) -> Pin<Box<dyn Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>> {
-        let input = match JsonCodec::decode::<F::Input>(input) {
+        let value = match serde_json::from_slice(input) {
             Ok(v) => v,
-            Err(e) => return Box::pin(futures::stream::once(futures::future::ready(Err(e)))),
+            Err(e) => {
+                return Box::pin(futures::stream::once(futures::future::ready(Err(
+                    RpcErr::bad_request(format!("deserialize input: {e}")),
+                ))));
+            }
+        };
+        let input = match serde_json::from_value(crate::serializer::decode_bigint_by_schema::<
+            F::Input,
+        >(value))
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return Box::pin(futures::stream::once(futures::future::ready(Err(
+                    RpcErr::bad_request(format!("deserialize input: {e}")),
+                ))));
+            }
         };
         let stream = F::exec(ctx, input);
         Box::pin(stream.map(|item| match item {
@@ -247,12 +279,20 @@ pub trait ErasedSubscribeHandler<Ctx>: Send + Sync {
 /// Object-safe handler trait that returns futures borrowing `&self`.
 /// Replaces `Arc<dyn Fn>` to avoid atomic reference counting overhead.
 pub trait HandlerFn<Ctx>: Send + Sync {
-    fn call<'a>(&'a self, ctx: &'a Ctx, input: Value) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
+    fn call<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: Value,
+    ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
 }
 
 /// Object-safe bytes handler trait.
 pub trait BytesHandlerFn<Ctx>: Send + Sync {
-    fn call<'a>(&'a self, ctx: &'a Ctx, input: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
+    fn call<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        input: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
 }
 
 // ── Handler enum (unified dispatch) ──────────────────────
@@ -271,24 +311,32 @@ pub enum Handler<Ctx: Send + Sync + 'static> {
 impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
     /// Call the handler. Returns (bytes, is_json) where is_json indicates
     /// whether the response should have Content-Type: application/json.
-    pub async fn call(&self, ctx: &Ctx, input: &[u8], is_get: bool) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    pub async fn call(
+        &self,
+        ctx: &Ctx,
+        input: &[u8],
+        is_get: bool,
+    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
         match self {
             Handler::Rpc { f, skip_query } => {
                 let input_val: Value = if *skip_query {
                     Value::Null
                 } else if is_get {
                     let query_str = std::str::from_utf8(input).unwrap_or("");
-                    query_str.split('&').find_map(|pair| {
-                        let mut parts = pair.splitn(2, '=');
-                        let key = parts.next()?;
-                        let val = parts.next()?;
-                        if key == "input" {
-                            let decoded = percent_decode(val);
-                            serde_json::from_str(&decoded).ok()
-                        } else {
-                            None
-                        }
-                    }).unwrap_or(Value::Null)
+                    query_str
+                        .split('&')
+                        .find_map(|pair| {
+                            let mut parts = pair.splitn(2, '=');
+                            let key = parts.next()?;
+                            let val = parts.next()?;
+                            if key == "input" {
+                                let decoded = percent_decode(val);
+                                serde_json::from_str(&decoded).ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(Value::Null)
                 } else {
                     serde_json::from_slice(input).unwrap_or(Value::Null)
                 };

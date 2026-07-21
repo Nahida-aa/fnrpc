@@ -5,7 +5,8 @@ members = [
     "examples/tauri-solid-tanstack/src-tauri",
     "examples/with-axum",
     "examples/with-react-query/server",
-    "examples/with-xitca"
+    "examples/with-xitca",
+    "e2e/fnrpc-axum/server"
 ]
 default-members = ["crates/*"]
 resolver = "3"
@@ -21,6 +22,10 @@ categories = ["asynchronous", "network-programming"]
 [workspace.dependencies]
 async-trait = "0.1"
 http = "1"
+# `arbitrary_precision` lets `serde_json::Value` represent i128/u128 (full
+# u64/i64/i128/u128 range) so bigint fields decoded from their string wire form
+# survive round-trips without precision loss.
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 serde = { version = "1", features = ["derive"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
 specta-typescript = { version = "0.0.12", features = ["serde"] }

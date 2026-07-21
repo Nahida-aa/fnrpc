@@ -1,5 +1,5 @@
 import type { ProcedureKind } from "./types"
-import { serialize, flattenForRust, safeStringify } from "./serializer"
+import { serialize, toRustJson, safeStringify } from "./serializer"
 import { RpcError } from "./error"
 import { connectSSE } from "./sse"
 
@@ -42,8 +42,7 @@ export const fetchTransport = (config: { url: string }) => {
 
     // query / mutate
     const isQuery = kind === "query"
-    const serialized = serialize(input)
-    const body = safeStringify(flattenForRust(serialized))
+    const body = safeStringify(toRustJson(input))
 
     if (isQuery) {
       const params = new URLSearchParams({ input: body })
@@ -91,15 +90,15 @@ function createSSEIterable(
   signal?: AbortSignal,
   method: "GET" | "POST" = "GET",
 ): Promise<AsyncIterable<unknown>> {
-  const serialized = serialize(input)
+  const rustJson = toRustJson(input)
   let url: string
   let body: string | undefined
 
   if (method === "POST") {
-    body = safeStringify(flattenForRust(serialized))
+    body = safeStringify(rustJson)
     url = `${baseUrl}/${path}`
   } else {
-    const params = new URLSearchParams({ input: safeStringify(serialized) })
+    const params = new URLSearchParams({ input: safeStringify(rustJson) })
     url = `${baseUrl}/${path}?${params}`
   }
 

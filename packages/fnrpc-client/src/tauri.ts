@@ -1,5 +1,5 @@
 import type { ProcedureKind } from "./types";
-import { serialize, flattenForRust } from "./serializer";
+import { serialize, toRustJson } from "./serializer";
 import { RpcError } from "./error";
 
 /**
@@ -42,7 +42,6 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
   ): Promise<unknown> => {
     if (kind === "subscribe") {
       return getCore().then(async (mod) => {
-        const serialized = serialize(input);
         const channel = new mod.Channel<string>();
 
         let done = false;
@@ -111,7 +110,7 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
 
         await mod.invoke("__fnrpc_rpc_sub", {
           path,
-          input: serialized,
+          input: toRustJson(input),
           channel,
         });
 
@@ -124,7 +123,7 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
       .then((mod) =>
         mod.invoke("__fnrpc_rpc_fn", {
           path,
-          input: flattenForRust(serialize(input)) ?? null,
+          input: toRustJson(input),
         }),
       )
       .catch((err: unknown) => {

@@ -1,0 +1,9 @@
+[package]
+name = "fnrpc-client"
+version.workspace = true
+edition.workspace = true
+description = "Rust client-side BigInt envelope codec for fnrpc"
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true

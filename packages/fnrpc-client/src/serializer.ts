@@ -104,53 +104,31 @@ export function deserialize(input: Serialized): unknown {
   return result;
 }
 
-// ── Flatten meta into plain JSON for Rust (no meta support) ──
-// Converts BIGINT string values back to numbers for serde_json compat.
+// ── Serialize for the Rust backend (no precision loss) ──
 
 /**
- * Flatten a `Serialized` value for Rust backends that do not support
- * the meta envelope protocol.
+ * Serialize a value for the fnrpc Rust backend without precision loss.
  *
- * BigInt strings are converted to JSON numbers (precision loss > 2^53,
- * acceptable for `serde_json` deserialisation into u64/i64).
+ * BigInt values are kept as JSON strings (the server converts them back to
+ * numbers using its own schema via `fnrpc::serializer::decode_bigint_by_schema`),
+ * and the `meta` envelope is dropped — the server does not need it.
+ *
+ * Unlike the old `flattenForRust` (which narrowed BigInts to JS `number` and
+ * lost precision above 2^53), this preserves the full u64/i64 range.
+ */
+export function toRustJson(val: unknown): unknown {
+  return serialize(val).json;
+}
+
+/**
+ * @deprecated Use {@link toRustJson} instead.
+ *
+ * Historically flattened BigInts into JS `number`s (precision loss above 2^53).
+ * It now returns the same lossless, string-encoded JSON as {@link toRustJson}
+ * so existing callers keep working without precision loss.
  */
 export function flattenForRust(serialized: Serialized): unknown {
-  const { json, meta } = serialized;
-  if (!meta || meta.length === 0) return json;
-
-  const result = structuredClone(json);
-
-  for (const item of meta) {
-    const [typeId, ...segments] = item;
-
-    if (segments.length === 0) {
-      switch (typeId) {
-        case BIGINT:
-          return Number(result as string);
-      }
-      continue;
-    }
-
-    let current: any = result;
-
-    for (let i = 0; i < segments.length - 1; i++) {
-      if (current == null) break;
-      current = current[segments[i]];
-    }
-
-    if (current == null) continue;
-
-    const lastSeg = segments[segments.length - 1];
-    const raw = current[lastSeg];
-
-    switch (typeId) {
-      case BIGINT:
-        current[lastSeg] = Number(raw as string);
-        break;
-    }
-  }
-
-  return result;
+  return serialized.json;
 }
 
 // ── safeStringify (for places that need a direct JSON string) ──

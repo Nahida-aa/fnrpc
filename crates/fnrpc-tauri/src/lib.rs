@@ -30,7 +30,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use fnrpc::router::RpcRouter;
-use fnrpc::serializer::unpack_meta;
 use futures::StreamExt;
 use serde_json::Value;
 use tauri::ipc::Channel;
@@ -58,7 +57,10 @@ impl<Ctx: Send + Sync + 'static> FnrpcTauriState<Ctx> {
     /// application context (e.g., database connection, auth info).
     /// Unlike the HTTP transport crates, the factory takes no arguments
     /// because Tauri IPC does not carry HTTP headers.
-    pub fn new(router: RpcRouter<Ctx>, ctx_factory: impl Fn() -> Ctx + Send + Sync + 'static) -> Self {
+    pub fn new(
+        router: RpcRouter<Ctx>,
+        ctx_factory: impl Fn() -> Ctx + Send + Sync + 'static,
+    ) -> Self {
         Self {
             router: Arc::new(router),
             ctx_factory: Arc::new(ctx_factory),
@@ -113,39 +115,33 @@ static ACTIVE_SUBS: LazyLock<Mutex<HashMap<u32, CancellationToken>>> =
 /// ```
 #[macro_export]
 macro_rules! generate_handler {
-    ($ctx_ty:ty) => {
-        {
-            #[tauri::command]
-            async fn __fnrpc_rpc_fn(
-                state: tauri::State<'_, $crate::FnrpcTauriState<$ctx_ty>>,
-                path: String,
-                input: serde_json::Value,
-            ) -> Result<serde_json::Value, String> {
-                $crate::rpc_fn_impl(&state, &path, input).await
-            }
-
-            #[tauri::command]
-            async fn __fnrpc_rpc_sub(
-                state: tauri::State<'_, $crate::FnrpcTauriState<$ctx_ty>>,
-                path: String,
-                input: serde_json::Value,
-                channel: tauri::ipc::Channel<String>,
-            ) -> Result<(), String> {
-                $crate::rpc_sub_impl(&state, &path, input, channel).await
-            }
-
-            #[tauri::command]
-            async fn __fnrpc_rpc_cancel_sub(channel_id: u32) -> Result<(), String> {
-                $crate::rpc_cancel_sub_impl(channel_id).await
-            }
-
-            tauri::generate_handler![
-                __fnrpc_rpc_fn,
-                __fnrpc_rpc_sub,
-                __fnrpc_rpc_cancel_sub,
-            ]
+    ($ctx_ty:ty) => {{
+        #[tauri::command]
+        async fn __fnrpc_rpc_fn(
+            state: tauri::State<'_, $crate::FnrpcTauriState<$ctx_ty>>,
+            path: String,
+            input: serde_json::Value,
+        ) -> Result<serde_json::Value, String> {
+            $crate::rpc_fn_impl(&state, &path, input).await
         }
-    };
+
+        #[tauri::command]
+        async fn __fnrpc_rpc_sub(
+            state: tauri::State<'_, $crate::FnrpcTauriState<$ctx_ty>>,
+            path: String,
+            input: serde_json::Value,
+            channel: tauri::ipc::Channel<String>,
+        ) -> Result<(), String> {
+            $crate::rpc_sub_impl(&state, &path, input, channel).await
+        }
+
+        #[tauri::command]
+        async fn __fnrpc_rpc_cancel_sub(channel_id: u32) -> Result<(), String> {
+            $crate::rpc_cancel_sub_impl(channel_id).await
+        }
+
+        tauri::generate_handler![__fnrpc_rpc_fn, __fnrpc_rpc_sub, __fnrpc_rpc_cancel_sub,]
+    }};
 }
 
 // ── Command implementations ─────────────────────────
@@ -153,17 +149,18 @@ macro_rules! generate_handler {
 /// Internal implementation of the `rpc_fn` command.
 ///
 /// Dispatches a unary (query/mutate) call through the router:
-/// 1. Unpacks the BigInt meta envelope from the client
-/// 2. Serializes the input to JSON bytes
-/// 3. Calls `router.dispatch()` (always POST-style, no query string)
-/// 4. Deserializes the response back to a JSON value
+/// 1. Serializes the input to JSON bytes
+/// 2. Calls `router.dispatch()` (always POST-style, no query string)
+/// 3. Deserializes the response back to a JSON value
+///
+/// BigInt fields (sent as strings) are converted back to numbers by the
+/// handler, which uses its own schema rather than a client `meta` envelope.
 pub async fn rpc_fn_impl<Ctx: Send + Sync + 'static>(
     state: &FnrpcTauriState<Ctx>,
     path: &str,
     input: Value,
 ) -> Result<Value, String> {
     let ctx = (state.ctx_factory)();
-    let input = unpack_meta(input);
     let input_bytes = serde_json::to_vec(&input).map_err(|e| e.to_string())?;
     let (result, _is_json) = state
         .router
@@ -176,12 +173,14 @@ pub async fn rpc_fn_impl<Ctx: Send + Sync + 'static>(
 /// Internal implementation of the `rpc_sub` command.
 ///
 /// Starts a subscription stream:
-/// 1. Unpacks the BigInt meta envelope
-/// 2. Calls `router.dispatch_subscribe()` to get a value stream
-/// 3. Spawns a background task that forwards stream items through the
+/// 1. Calls `router.dispatch_subscribe()` to get a value stream
+/// 2. Spawns a background task that forwards stream items through the
 ///    Tauri [`Channel`]
-/// 4. Registers a [`CancellationToken`] so the subscription can be
+/// 3. Registers a [`CancellationToken`] so the subscription can be
 ///    cancelled via [`rpc_cancel_sub_impl`]
+///
+/// BigInt fields (sent as strings) are converted back to numbers by the
+/// handler, which uses its own schema rather than a client `meta` envelope.
 ///
 /// The background task stops when:
 /// - The stream ends naturally
@@ -194,7 +193,6 @@ pub async fn rpc_sub_impl<Ctx: Send + Sync + 'static>(
     channel: Channel<String>,
 ) -> Result<(), String> {
     let ctx = (state.ctx_factory)();
-    let input = unpack_meta(input);
     let input_bytes = serde_json::to_vec(&input).map_err(|e| e.to_string())?;
     let mut stream = state
         .router
@@ -202,7 +200,10 @@ pub async fn rpc_sub_impl<Ctx: Send + Sync + 'static>(
         .map_err(|e| serde_json::to_string(&e).unwrap())?;
 
     let cancel = CancellationToken::new();
-    ACTIVE_SUBS.lock().unwrap().insert(channel.id(), cancel.clone());
+    ACTIVE_SUBS
+        .lock()
+        .unwrap()
+        .insert(channel.id(), cancel.clone());
 
     tauri::async_runtime::spawn(async move {
         loop {

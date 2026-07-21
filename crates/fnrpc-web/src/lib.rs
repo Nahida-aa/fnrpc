@@ -306,11 +306,9 @@ async fn single_call<Ctx: Send + Sync + 'static>(
                     }
                 })
                 .unwrap_or_default();
-            // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-            let val: serde_json::Value =
-                serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
-            let unpacked = fnrpc::serializer::unpack_meta(val);
-            serde_json::to_vec(&unpacked).unwrap_or_default().into()
+            // BigInt fields (sent as strings) are converted to numbers by the
+            // handler using its own schema — no client `meta` envelope needed.
+            input_str.into_bytes().into()
         } else {
             let mut body_buf = Vec::new();
             while let Some(chunk) = req.body_mut().data().await {
@@ -329,11 +327,8 @@ async fn single_call<Ctx: Send + Sync + 'static>(
             }
             body_buf.into()
         };
-        // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-        let val: serde_json::Value =
-            serde_json::from_slice(&input).unwrap_or(serde_json::Value::Null);
-        let unpacked = fnrpc::serializer::unpack_meta(val);
-        let input = serde_json::to_vec(&unpacked).unwrap_or_default();
+        // BigInt fields (sent as strings) are converted to numbers by the
+        // handler using its own schema — no client `meta` envelope needed.
         return build_sse_response(router.dispatch_subscribe(&ctx, &path, &input));
     }
 
@@ -537,13 +532,10 @@ async fn run_single<Ctx: Send + Sync + 'static>(
                     }
                     body_buf.into()
                 };
-                // Unpack meta envelope (BigInt → number, etc.) and re-serialize
-                let val: serde_json::Value =
-                    serde_json::from_slice(&raw_input).unwrap_or(serde_json::Value::Null);
-                let unpacked = fnrpc::serializer::unpack_meta(val);
-                let input = serde_json::to_vec(&unpacked).unwrap_or_default();
+                // BigInt fields (sent as strings) are converted to numbers by the
+                // handler using its own schema — no client `meta` envelope needed.
                 return Ok::<_, Infallible>(build_sse_response(
-                    router.dispatch_subscribe(&ctx, &path, &input),
+                    router.dispatch_subscribe(&ctx, &path, &raw_input),
                 ));
             }
 

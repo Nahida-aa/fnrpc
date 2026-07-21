@@ -16,8 +16,8 @@ use specta::Type;
 use xitca_router::Router;
 
 use crate::error::RpcErr;
-use crate::handler::{BytesHandlerFn, Handler, HandlerFn, RpcFn, RpcFnExt, TsTypeInfo};
 use crate::gen_ts_client;
+use crate::handler::{BytesHandlerFn, Handler, HandlerFn, RpcFn, RpcFnExt, TsTypeInfo};
 use crate::middleware::RpcLayer;
 
 /// Metadata for a single procedure, used by TypeScript codegen.
@@ -49,7 +49,9 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
 impl<Ctx: Send + Sync + 'static, T> ErasedHandler<Ctx> for T
 where
     T: crate::middleware::RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>
-        + Send + Sync + 'static,
+        + Send
+        + Sync
+        + 'static,
 {
     fn call<'a>(
         &'a self,
@@ -126,7 +128,10 @@ pub struct RpcRouter<Ctx: Send + Sync + 'static> {
     /// Frozen radix tree.
     handler_router: Arc<Router<HandlerSlot<Ctx>>>,
     /// Subscribe handlers, keyed by path.
-    subscribe_handlers: Vec<(&'static str, Arc<dyn crate::handler::ErasedSubscribeHandler<Ctx>>)>,
+    subscribe_handlers: Vec<(
+        &'static str,
+        Arc<dyn crate::handler::ErasedSubscribeHandler<Ctx>>,
+    )>,
     /// Shared specta type registry for TypeScript codegen.
     pub(crate) types: specta::Types,
 }
@@ -146,18 +151,24 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     ///
     /// If no middleware was applied, calls the handler directly — zero `Box::pin`.
     /// With middleware, one `Box::pin` at the dispatch boundary.
-    pub async fn dispatch(&self, ctx: &Ctx, path: &str, input: &[u8], is_get: bool) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    pub async fn dispatch(
+        &self,
+        ctx: &Ctx,
+        path: &str,
+        input: &[u8],
+        is_get: bool,
+    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
         let slot = match self.handler_router.at(path).ok() {
             Some(m) => m.value,
             None => return Err(RpcErr::not_found(format!("unknown path: {path}"))),
         };
         match slot {
-            HandlerSlot::Raw(handler) => {
-                handler.call(ctx, input, is_get).await
-            }
+            HandlerSlot::Raw(handler) => handler.call(ctx, input, is_get).await,
             HandlerSlot::Erased(handler) => {
                 let mut extensions = Extensions::new();
-                handler.call(ctx, path, input, is_get, &mut extensions).await
+                handler
+                    .call(ctx, path, input, is_get, &mut extensions)
+                    .await
             }
         }
     }
@@ -223,7 +234,11 @@ impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx> for RpcRoute
         _extensions: &mut Extensions,
     ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
         // Use the last path segment as dispatch key (e.g. "/api/greet" → "greet")
-        let dispatch_path = path.trim_start_matches('/').split('/').last().unwrap_or(path);
+        let dispatch_path = path
+            .trim_start_matches('/')
+            .split('/')
+            .last()
+            .unwrap_or(path);
         // Direct handler lookup — same as dispatch() but avoids the extra function call
         let slot = match self.handler_router.at(dispatch_path).ok() {
             Some(m) => m.value,
@@ -263,7 +278,9 @@ impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx> for RouterIn
         match self.router.handler_router.at(lookup_path).ok() {
             Some(m) => match m.value {
                 HandlerSlot::Raw(handler) => handler.call(ctx, input, is_get).await,
-                HandlerSlot::Erased(handler) => handler.call(ctx, path, input, is_get, extensions).await,
+                HandlerSlot::Erased(handler) => {
+                    handler.call(ctx, path, input, is_get, extensions).await
+                }
             },
             None => Err(RpcErr::not_found(format!("unknown path: {path}"))),
         }
@@ -295,9 +312,13 @@ pub struct RpcRouterBuilder<Ctx: Send + Sync + 'static> {
     /// Shared specta type registry for TypeScript codegen.
     types: specta::Types,
     /// Pending middleware layers to apply to each handler.
-    middlewares: Vec<Box<dyn Fn(Box<dyn ErasedHandler<Ctx>>) -> Box<dyn ErasedHandler<Ctx>> + Send + Sync>>,
+    middlewares:
+        Vec<Box<dyn Fn(Box<dyn ErasedHandler<Ctx>>) -> Box<dyn ErasedHandler<Ctx>> + Send + Sync>>,
     /// Subscribe handlers.
-    subscribe_handlers: Vec<(&'static str, Arc<dyn crate::handler::ErasedSubscribeHandler<Ctx>>)>,
+    subscribe_handlers: Vec<(
+        &'static str,
+        Arc<dyn crate::handler::ErasedSubscribeHandler<Ctx>>,
+    )>,
 }
 
 impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
@@ -365,17 +386,20 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
             ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
                 let input_val: Value = if is_get {
                     let query_str = std::str::from_utf8(input).unwrap_or("");
-                    query_str.split('&').find_map(|pair| {
-                        let mut parts = pair.splitn(2, '=');
-                        let key = parts.next()?;
-                        let val = parts.next()?;
-                        if key == "input" {
-                            let decoded = percent_decode(val);
-                            serde_json::from_str(&decoded).ok()
-                        } else {
-                            None
-                        }
-                    }).unwrap_or(Value::Null)
+                    query_str
+                        .split('&')
+                        .find_map(|pair| {
+                            let mut parts = pair.splitn(2, '=');
+                            let key = parts.next()?;
+                            let val = parts.next()?;
+                            if key == "input" {
+                                let decoded = percent_decode(val);
+                                serde_json::from_str(&decoded).ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(Value::Null)
                 } else {
                     serde_json::from_slice(input).unwrap_or(Value::Null)
                 };
@@ -390,14 +414,19 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 f: Box::new(RpcHandler(handler, PhantomData)),
                 skip_query,
             });
-            self.router.insert(H::KEY.to_string(), HandlerSlot::Raw(raw_handler)).unwrap();
+            self.router
+                .insert(H::KEY.to_string(), HandlerSlot::Raw(raw_handler))
+                .unwrap();
         } else {
             // Wrap with middleware layers and erase
-            let mut handler: Box<dyn ErasedHandler<Ctx>> = Box::new(RpcHandler(handler, PhantomData));
+            let mut handler: Box<dyn ErasedHandler<Ctx>> =
+                Box::new(RpcHandler(handler, PhantomData));
             for mw in self.middlewares.iter().rev() {
                 handler = mw(handler);
             }
-            self.router.insert(H::KEY.to_string(), HandlerSlot::Erased(Arc::from(handler))).unwrap();
+            self.router
+                .insert(H::KEY.to_string(), HandlerSlot::Erased(Arc::from(handler)))
+                .unwrap();
         }
         self
     }
@@ -420,8 +449,8 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 })
             }
         }
-        impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>> crate::middleware::RpcService<Ctx>
-            for BytesHandler<Ctx, F>
+        impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>>
+            crate::middleware::RpcService<Ctx> for BytesHandler<Ctx, F>
         {
             type Response = (Cow<'static, [u8]>, bool);
             type Error = RpcErr;
@@ -443,45 +472,59 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
 
         if self.middlewares.is_empty() {
             let raw_handler = Arc::new(Handler::Bytes(Box::new(bytes_handler)));
-            self.router.insert(F::KEY.to_string(), HandlerSlot::Raw(raw_handler)).unwrap();
+            self.router
+                .insert(F::KEY.to_string(), HandlerSlot::Raw(raw_handler))
+                .unwrap();
         } else {
             let mut handler: Box<dyn ErasedHandler<Ctx>> = Box::new(bytes_handler);
             for mw in self.middlewares.iter().rev() {
                 handler = mw(handler);
             }
-            self.router.insert(F::KEY.to_string(), HandlerSlot::Erased(Arc::from(handler))).unwrap();
+            self.router
+                .insert(F::KEY.to_string(), HandlerSlot::Erased(Arc::from(handler)))
+                .unwrap();
         }
         self
     }
 
     /// Register a subscribe handler.
-    pub fn subscribe<H: crate::handler::RpcSubscribe<Ctx> + 'static>(
-        mut self,
-        handler: H,
-    ) -> Self {
+    pub fn subscribe<H: crate::handler::RpcSubscribe<Ctx> + 'static>(mut self, handler: H) -> Self {
+        // Register input/output types into the shared registry so they get
+        // emitted as `export type ...` definitions (subscribe handlers were
+        // previously skipped, leaving a dangling reference in `Procedures`).
+        let input_dt = H::Input::definition(&mut self.types);
+        let output_dt = H::Output::definition(&mut self.types);
         self.procedures.push(ProcedureMeta {
             key: H::KEY,
             kind: "subscribe",
             method: H::METHOD,
-            input: gen_ts_client::type_ts::<H::Input>(),
-            output: gen_ts_client::type_ts::<H::Output>(),
+            input: TsTypeInfo {
+                ts_ref: gen_ts_client::resolve_ts_ref(&input_dt, &self.types),
+            },
+            output: TsTypeInfo {
+                ts_ref: gen_ts_client::resolve_ts_ref(&output_dt, &self.types),
+            },
         });
         // Create an erased subscribe handler for runtime dispatch
         struct ErasedSub<H>(H);
-        impl<Ctx: Send + Sync + 'static, H: crate::handler::RpcSubscribe<Ctx>> crate::handler::ErasedSubscribeHandler<Ctx>
-            for ErasedSub<H>
+        impl<Ctx: Send + Sync + 'static, H: crate::handler::RpcSubscribe<Ctx>>
+            crate::handler::ErasedSubscribeHandler<Ctx> for ErasedSub<H>
         {
             fn call_bytes(
                 &self,
                 ctx: &Ctx,
                 input: &[u8],
-            ) -> Pin<Box<dyn futures::Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static>>
-            {
+            ) -> Pin<
+                Box<
+                    dyn futures::Stream<Item = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'static,
+                >,
+            > {
                 use crate::handler::SubscribeExt;
                 self.0.call_bytes(ctx, input)
             }
         }
-        self.subscribe_handlers.push((H::KEY, Arc::new(ErasedSub(handler))));
+        self.subscribe_handlers
+            .push((H::KEY, Arc::new(ErasedSub(handler))));
         self
     }
 
@@ -513,8 +556,13 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     pub fn layer<L>(mut self, layer: L) -> Self
     where
         L: RpcLayer<Ctx, Box<dyn ErasedHandler<Ctx>>> + 'static,
-        L::Service: crate::middleware::RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>
-            + Send + Sync + 'static,
+        L::Service: crate::middleware::RpcService<
+                Ctx,
+                Response = (Cow<'static, [u8]>, bool),
+                Error = RpcErr,
+            > + Send
+            + Sync
+            + 'static,
     {
         self.middlewares.push(Box::new(move |handler| {
             let wrapped: L::Service = layer.layer(handler);
@@ -537,12 +585,19 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 &'a [u8],
                 bool,
                 &'a mut Extensions,
-            ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
-            + Clone + Send + Sync + 'static,
+            ) -> Pin<
+                Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>,
+            > + Clone
+            + Send
+            + Sync
+            + 'static,
     {
         self.middlewares.push(Box::new(move |handler| {
             let handler = Arc::new(handler);
-            Box::new(ClosureMw { handler, func: func.clone() }) as Box<dyn ErasedHandler<Ctx>>
+            Box::new(ClosureMw {
+                handler,
+                func: func.clone(),
+            }) as Box<dyn ErasedHandler<Ctx>>
         }));
         self
     }
@@ -610,8 +665,10 @@ where
             &'a [u8],
             bool,
             &'a mut Extensions,
-        ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
-        + Send + Sync,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>,
+        > + Send
+        + Sync,
 {
     type Response = (Cow<'static, [u8]>, bool);
     type Error = RpcErr;

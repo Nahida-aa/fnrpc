@@ -1,0 +1,12 @@
+{
+  "name": "e2e-fnrpc-axum-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run run.ts",
+    "test": "bun run run.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  }
+}
