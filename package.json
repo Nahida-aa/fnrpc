@@ -9,7 +9,7 @@
   "scripts": {
     "build": "bun run --filter '@fnrpc/*' build",
     "typecheck": "bun run --filter '@fnrpc/*' typecheck",
-    "test": "bun test packages/*/test",
+    "test": "bun test packages/*/tests",
     "changeset": "changeset",
     "version-packages": "changeset version"
   },
