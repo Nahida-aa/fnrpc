@@ -220,3 +220,5 @@ build/
 out/benches/target/
 benches/target/
 benches/logs/
+
+.agents/*.local.md
