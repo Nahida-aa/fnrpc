@@ -169,7 +169,7 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
     out.push_str("export type Procedures = {\n");
     for meta in router.procedures() {
         let kind = meta.kind;
-        let method = if kind == "mutate" { "POST" } else { "GET" };
+        let method = meta.method;
         out.push_str(&format!(
             "  {}: {{ kind: \"{kind}\"; method: \"{method}\"; input: {}; output: {}; error: RpcErr }};\n",
             meta.key,
@@ -182,7 +182,7 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
     out.push_str("\nexport const __procedureMeta = {\n");
     for meta in router.procedures() {
         let kind = meta.kind;
-        let method = if kind == "mutate" { "POST" } else { "GET" };
+        let method = meta.method;
         out.push_str(&format!(
             "  {}: {{ kind: \"{kind}\", method: \"{method}\" }},\n",
             meta.key,

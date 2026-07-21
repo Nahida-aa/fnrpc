@@ -211,6 +211,33 @@ async function main() {
     );
     passed++;
 
+    // 3b. Same SSE subscription served over POST (input in the request body).
+    // Proves the POST SSE path also carries the response-direction BigInt
+    // envelope. The createClient meta marks this procedure as method "POST".
+    const controllerPost = new AbortController();
+    const iterPost = await fnrpc.tick_seq_post(
+      { start: 18446744073709551615n, count: 3n },
+      controllerPost.signal,
+    );
+    const nsPost: bigint[] = [];
+    for await (const m of iterPost) {
+      nsPost.push(m.n as bigint);
+      if (nsPost.length >= 4) {
+        controllerPost.abort();
+        break;
+      }
+    }
+    assertEq("tick_seq_post (SSE subscribe, POST)", nsPost, [
+      18446744073709551615n,
+      0n,
+      1n,
+      2n,
+    ]);
+    console.log(
+      `OK [tick_seq_post (SSE subscribe, POST)]: ${nsPost.map((n) => n.toString()).join(" | ")}`,
+    );
+    passed++;
+
     console.log(
       `ALL OK (${passed} checks): server decoded BigInt requests at full precision (no meta, no precision loss), SSE subscribe works`,
     );

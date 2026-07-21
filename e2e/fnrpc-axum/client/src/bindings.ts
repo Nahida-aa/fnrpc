@@ -48,19 +48,21 @@ export type TickOutput = {
 export type Procedures = {
   big_echo: { kind: "query"; method: "GET"; input: BigInput; output: BigInput; error: RpcErr };
   big_echo_primitive: { kind: "query"; method: "GET"; input: bigint; output: string; error: RpcErr };
-  big_echo_primitive_post: { kind: "query"; method: "GET"; input: bigint; output: string; error: RpcErr };
+  big_echo_primitive_post: { kind: "query"; method: "POST"; input: bigint; output: string; error: RpcErr };
   big_echo_primitive_mutate: { kind: "mutate"; method: "POST"; input: bigint; output: string; error: RpcErr };
   big_echo_mutate: { kind: "mutate"; method: "POST"; input: BigInput; output: BigInput; error: RpcErr };
   big_out: { kind: "query"; method: "GET"; input: null; output: BigOutput; error: RpcErr };
   tick_seq: { kind: "subscribe"; method: "GET"; input: TickInput; output: TickOutput; error: RpcErr };
+  tick_seq_post: { kind: "subscribe"; method: "POST"; input: TickInput; output: TickOutput; error: RpcErr };
 }
 
 export const __procedureMeta = {
   big_echo: { kind: "query", method: "GET" },
   big_echo_primitive: { kind: "query", method: "GET" },
-  big_echo_primitive_post: { kind: "query", method: "GET" },
+  big_echo_primitive_post: { kind: "query", method: "POST" },
   big_echo_primitive_mutate: { kind: "mutate", method: "POST" },
   big_echo_mutate: { kind: "mutate", method: "POST" },
   big_out: { kind: "query", method: "GET" },
   tick_seq: { kind: "subscribe", method: "GET" },
+  tick_seq_post: { kind: "subscribe", method: "POST" },
 } as const;

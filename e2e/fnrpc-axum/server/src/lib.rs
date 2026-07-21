@@ -81,12 +81,9 @@ pub struct TickOutput {
     pub n: u64,
 }
 
-/// SSE subscription that emits each tick's sequence number as a `u64`
-/// (`TickOutput.n`), proving the response-direction BigInt envelope works
-/// over SSE, plus a head message embedding the exact `start` value (proving
-/// BigInt precision on the request).
-#[fnrpc::rpc_subscribe]
-pub fn tick_seq(input: TickInput) -> impl futures::Stream<Item = TickOutput> {
+/// Build the tick stream: a head message carrying `start`, then `count`
+/// sequence numbers (`TickOutput.n`, a `u64`).
+fn tick_stream(input: TickInput) -> impl futures::Stream<Item = TickOutput> {
     let start = input.start;
     let count = input.count;
     let head = TickOutput { n: start };
@@ -102,6 +99,23 @@ pub fn tick_seq(input: TickInput) -> impl futures::Stream<Item = TickOutput> {
     ))
 }
 
+/// SSE subscription (GET) that emits each tick's sequence number as a `u64`
+/// (`TickOutput.n`), proving the response-direction BigInt envelope works
+/// over SSE, plus a head message embedding the exact `start` value (proving
+/// BigInt precision on the request).
+#[fnrpc::rpc_subscribe]
+pub fn tick_seq(input: TickInput) -> impl futures::Stream<Item = TickOutput> {
+    tick_stream(input)
+}
+
+/// Same as `tick_seq` but served over POST (input in the request body instead
+/// of the query string). Proves the POST SSE path also carries the
+/// response-direction BigInt envelope.
+#[fnrpc::rpc_subscribe("post")]
+pub fn tick_seq_post(input: TickInput) -> impl futures::Stream<Item = TickOutput> {
+    tick_stream(input)
+}
+
 /// Build the shared router used by both the server (`main`) and the codegen
 /// binary (`gen_fnrpc`), so the generated bindings exactly match the served
 /// procedures.
@@ -114,5 +128,6 @@ pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<()> {
         .route_fn(big_echo_mutate)
         .route_fn(big_out)
         .subscribe(tick_seq)
+        .subscribe(tick_seq_post)
         .build()
 }
