@@ -24,14 +24,12 @@ pub struct BigInput {
     pub list: Vec<u64>,
 }
 
-/// Echo a confirmation string with the exact bigint values the server decoded.
-///
-/// Returning a `String` (rather than the bigint struct) lets the TS client
-/// assert full precision on the response without relying on response-side
-/// BigInt envelope handling.
+/// Echo the input bigint struct back to the client. The server encodes the
+/// response as a `{ json, meta }` envelope so the client restores `BigInt`
+/// values at full precision (no precision loss, no `String` workaround).
 #[fnrpc::rpc_query]
-pub async fn big_echo(input: BigInput) -> String {
-    format!("id={} big={} list={:?}", input.id, input.big, input.list)
+pub async fn big_echo(input: BigInput) -> BigInput {
+    input
 }
 
 /// 原始
@@ -50,8 +48,26 @@ pub async fn big_echo_primitive_mutate(input: u64) -> String {
 }
 
 #[fnrpc::rpc_mutate]
-pub async fn big_echo_mutate(input: BigInput) -> String {
-    format!("id={} big={} list={:?}", input.id, input.big, input.list)
+pub async fn big_echo_mutate(input: BigInput) -> BigInput {
+    input
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct BigOutput {
+    pub id: u64,
+    pub big: i128,
+    pub list: Vec<u64>,
+}
+
+/// Return a bigint struct so the client can assert full precision on the
+/// response (BigInt envelope, restored via `meta`).
+#[fnrpc::rpc_query]
+pub async fn big_out(_input: ()) -> BigOutput {
+    BigOutput {
+        id: 18446744073709551615u64,
+        big: 170141183460469231731687303715884105727i128,
+        list: vec![1, 18446744073709551615],
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -60,22 +76,27 @@ pub struct TickInput {
     pub count: u64,
 }
 
-/// SSE subscription that emits a head message with the exact `start` value
-/// (proving BigInt precision on the request), followed by `count` tick
-/// messages. Lets the TS client assert both BigInt precision and the
-/// subscribe/SSE transport end-to-end.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct TickOutput {
+    pub n: u64,
+}
+
+/// SSE subscription that emits each tick's sequence number as a `u64`
+/// (`TickOutput.n`), proving the response-direction BigInt envelope works
+/// over SSE, plus a head message embedding the exact `start` value (proving
+/// BigInt precision on the request).
 #[fnrpc::rpc_subscribe]
-pub fn tick_seq(input: TickInput) -> impl futures::Stream<Item = String> {
+pub fn tick_seq(input: TickInput) -> impl futures::Stream<Item = TickOutput> {
     let start = input.start;
     let count = input.count;
-    let head = format!("start={start}");
+    let head = TickOutput { n: start };
     futures::stream::once(async move { head }).chain(futures::stream::unfold(
         0u64,
         move |i| async move {
             if i >= count {
                 None
             } else {
-                Some((format!("n={i}"), i + 1))
+                Some((TickOutput { n: i }, i + 1))
             }
         },
     ))
@@ -91,6 +112,7 @@ pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<()> {
         .route_fn(big_echo_primitive_post)
         .route_fn(big_echo_primitive_mutate)
         .route_fn(big_echo_mutate)
+        .route_fn(big_out)
         .subscribe(tick_seq)
         .build()
 }

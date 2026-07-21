@@ -6,6 +6,12 @@ export type BigInput = {
 	list: bigint[],
 };
 
+export type BigOutput = {
+	id: bigint,
+	big: bigint,
+	list: bigint[],
+};
+
 /**
  *  An RPC error returned by any handler (query, mutate, subscribe).
  * 
@@ -35,13 +41,18 @@ export type TickInput = {
 	count: bigint,
 };
 
+export type TickOutput = {
+	n: bigint,
+};
+
 export type Procedures = {
-  big_echo: { kind: "query"; method: "GET"; input: BigInput; output: string; error: RpcErr };
+  big_echo: { kind: "query"; method: "GET"; input: BigInput; output: BigInput; error: RpcErr };
   big_echo_primitive: { kind: "query"; method: "GET"; input: bigint; output: string; error: RpcErr };
   big_echo_primitive_post: { kind: "query"; method: "GET"; input: bigint; output: string; error: RpcErr };
   big_echo_primitive_mutate: { kind: "mutate"; method: "POST"; input: bigint; output: string; error: RpcErr };
-  big_echo_mutate: { kind: "mutate"; method: "POST"; input: BigInput; output: string; error: RpcErr };
-  tick_seq: { kind: "subscribe"; method: "GET"; input: TickInput; output: string; error: RpcErr };
+  big_echo_mutate: { kind: "mutate"; method: "POST"; input: BigInput; output: BigInput; error: RpcErr };
+  big_out: { kind: "query"; method: "GET"; input: null; output: BigOutput; error: RpcErr };
+  tick_seq: { kind: "subscribe"; method: "GET"; input: TickInput; output: TickOutput; error: RpcErr };
 }
 
 export const __procedureMeta = {
@@ -50,5 +61,6 @@ export const __procedureMeta = {
   big_echo_primitive_post: { kind: "query", method: "GET" },
   big_echo_primitive_mutate: { kind: "mutate", method: "POST" },
   big_echo_mutate: { kind: "mutate", method: "POST" },
+  big_out: { kind: "query", method: "GET" },
   tick_seq: { kind: "subscribe", method: "GET" },
 } as const;

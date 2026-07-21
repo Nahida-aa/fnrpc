@@ -79,81 +79,136 @@ async function main() {
     await waitForServer();
 
     let passed = 0;
-    async function check(name: string, expected: string, actual: string) {
-      if (actual !== expected) {
+    function assertBig(name: string, actual: unknown, expected: bigint) {
+      if (typeof actual !== "bigint" || actual !== expected) {
         throw new Error(
-          `[${name}] precision mismatch!\n  expected: ${expected}\n  received: ${actual}`,
+          `[${name}] BigInt precision mismatch!\n  expected: ${expected}\n  received: ${String(actual)} (${typeof actual})`,
         );
       }
       console.log(`OK [${name}]: ${actual}`);
       passed++;
     }
+    function assertEq<T>(name: string, actual: T, expected: T) {
+      const a = JSON.stringify(actual, (_k, v) => (typeof v === "bigint" ? v.toString() + "n" : v));
+      const e = JSON.stringify(expected, (_k, v) => (typeof v === "bigint" ? v.toString() + "n" : v));
+      if (a !== e) {
+        throw new Error(
+          `[${name}] mismatch!\n  expected: ${e}\n  received: ${a}`,
+        );
+      }
+      console.log(`OK [${name}]: ${a}`);
+      passed++;
+    }
 
     // 2. Query/mutate assertions through the typed client.
+    // These now assert the *response* (server -> client) BigInt envelope:
+    // the client receives `{ json, meta }` and restores `BigInt` values.
 
-    // Original: struct with u64 / i128 / Vec<u64>, GET query.
-    await check(
+    // big_echo: struct with u64 / i128 / Vec<u64>, GET query — echoes input.
+    // The response output is a BigInput; assert the values survive as BigInt.
+    const echo = await fnrpc.big_echo(INPUT);
+    assertBig(
       "big_echo (struct, GET query)",
-      "id=18446744073709551615 big=170141183460469231731687303715884105727 list=[1, 18446744073709551615]",
-      await fnrpc.big_echo(INPUT),
+      echo.id,
+      18446744073709551615n,
+    );
+    assertBig(
+      "big_echo (struct, GET query)",
+      echo.big,
+      170141183460469231731687303715884105727n,
+    );
+    assertEq(
+      "big_echo (struct, GET query) list",
+      echo.list,
+      [1n, 18446744073709551615n],
     );
 
-    // Top-level primitive u64, GET query.
-    await check(
-      "big_echo_primitive (u64, GET query)",
-      "input=18446744073709551615",
-      await fnrpc.big_echo_primitive(18446744073709551615n),
-    );
-
-    // Top-level primitive u64, query forced to POST.
-    await check(
-      "big_echo_primitive_post (u64, POST query)",
-      "input=18446744073709551615",
-      await fnrpc.big_echo_primitive_post(18446744073709551615n),
-    );
-
-    // Top-level primitive u64, mutate (POST).
-    await check(
-      "big_echo_primitive_mutate (u64, POST mutate)",
-      "input=18446744073709551615",
-      await fnrpc.big_echo_primitive_mutate(18446744073709551615n),
-    );
-
-    // Struct with u64 / i128 / Vec<u64>, mutate (POST).
-    await check(
+    // big_echo_mutate: same struct, POST mutate.
+    const echoMut = await fnrpc.big_echo_mutate(INPUT);
+    assertBig(
       "big_echo_mutate (struct, POST mutate)",
-      "id=18446744073709551615 big=170141183460469231731687303715884105727 list=[1, 18446744073709551615]",
-      await fnrpc.big_echo_mutate(INPUT),
+      echoMut.id,
+      18446744073709551615n,
+    );
+    assertBig(
+      "big_echo_mutate (struct, POST mutate)",
+      echoMut.big,
+      170141183460469231731687303715884105727n,
+    );
+    assertEq(
+      "big_echo_mutate (struct, POST mutate) list",
+      echoMut.list,
+      [1n, 18446744073709551615n],
     );
 
-    // 3. SSE subscription assertion: BigInt precision + subscribe transport.
-    // The SSE client auto-reconnects, so we collect the expected messages and
-    // then abort to end the (long-lived) stream.
+    // big_out: server returns a bigint struct (u64 max / i128 max).
+    const out = await fnrpc.big_out();
+    assertBig("big_out (u64 max)", out.id, 18446744073709551615n);
+    assertBig(
+      "big_out (i128 max)",
+      out.big,
+      170141183460469231731687303715884105727n,
+    );
+    assertEq("big_out list", out.list, [1n, 18446744073709551615n]);
+
+    // Top-level primitive u64, GET query (still echoes a String confirmation,
+    // so this one is a plain string check — no response bigint envelope).
+    const prim = await fnrpc.big_echo_primitive(18446744073709551615n);
+    if (prim !== "input=18446744073709551615") {
+      throw new Error(
+        `[big_echo_primitive] mismatch: expected input=18446744073709551615, got ${prim}`,
+      );
+    }
+    console.log(`OK [big_echo_primitive (u64, GET query)]: ${prim}`);
+    passed++;
+
+    const primPost = await fnrpc.big_echo_primitive_post(18446744073709551615n);
+    if (primPost !== "input=18446744073709551615") {
+      throw new Error(
+        `[big_echo_primitive_post] mismatch: expected input=18446744073709551615, got ${primPost}`,
+      );
+    }
+    console.log(`OK [big_echo_primitive_post (u64, POST query)]: ${primPost}`);
+    passed++;
+
+    const primMut = await fnrpc.big_echo_primitive_mutate(18446744073709551615n);
+    if (primMut !== "input=18446744073709551615") {
+      throw new Error(
+        `[big_echo_primitive_mutate] mismatch: expected input=18446744073709551615, got ${primMut}`,
+      );
+    }
+    console.log(`OK [big_echo_primitive_mutate (u64, POST mutate)]: ${primMut}`);
+    passed++;
+
+    // 3. SSE subscription assertion: response-direction BigInt envelope over
+    // SSE. Each emitted `TickOutput.n` is a `u64`, restored to BigInt by the
+    // client. The SSE client auto-reconnects, so we collect the expected
+    // messages and then abort to end the (long-lived) stream.
     const controller = new AbortController();
     const iter = await fnrpc.tick_seq(
       { start: 18446744073709551615n, count: 3n },
       controller.signal,
     );
-    const msgs: string[] = [];
+    const ns: bigint[] = [];
     for await (const m of iter) {
-      msgs.push(m as string);
-      if (msgs.length >= 4) {
+      ns.push(m.n as bigint);
+      if (ns.length >= 4) {
         controller.abort();
         break;
       }
     }
 
-    if (msgs[0] !== "start=18446744073709551615") {
-      throw new Error(
-        `[tick_seq] start precision mismatch!\n  expected: start=18446744073709551615\n  received: ${msgs[0]}`,
-      );
-    }
-    if (msgs.slice(1).join(",") !== "n=0,n=1,n=2") {
-      throw new Error(
-        `[tick_seq] tick content mismatch!\n  expected: n=0,n=1,n=2\n  received: ${msgs.slice(1).join(",")}`,
-      );
-    }
-    console.log(`OK [tick_seq (SSE subscribe)]: ${msgs.join(" | ")}`);
+    // First tick carries the request's u64 max (proves request precision),
+    // then n=0,1,2 (proves response precision over SSE).
+    assertEq("tick_seq (SSE subscribe) sequence", ns, [
+      18446744073709551615n,
+      0n,
+      1n,
+      2n,
+    ]);
+    console.log(
+      `OK [tick_seq (SSE subscribe)]: ${ns.map((n) => n.toString()).join(" | ")}`,
+    );
     passed++;
 
     console.log(

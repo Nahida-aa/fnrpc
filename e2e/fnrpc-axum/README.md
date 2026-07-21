@@ -42,19 +42,17 @@ bun run run.ts
 
 The TS client sends bigint fields as **JSON strings** (via `toRustJson`, no
 `meta`). The server decodes them back to numbers using its own schema
-(`fnrpc::serializer::decode_bigint_by_schema`). The asserted values include
-`18446744073709551615` (u64 max) and `170141183460469231731687303715884105727`
-(i128 max) — both far beyond JS's `2^53` safe-integer range, so if precision
-were lost (e.g. by narrowing to a JS `number`) the assertion would fail.
+(`fnrpc::serializer::decode_bigint_by_schema`).
+
+The **response** direction is also covered end-to-end: the server encodes
+bigint output as a `{ json, meta }` envelope via
+`fnrpc::serializer::encode_bigint_by_schema` (driven by its own output schema),
+and the TS client reconstructs `BigInt` values from the `meta` (via
+`deserialize`). The asserted values include `18446744073709551615` (u64 max)
+and `170141183460469231731687303715884105727` (i128 max) — both far beyond JS's
+`2^53` safe-integer range, so if precision were lost (e.g. by narrowing to a JS
+`number`) the assertion would fail. `big_echo` / `big_echo_mutate` / `big_out`
+all return bigint structs, and `tick_seq` streams `u64` values over SSE.
 
 It also exercises the typed `createClient` surface (query / mutate with GET and
-POST) and the SSE `subscribe` transport: `tick_seq` confirms the `start` value
-arrives at full precision and the streamed `n=0,n=1,n=2` ticks arrive in order.
-
-## Note on the response direction
-
-This example verifies the **request** path. The **response** path currently
-sends bigint as bare JSON numbers, so a client would still lose precision when
-*receiving* bigint values. Plumbing a `{ json, meta }` response envelope plus
-client-side `deserialize` is separate, later work — which is why the server
-returns a `String` confirmation here rather than echoing the bigint struct.
+POST) and the SSE `subscribe` transport.

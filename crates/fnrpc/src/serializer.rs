@@ -15,6 +15,7 @@
 //! The client-side analogue of the envelope codec lives in the `fnrpc-client`
 //! crate ([`fnrpc_client::unpack_meta`]).
 
+use serde::Serialize;
 use serde_json::Value;
 use specta::datatype::{
     DataType, Enum, Fields, List, NamedFields, Primitive, Reference, UnnamedFields,
@@ -56,10 +57,81 @@ pub fn decode_bigint_by_schema<T: Type>(input: Value) -> Value {
     payload
 }
 
+/// Type ID used in the response `meta` array to mark a BigInt leaf.
+///
+/// Must match `BIGINT` in `packages/fnrpc-client/src/serializer.ts` so the
+/// TS client's `deserialize` can restore `BigInt` values.
+pub const BIGINT_TYPE_ID: u8 = 0;
+
+/// One entry in the response `meta` array: `[type_id, ...path]`.
+///
+/// `path` segments are field names (`string`) or array indices (`usize`),
+/// mirroring the TS `MetaItem` layout consumed by `deserialize`.
+pub(crate) type MetaItem = (u8, Vec<Segment>);
+
+/// Encode a handler output into a wire value that preserves BigInt precision,
+/// driven entirely by the handler's own schema (symmetric to
+/// [`decode_bigint_by_schema`] on the request side).
+///
+/// - If the output contains no BigInt-style integer leaves, the bare JSON
+///   value is returned (no envelope) — fully backward compatible.
+/// - Otherwise the BigInt leaves are converted to strings and a `meta` array
+///   records their paths, producing `{ "json": <json>, "meta": [...] }`.
+///
+/// The client reconstructs `BigInt` from the `meta` paths; no client-side
+/// schema or negotiation is needed.
+pub fn encode_bigint_by_schema<T: Type + Serialize>(output: &T) -> Value {
+    let mut json = match serde_json::to_value(output) {
+        Ok(v) => v,
+        Err(_) => return Value::Null,
+    };
+
+    let mut types = Types::default();
+    let dt = T::definition(&mut types);
+
+    let mut paths: Vec<Vec<Segment>> = Vec::new();
+    collect_bigint_paths(&dt, &mut Vec::new(), &mut paths, &types, 0);
+
+    if paths.is_empty() {
+        return json;
+    }
+
+    for path in &paths {
+        to_string_at(&mut json, path, 0);
+    }
+
+    let meta: Vec<MetaItem> = paths.into_iter().map(|p| (BIGINT_TYPE_ID, p)).collect();
+
+    let mut envelope = serde_json::Map::new();
+    envelope.insert("json".to_string(), json);
+    envelope.insert(
+        "meta".to_string(),
+        serde_json::Value::Array(
+            meta.into_iter()
+                .map(|(id, segs)| {
+                    let mut item = Vec::new();
+                    item.push(serde_json::Value::Number(id.into()));
+                    for seg in segs {
+                        item.push(match seg {
+                            Segment::Field(s) => serde_json::Value::String(s),
+                            Segment::Index(i) => serde_json::Value::Number(i.into()),
+                            Segment::AnyElem | Segment::AnyKey => {
+                                serde_json::Value::String("*".to_string())
+                            }
+                        });
+                    }
+                    serde_json::Value::Array(item)
+                })
+                .collect(),
+        ),
+    );
+    serde_json::Value::Object(envelope)
+}
+
 /// One step in a value path. `Field`/`Index` are exact; `AnyElem`/`AnyKey`
 /// fan out across all elements / map values respectively.
 #[derive(Debug, Clone)]
-enum Segment {
+pub(crate) enum Segment {
     Field(String),
     Index(usize),
     AnyElem,
@@ -249,6 +321,55 @@ fn convert_string_to_number(v: &mut Value) {
     };
 }
 
+fn convert_number_to_string(v: &mut Value) {
+    if let Value::Number(n) = v {
+        // Serialize the number to its full textual form, preserving u64/i128
+        // magnitude (serde_json `arbitrary_precision` keeps it exact, not
+        // truncated to f64).
+        let s = n.to_string();
+        *v = Value::String(s);
+    }
+}
+
+/// Recursively convert the BigInt leaf described by `path` into a JSON string,
+/// symmetric to [`apply_at`] but in the opposite direction.
+fn to_string_at(value: &mut Value, path: &[Segment], i: usize) {
+    if i >= path.len() {
+        convert_number_to_string(value);
+        return;
+    }
+    match &path[i] {
+        Segment::Field(key) => {
+            if let Value::Object(map) = value {
+                if let Some(child) = map.get_mut(key) {
+                    to_string_at(child, path, i + 1);
+                }
+            }
+        }
+        Segment::Index(idx) => {
+            if let Value::Array(arr) = value {
+                if let Some(child) = arr.get_mut(*idx) {
+                    to_string_at(child, path, i + 1);
+                }
+            }
+        }
+        Segment::AnyElem => {
+            if let Value::Array(arr) = value {
+                for child in arr.iter_mut() {
+                    to_string_at(child, path, i + 1);
+                }
+            }
+        }
+        Segment::AnyKey => {
+            if let Value::Object(map) = value {
+                for child in map.values_mut() {
+                    to_string_at(child, path, i + 1);
+                }
+            }
+        }
+    }
+}
+
 /// Parse a bigint wire string into the most precise JSON number representation.
 fn parse_bigint_string(s: &str) -> Option<Value> {
     if let Ok(n) = s.parse::<u64>() {
@@ -346,5 +467,75 @@ mod tests {
     #[test]
     fn non_envelope_passthrough_on_null() {
         assert_eq!(decode_bigint_by_schema::<Sample>(Value::Null), Value::Null);
+    }
+
+    // ── Encode (response side) ──
+
+    #[derive(Type, serde::Serialize)]
+    struct BigOut {
+        id: u64,
+        big: i128,
+        list: Vec<u64>,
+    }
+
+    #[test]
+    fn plain_value_with_bigint_is_encoded_to_envelope() {
+        let out = BigOut {
+            id: 18446744073709551615u64,
+            big: 170141183460469231731687303715884105727i128,
+            list: vec![1, 18446744073709551615],
+        };
+        let encoded = encode_bigint_by_schema(&out);
+        assert_eq!(encoded["json"]["id"], json!("18446744073709551615"));
+        assert_eq!(
+            encoded["json"]["big"],
+            json!("170141183460469231731687303715884105727")
+        );
+        assert_eq!(
+            encoded["json"]["list"],
+            json!(["1", "18446744073709551615"])
+        );
+        // meta marks three bigint leaves (id, big, list.*).
+        assert!(encoded["meta"].is_array());
+        let meta = encoded["meta"].as_array().unwrap();
+        assert_eq!(meta.len(), 3);
+        // Each meta item is [0, ...path].
+        assert_eq!(meta[0], json!([0, "id"]));
+        assert_eq!(meta[1], json!([0, "big"]));
+        assert_eq!(meta[2], json!([0, "list", "*"]));
+    }
+
+    #[test]
+    fn no_bigint_passthrough_as_plain_json() {
+        #[derive(Type, serde::Serialize)]
+        struct Plain {
+            name: String,
+            count: i32,
+        }
+        let out = Plain {
+            name: "x".to_string(),
+            count: 1,
+        };
+        // A non-bigint value should pass through as bare JSON (no envelope).
+        let encoded = encode_bigint_by_schema(&out);
+        assert_eq!(encoded, json!({ "name": "x", "count": 1 }));
+    }
+
+    #[test]
+    fn envelope_roundtrip_with_decode() {
+        let out = BigOut {
+            id: 18446744073709551615u64,
+            big: 170141183460469231731687303715884105727i128,
+            list: vec![1, 2, 18446744073709551615],
+        };
+        let encoded = encode_bigint_by_schema(&out);
+        // Client stores the string form; server decodes it back by schema.
+        let decoded = decode_bigint_by_schema::<BigOut>(encoded);
+        assert_eq!(decoded["id"], json!(18446744073709551615u64));
+        assert_eq!(
+            decoded["big"],
+            json!(170141183460469231731687303715884105727i128)
+        );
+        assert_eq!(decoded["list"], json!([1, 2, 18446744073709551615u64]));
     }
 }

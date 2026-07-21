@@ -1,5 +1,5 @@
 import type { ProcedureKind } from "./types"
-import { serialize, toRustJson, safeStringify } from "./serializer"
+import { serialize, toRustJson, safeStringify, deserialize, isEnvelope } from "./serializer"
 import { RpcError } from "./error"
 import { connectSSE } from "./sse"
 
@@ -14,6 +14,17 @@ function parseError(msg: string): RpcError {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Restore BigInt values from a server `{ json, meta }` envelope when present.
+ * Bare JSON responses are returned unchanged (backward compatible).
+ */
+function decodeResponse(value: unknown): unknown {
+  if (isEnvelope(value)) {
+    return deserialize(value)
+  }
+  return value
 }
 
 /**
@@ -58,7 +69,7 @@ export const fetchTransport = (config: { url: string }) => {
           }
           throw new RpcError("INTERNAL_SERVER_ERROR", `Request failed: ${r.status}`)
         }
-        return r.json()
+        return decodeResponse(await r.json())
       })
     }
 
@@ -78,7 +89,7 @@ export const fetchTransport = (config: { url: string }) => {
         }
         throw new RpcError("INTERNAL_SERVER_ERROR", `Request failed: ${r.status}`)
       }
-      return r.json()
+      return decodeResponse(await r.json())
     })
   }
 }
@@ -159,6 +170,7 @@ function createSSEIterable(
           } catch {
             continue
           }
+          val = decodeResponse(val)
 
           if (resolveNext) {
             resolveNext({ done: false, value: val })

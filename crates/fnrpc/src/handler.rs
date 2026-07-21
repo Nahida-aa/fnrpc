@@ -18,7 +18,6 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use specta::Type;
 
-use crate::codec::{JsonCodec, RpcCodec};
 use crate::error::RpcErr;
 
 /// TypeScript type reference info for a single type (input or output).
@@ -104,7 +103,10 @@ impl<Ctx: Send + Sync + 'static, T: RpcFn<Ctx>> RpcFnExt<Ctx> for T {
                     .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
             };
             let output = T::exec(ctx, input).await?;
-            Ok(JsonCodec::encode(&output).map(Cow::Owned).unwrap())
+            let value = crate::serializer::encode_bigint_by_schema::<T::Output>(&output);
+            Ok(serde_json::to_vec(&value)
+                .map(Cow::Owned)
+                .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
         }
     }
 
@@ -122,8 +124,9 @@ impl<Ctx: Send + Sync + 'static, T: RpcFn<Ctx>> RpcFnExt<Ctx> for T {
                     .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
             };
             let output = T::exec(ctx, input).await?;
-            Ok(serde_json::to_value(output)
-                .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
+            Ok(crate::serializer::encode_bigint_by_schema::<T::Output>(
+                &output,
+            ))
         }
     }
 
@@ -141,7 +144,8 @@ impl<Ctx: Send + Sync + 'static, T: RpcFn<Ctx>> RpcFnExt<Ctx> for T {
                     .map_err(|e| RpcErr::bad_request(format!("deserialize input: {e}")))?
             };
             let output = T::exec(ctx, input).await?;
-            Ok(serde_json::to_vec(&output)
+            let value = crate::serializer::encode_bigint_by_schema::<T::Output>(&output);
+            Ok(serde_json::to_vec(&value)
                 .map(Cow::Owned)
                 .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))?)
         }
@@ -218,12 +222,9 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
             }
         };
         let stream = F::exec(ctx, input);
-        Box::pin(stream.map(|item| {
-            match item {
-                Ok(v) => serde_json::to_value(v)
-                    .map_err(|e| RpcErr::internal(format!("serialize output: {e}"))),
-                Err(e) => Err(e),
-            }
+        Box::pin(stream.map(|item| match item {
+            Ok(v) => Ok(crate::serializer::encode_bigint_by_schema::<F::Output>(&v)),
+            Err(e) => Err(e),
         }))
     }
 
@@ -253,7 +254,12 @@ impl<Ctx: Send + Sync + 'static, F: RpcSubscribe<Ctx>> SubscribeExt<Ctx> for F {
         };
         let stream = F::exec(ctx, input);
         Box::pin(stream.map(|item| match item {
-            Ok(v) => JsonCodec::encode(&v).map(Cow::Owned),
+            Ok(v) => {
+                let value = crate::serializer::encode_bigint_by_schema::<F::Output>(&v);
+                serde_json::to_vec(&value)
+                    .map(Cow::Owned)
+                    .map_err(|e| RpcErr::internal(format!("serialize output: {e}")))
+            }
             Err(e) => Err(e),
         }))
     }

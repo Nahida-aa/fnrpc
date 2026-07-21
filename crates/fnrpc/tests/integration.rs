@@ -570,7 +570,11 @@ async fn test_bigint_decoded_by_schema_end_to_end() {
     let (bytes, is_json) = router.dispatch(&(), "big_id", wire, false).await.unwrap();
     assert!(is_json);
 
-    let output: BigIdOutput = serde_json::from_slice(&bytes).unwrap();
+    // The handler now returns a `{ json, meta }` envelope on the response side;
+    // decode it back to a bare value (as the TS client does via `deserialize`).
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let value = fnrpc::serializer::decode_bigint_by_schema::<BigIdOutput>(value);
+    let output: BigIdOutput = serde_json::from_value(value).unwrap();
     // Full u64 / i128 precision preserved through schema-driven decode.
     assert_eq!(output.id, 18446744073709551615u64);
     assert_eq!(output.signed, 170141183460469231731687303715884105727i128);
@@ -586,7 +590,12 @@ async fn test_bigint_plain_value_call_decoded_by_schema() {
         "list": ["1", "2"]
     });
     let output = BigId.call(&(), input).await.unwrap();
-    let out: BigIdOutput = serde_json::from_value(output).unwrap();
+    // `call` returns the `{ json, meta }` envelope; decode it back to a bare
+    // value (as the TS client does via `deserialize`).
+    let out: BigIdOutput = serde_json::from_value(fnrpc::serializer::decode_bigint_by_schema::<
+        BigIdOutput,
+    >(output))
+    .unwrap();
     assert_eq!(out.id, 18446744073709551615u64);
     assert_eq!(out.signed, 170141183460469231731687303715884105727i128);
 }

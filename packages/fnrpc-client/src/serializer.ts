@@ -69,39 +69,91 @@ export function deserialize(input: Serialized): unknown {
   const { json, meta } = input;
   if (!meta || meta.length === 0) return json;
 
+  // Top-level bigint (whole response is a single bigint string).
+  if (meta.length === 1 && meta[0].length === 1) {
+    const [typeId] = meta[0];
+    if (typeId === BIGINT && typeof json === "string") return BigInt(json);
+  }
+
   const result = structuredClone(json);
 
   for (const item of meta) {
     const [typeId, ...segments] = item;
-
-    if (segments.length === 0) {
-      switch (typeId) {
-        case BIGINT:
-          return BigInt(result as string);
-      }
-      continue;
-    }
-
-    let current: any = result;
-
-    for (let i = 0; i < segments.length - 1; i++) {
-      if (current == null) break;
-      current = current[segments[i]];
-    }
-
-    if (current == null) continue;
-
-    const lastSeg = segments[segments.length - 1];
-    const raw = current[lastSeg];
-
-    switch (typeId) {
-      case BIGINT:
-        current[lastSeg] = BigInt(raw as string);
-        break;
-    }
+    applyMeta(result, segments, typeId);
   }
 
   return result;
+}
+
+/**
+ * Walk `segments` (the path recorded by the Rust server) and restore the
+ * BigInt at each matching leaf. A `"*"` segment fans out across every array
+ * element / object value, mirroring the server's `AnyElem` / `AnyKey`.
+ *
+ * `segments` is always non-empty here (the empty-segments case is handled by
+ * the top-level branch in `deserialize`).
+ */
+function applyMeta(node: any, segments: (string | number)[], typeId: number): void {
+  // Empty path: `node` itself is the bigint leaf (e.g. an array element fanned
+  // out by a preceding "*"). Convert it in place where the parent holds it.
+  if (segments.length === 0) {
+    convertLeaf(node, typeId);
+    return;
+  }
+
+  const [head, ...rest] = segments;
+
+  if (head === "*") {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        node[i] = convertLeaf(node[i], typeId);
+      }
+    } else if (node != null && typeof node === "object") {
+      for (const key of Object.keys(node)) {
+        node[key] = convertLeaf(node[key], typeId);
+      }
+    }
+    return;
+  }
+
+  if (rest.length === 0) {
+    if (node != null && typeof node === "object") {
+      node[head] = convertLeaf(node[head], typeId);
+    }
+    return;
+  }
+
+  if (node != null && typeof node === "object" && node[head] != null) {
+    applyMeta(node[head], rest, typeId);
+  }
+}
+
+/// Convert a single value to its JS form per `typeId`. Returns the value
+/// unchanged when it isn't the expected raw (string) form.
+function convertLeaf(value: any, typeId: number): any {
+  switch (typeId) {
+    case BIGINT:
+      return typeof value === "string" ? BigInt(value) : value;
+    default:
+      return value;
+  }
+}
+
+/**
+ * Detect whether a parsed JSON response is a BigInt envelope
+ * (`{ json, meta }`) produced by the fnrpc server.
+ *
+ * The server only emits this envelope when the response actually contains
+ * BigInt-style integers; everything else is returned as bare JSON.
+ */
+export function isEnvelope(value: unknown): value is Serialized {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "json" in value &&
+    "meta" in value &&
+    Array.isArray((value as Serialized).meta)
+  );
 }
 
 // ── Serialize for the Rust backend (no precision loss) ──

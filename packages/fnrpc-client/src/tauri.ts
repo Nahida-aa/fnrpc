@@ -1,5 +1,5 @@
 import type { ProcedureKind } from "./types";
-import { serialize, toRustJson } from "./serializer";
+import { toRustJson, deserialize, isEnvelope } from "./serializer";
 import { RpcError } from "./error";
 
 /**
@@ -59,11 +59,18 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
               rejectNext = null;
             }
           } else {
+            let val: unknown;
+            try {
+              val = JSON.parse(msg);
+            } catch {
+              val = msg;
+            }
+            if (isEnvelope(val)) val = deserialize(val);
             if (resolveNext) {
-              resolveNext({ done: false, value: msg });
+              resolveNext({ done: false, value: val });
               resolveNext = null;
             } else {
-              pending.push({ done: false, value: msg });
+              pending.push({ done: false, value: val });
             }
           }
         };
@@ -126,6 +133,7 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
           input: toRustJson(input),
         }),
       )
+      .then((result) => (isEnvelope(result) ? deserialize(result) : result))
       .catch((err: unknown) => {
         const msg = typeof err === "string" ? err : String(err);
         throw parseError(msg);
