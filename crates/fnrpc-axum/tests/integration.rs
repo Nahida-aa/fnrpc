@@ -88,7 +88,9 @@ async fn test_post() {
                 .method("POST")
                 .uri("/greet")
                 .header("content-type", "application/json")
-                .body(axum::body::Body::from(serde_json::to_vec(&"world").unwrap()))
+                .body(axum::body::Body::from(
+                    serde_json::to_vec(&"world").unwrap(),
+                ))
                 .unwrap(),
         )
         .await
@@ -124,7 +126,47 @@ async fn test_subscribe_sse() {
     if let Some(Ok(frame)) = body.frame().await {
         if let Ok(data) = frame.into_data() {
             let s = String::from_utf8_lossy(&data);
-            assert!(s.starts_with("data: "), "expected SSE data frame, got: {s:?}");
+            assert!(
+                s.starts_with("data: "),
+                "expected SSE data frame, got: {s:?}"
+            );
         }
     }
+}
+
+// ── route_raw: status code + response headers reach the client ──
+
+#[fnrpc::rpc_raw]
+fn raw_created(_input: &[u8]) -> fnrpc::output::RpcOutput {
+    fnrpc::output::RpcOutput::ok(b"created".to_vec())
+        .with_status(axum::http::StatusCode::CREATED)
+        .header_str("x-fnrpc", "1")
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("application/json"),
+        )
+}
+
+#[tokio::test]
+async fn test_route_raw_http_status_and_headers() {
+    let router = RpcRouterBuilder::<()>::new().route_raw(raw_created).build();
+    let state = Arc::new(FnrpcState::new(router, |_| ()));
+    let app = Router::new()
+        .route("/{*path}", axum::routing::any(handle::<()>))
+        .with_state(state);
+
+    let res = app
+        .oneshot(
+            axum::http::Request::builder()
+                .uri("/raw_created")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), axum::http::StatusCode::CREATED);
+    assert_eq!(res.headers().get("x-fnrpc").unwrap(), "1");
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&*body, b"created");
 }

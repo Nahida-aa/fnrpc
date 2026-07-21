@@ -5,12 +5,22 @@
 use fnrpc::error::RpcErr;
 use fnrpc::handler::{RpcFn, RpcFnExt};
 use fnrpc::middlewares::hook::HookLayer;
+use fnrpc::output::RpcOutput;
 use fnrpc::router::RpcRouterBuilder;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::pin::Pin;
 use std::sync::Arc;
+
+/// Whether the output carries a JSON content-type header (the new form of the
+/// old `is_json` flag returned by `dispatch`).
+fn has_json_header(out: &RpcOutput) -> bool {
+    out.http
+        .as_ref()
+        .and_then(|h| h.headers.as_ref())
+        .map_or(false, |h| h.contains_key(http::header::CONTENT_TYPE))
+}
 
 // --- Test types ---
 
@@ -397,12 +407,12 @@ async fn test_noop_raw_dispatch() {
     let router = RpcRouterBuilder::<()>::new()
         .route_bytes(test_noop_raw)
         .build();
-    let (bytes, is_json) = router
+    let out = router
         .dispatch(&(), "test_noop_raw", b"hello", false)
         .await
         .unwrap();
-    assert_eq!(&*bytes, b"ok");
-    assert!(!is_json); // raw bytes handler
+    assert_eq!(&*out.data, b"ok");
+    assert!(!has_json_header(&out)); // raw bytes handler
 }
 
 // ── Echo GET handler test ──────────────────────────────
@@ -418,12 +428,12 @@ async fn test_echo_get_dispatch() {
         .route_fn(test_echo_get)
         .build();
     // GET dispatch: bytes are query string, handler parses `input` param
-    let (bytes, is_json) = router
+    let out = router
         .dispatch(&(), "test_echo_get", b"input=%22hello%22", true)
         .await
         .unwrap();
-    assert_eq!(&*bytes, br#""hello""#);
-    assert!(is_json); // RpcFn handler returns JSON
+    assert_eq!(&*out.data, br#""hello""#);
+    assert!(has_json_header(&out)); // RpcFn handler returns JSON
 }
 
 // ── Echo POST handler test ─────────────────────────────
@@ -438,12 +448,12 @@ async fn test_echo_post_dispatch() {
     let router = RpcRouterBuilder::<()>::new()
         .route_fn(test_echo_post)
         .build();
-    let (bytes, is_json) = router
+    let out = router
         .dispatch(&(), "test_echo_post", br#""world""#, false)
         .await
         .unwrap();
-    assert_eq!(&*bytes, br#""world""#);
-    assert!(is_json);
+    assert_eq!(&*out.data, br#""world""#);
+    assert!(has_json_header(&out));
 }
 
 // ── Echo with middleware test ──────────────────────────
@@ -465,12 +475,12 @@ async fn test_echo_with_middleware() {
         .route_fn(test_echo_get)
         .build();
 
-    let (bytes, is_json) = router
+    let out = router
         .dispatch(&(), "test_echo_get", b"input=%22hi%22", true)
         .await
         .unwrap();
-    assert_eq!(&*bytes, br#""hi""#);
-    assert!(is_json);
+    assert_eq!(&*out.data, br#""hi""#);
+    assert!(has_json_header(&out));
     assert_eq!(mw_called.load(Ordering::SeqCst), 1);
 }
 
@@ -495,11 +505,11 @@ async fn test_layer_fn_middleware() {
         .route_fn(test_echo_get)
         .build();
 
-    let (bytes, _is_json) = router
+    let out = router
         .dispatch(&(), "test_echo_get", b"input=%22layer_fn%22", true)
         .await
         .unwrap();
-    assert_eq!(&*bytes, br#""layer_fn""#);
+    assert_eq!(&*out.data, br#""layer_fn""#);
     assert_eq!(call_count.load(Ordering::SeqCst), 1);
 }
 
@@ -515,12 +525,12 @@ async fn test_tracing_layer() {
         .layer(TracingLayer)
         .build();
 
-    let (bytes, is_json) = router
+    let out = router
         .dispatch(&(), "test_echo_get", b"input=%22tracing%22", true)
         .await
         .unwrap();
-    assert_eq!(&*bytes, br#""tracing""#);
-    assert!(is_json);
+    assert_eq!(&*out.data, br#""tracing""#);
+    assert!(has_json_header(&out));
 }
 
 // ── BigInt end-to-end (client→server) decode-by-schema test ──
@@ -567,12 +577,12 @@ async fn test_bigint_decoded_by_schema_end_to_end() {
     let wire = br#"{"id":"18446744073709551615","signed":"170141183460469231731687303715884105727","list":["1","2","18446744073709551615"]}"#;
 
     let router = RpcRouterBuilder::<()>::new().route_fn(BigId).build();
-    let (bytes, is_json) = router.dispatch(&(), "big_id", wire, false).await.unwrap();
-    assert!(is_json);
+    let out = router.dispatch(&(), "big_id", wire, false).await.unwrap();
+    assert!(has_json_header(&out));
 
     // The handler now returns a `{ json, meta }` envelope on the response side;
     // decode it back to a bare value (as the TS client does via `deserialize`).
-    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&out.data).unwrap();
     let value = fnrpc::serializer::decode_bigint_by_schema::<BigIdOutput>(value);
     let output: BigIdOutput = serde_json::from_value(value).unwrap();
     // Full u64 / i128 precision preserved through schema-driven decode.
@@ -635,4 +645,42 @@ fn test_subscribe_input_type_is_generated() {
         bindings.contains("input: SubInput;"),
         "subscribe procedure does not reference its input type:\n{bindings}"
     );
+}
+
+// ── route_raw: RpcOutput carries status + headers ──────
+
+#[fnrpc::rpc_raw]
+fn raw_created(_input: &[u8]) -> RpcOutput {
+    RpcOutput::ok(b"created".to_vec())
+        .with_status(http::StatusCode::CREATED)
+        .header_str("x-fnrpc", "1")
+}
+
+#[tokio::test]
+async fn test_route_raw_status_and_headers() {
+    let router = RpcRouterBuilder::<()>::new().route_raw(raw_created).build();
+    let out = router
+        .dispatch(&(), "raw_created", b"", false)
+        .await
+        .unwrap();
+    assert_eq!(&*out.data, b"created");
+    let http = out.http.expect("route_raw should set HttpInfo");
+    assert_eq!(http.status, Some(http::StatusCode::CREATED));
+    let headers = http.headers.expect("route_raw should set headers");
+    assert_eq!(headers.get("x-fnrpc").unwrap(), "1");
+}
+
+// A bare `route_bytes` handler must still produce `http: None` (default 200,
+// no extra headers) — confirming the two tiers are independent.
+#[tokio::test]
+async fn test_route_bytes_stays_untouched() {
+    let router = RpcRouterBuilder::<()>::new()
+        .route_bytes(test_noop_raw)
+        .build();
+    let out = router
+        .dispatch(&(), "test_noop_raw", b"hello", false)
+        .await
+        .unwrap();
+    assert_eq!(&*out.data, b"ok");
+    assert!(out.http.is_none());
 }

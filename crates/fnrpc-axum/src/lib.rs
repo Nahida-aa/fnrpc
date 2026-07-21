@@ -182,13 +182,20 @@ where
         let result = state.router.dispatch(&ctx, &path, &input, is_get).await;
 
         match result {
-            Ok((bytes, is_json)) => {
-                let mut builder = Response::builder().status(StatusCode::OK);
-                if is_json {
-                    builder = builder.header("content-type", "application/json");
+            Ok(out) => {
+                let status = out
+                    .http
+                    .as_ref()
+                    .and_then(|h| h.status)
+                    .unwrap_or(StatusCode::OK);
+                let mut builder = Response::builder().status(status);
+                if let Some(headers) = out.http.as_ref().and_then(|h| h.headers.as_ref()) {
+                    for (name, value) in headers.iter() {
+                        builder = builder.header(name, value);
+                    }
                 }
                 builder
-                    .body(axum::body::Body::from(bytes.into_owned()))
+                    .body(axum::body::Body::from(out.data.into_owned()))
                     .unwrap()
             }
             Err(e) => {

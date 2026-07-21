@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use http::Extensions;
 
 use crate::error::RpcErr;
+use crate::output::RpcOutput;
 use crate::middleware::{RpcLayer, RpcService};
 
 /// A logging layer that emits structured [`tracing`] events per call.
@@ -18,9 +19,9 @@ pub struct TracingService<Ctx, S> {
 
 impl<Ctx: Send + Sync + 'static, S> RpcService<Ctx> for TracingService<Ctx, S>
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
+    S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> + Send + Sync,
 {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -30,7 +31,7 @@ where
         input: &[u8],
         is_get: bool,
         extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         let start = std::time::Instant::now();
         let result = self.inner.call(ctx, path, input, is_get, extensions).await;
         let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -66,7 +67,7 @@ where
 
 impl<Ctx: Send + Sync + 'static, S> RpcLayer<Ctx, S> for TracingLayer
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
+    S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> + Send + Sync,
 {
     type Service = TracingService<Ctx, S>;
 

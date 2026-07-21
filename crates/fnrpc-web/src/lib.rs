@@ -222,7 +222,7 @@ struct RpcRouterHandler<Ctx: Send + Sync + 'static> {
 }
 
 impl<Ctx: Send + Sync + 'static> fnrpc::middleware::RpcService<Ctx> for RpcRouterHandler<Ctx> {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = fnrpc::output::RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -232,7 +232,7 @@ impl<Ctx: Send + Sync + 'static> fnrpc::middleware::RpcService<Ctx> for RpcRoute
         input: &[u8],
         is_get: bool,
         _extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<fnrpc::output::RpcOutput, RpcErr> {
         let dispatch_path = if self.prefix_len > 0 && path.len() > self.prefix_len {
             &path[self.prefix_len..]
         } else {
@@ -253,7 +253,7 @@ struct StaticDirHandler {
 
 #[cfg(feature = "file")]
 impl<Ctx: Send + Sync + 'static> fnrpc::middleware::RpcService<Ctx> for StaticDirHandler {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = fnrpc::output::RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -263,7 +263,7 @@ impl<Ctx: Send + Sync + 'static> fnrpc::middleware::RpcService<Ctx> for StaticDi
         _input: &[u8],
         _is_get: bool,
         _extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<fnrpc::output::RpcOutput, RpcErr> {
         let relative = if self.prefix_len > 0 && path.len() > self.prefix_len {
             &path[self.prefix_len..]
         } else {
@@ -271,7 +271,10 @@ impl<Ctx: Send + Sync + 'static> fnrpc::middleware::RpcService<Ctx> for StaticDi
         };
         let file_path = self.dir.join(relative.trim_start_matches('/'));
         match tokio::fs::read(&file_path).await {
-            Ok(data) => Ok((Cow::Owned(data), false)),
+            Ok(data) => Ok(fnrpc::output::RpcOutput {
+                data: Cow::Owned(data),
+                http: None,
+            }),
             Err(_) => Err(RpcErr::not_found("file not found")),
         }
     }
@@ -402,15 +405,21 @@ async fn multi_call<Ctx: Send + Sync + 'static>(
     }
 }
 
-fn build_response(result: Result<(Cow<'static, [u8]>, bool), RpcErr>) -> Response<ResponseBody> {
+fn build_response(result: Result<fnrpc::output::RpcOutput, RpcErr>) -> Response<ResponseBody> {
     match result {
-        Ok((bytes, is_json)) => {
-            let mut builder = Response::builder().status(StatusCode::OK);
-            if is_json {
-                builder =
-                    builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        Ok(out) => {
+            let status = out
+                .http
+                .as_ref()
+                .and_then(|h| h.status)
+                .unwrap_or(StatusCode::OK);
+            let mut builder = Response::builder().status(status);
+            if let Some(headers) = out.http.as_ref().and_then(|h| h.headers.as_ref()) {
+                for (name, value) in headers.iter() {
+                    builder = builder.header(name, value);
+                }
             }
-            let resp_body = match &bytes {
+            let resp_body = match &out.data {
                 Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
                 Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(slice)),
                 Cow::Owned(vec) => ResponseBody::bytes(Bytes::copy_from_slice(vec)),

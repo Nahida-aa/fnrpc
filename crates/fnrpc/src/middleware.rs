@@ -18,7 +18,6 @@
 //!
 //! Layers are applied LIFO — the last layer added becomes the outermost.
 
-use std::borrow::Cow;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -26,6 +25,7 @@ use std::pin::Pin;
 use http::Extensions;
 
 use crate::error::RpcErr;
+use crate::output::RpcOutput;
 
 // ── Core Service trait ──────────────────────────────────
 
@@ -140,7 +140,7 @@ where
 impl<Ctx, S, F> RpcLayer<Ctx, S> for AsyncFnMiddleware<F>
 where
     Ctx: Send + Sync + 'static,
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync + 'static,
+    S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> + Send + Sync + 'static,
     F: for<'a> Fn(
             &'a S,
             &'a Ctx,
@@ -148,8 +148,11 @@ where
             &'a [u8],
             bool,
             &'a mut Extensions,
-        ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
-        + Clone + Send + Sync + 'static,
+        ) -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
 {
     type Service = AsyncFnService<Ctx, S, F>;
 
@@ -171,18 +174,19 @@ pub struct AsyncFnService<Ctx, S, F> {
 
 impl<Ctx: Send + Sync + 'static, S, F> RpcService<Ctx> for AsyncFnService<Ctx, S, F>
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
+    S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> + Send + Sync,
     F: for<'a> Fn(
-        &'a S,
-        &'a Ctx,
-        &'a str,
-        &'a [u8],
-        bool,
-        &'a mut Extensions,
-    ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
-        + Send + Sync,
+            &'a S,
+            &'a Ctx,
+            &'a str,
+            &'a [u8],
+            bool,
+            &'a mut Extensions,
+        ) -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>>
+        + Send
+        + Sync,
 {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -192,7 +196,7 @@ where
         input: &[u8],
         is_get: bool,
         extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         (self.func)(&self.inner, ctx, path, input, is_get, extensions).await
     }
 }
@@ -200,7 +204,7 @@ where
 // ── ServiceExt trait ──────────────────────────────────
 
 /// Extension trait for [`RpcService`] providing combinator methods.
-pub trait ServiceExt<Ctx>: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> {
+pub trait ServiceExt<Ctx>: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> {
     /// Wrap this service with an async function middleware.
     fn enclosed_fn<F>(self, func: F) -> AsyncFnService<Ctx, Self, F>
     where
@@ -212,18 +216,19 @@ pub trait ServiceExt<Ctx>: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool)
                 &'a [u8],
                 bool,
                 &'a mut Extensions,
-            ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
-            + Clone + Send + Sync + 'static,
+            )
+                -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         Ctx: Send + Sync + 'static,
     {
         AsyncFnMiddleware(func).layer(self)
     }
 }
 
-impl<Ctx, S> ServiceExt<Ctx> for S where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>
-{
-}
+impl<Ctx, S> ServiceExt<Ctx> for S where S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> {}
 
 /// Extension trait providing a [`next`](NextExt::next) method for middleware closures.
 ///
@@ -231,7 +236,7 @@ impl<Ctx, S> ServiceExt<Ctx> for S where
 /// `inner.next(ctx, path, input, is_get, extensions).await` to delegate to the
 /// inner service — no need to import or qualify the trait method.
 #[allow(async_fn_in_trait)]
-pub trait NextExt<Ctx>: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> {
+pub trait NextExt<Ctx>: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> {
     /// Delegate to the next (inner) service in the middleware chain.
     async fn next<'a>(
         &'a self,
@@ -240,15 +245,12 @@ pub trait NextExt<Ctx>: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), E
         input: &'a [u8],
         is_get: bool,
         extensions: &'a mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         RpcService::call(self, ctx, path, input, is_get, extensions).await
     }
 }
 
-impl<Ctx, S> NextExt<Ctx> for S where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>
-{
-}
+impl<Ctx, S> NextExt<Ctx> for S where S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> {}
 
 // ── ClosureService (closure-based middleware) ─────────
 
@@ -274,10 +276,12 @@ where
             &'a [u8],
             bool,
             &'a mut Extensions,
-        ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>
-        + Send + Sync + 'static,
+        ) -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>>
+        + Send
+        + Sync
+        + 'static,
 {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -287,7 +291,7 @@ where
         input: &[u8],
         is_get: bool,
         extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         (self.func)(&self.inner, ctx, path, input, is_get, extensions).await
     }
 }

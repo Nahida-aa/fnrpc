@@ -17,8 +17,9 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use specta::Type;
-
+pub mod rpc_output;
 use crate::error::RpcErr;
+pub use rpc_output::{RpcOutputFn, RpcOutputHandlerFn};
 
 /// TypeScript type reference info for a single type (input or output).
 ///
@@ -44,9 +45,9 @@ pub trait RpcFn<Ctx>: Send + Sync {
     type Input: DeserializeOwned + Type + 'static;
     type Output: Serialize + Type + 'static;
     const KEY: &'static str;
-    const KIND: &'static str = "query";
     /// HTTP method: "GET" (default, input from query string) or "POST" (input from body).
     const METHOD: &'static str = "GET";
+    const KIND: &'static str = "query";
 
     fn exec(
         ctx: &Ctx,
@@ -302,7 +303,6 @@ pub trait BytesHandlerFn<Ctx>: Send + Sync {
 }
 
 // ── Handler enum (unified dispatch) ──────────────────────
-
 /// A unified handler that can be either a typed RPC function or a bytes handler.
 pub enum Handler<Ctx: Send + Sync + 'static> {
     /// Typed RPC function — input/output via JSON Value.
@@ -312,17 +312,25 @@ pub enum Handler<Ctx: Send + Sync + 'static> {
     },
     /// Bytes handler — raw input/output.
     Bytes(Box<dyn BytesHandlerFn<Ctx>>),
+    /// Raw handler returning [`RpcOutput`](crate::output::RpcOutput) — may carry
+    /// an HTTP status code and/or headers via `RpcOutput::http`.
+    RpcOutput(Box<dyn RpcOutputHandlerFn<Ctx>>),
 }
 
 impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
-    /// Call the handler. Returns (bytes, is_json) where is_json indicates
-    /// whether the response should have Content-Type: application/json.
+    /// Call the handler, returning an [`RpcOutput`].
+    ///
+    /// Typed and bare-bytes handlers produce `RpcOutput { data, http: None }`
+    /// (default 200, no extra headers); `route_raw` handlers may set
+    /// `http` to carry an explicit status code and/or response headers.
     pub async fn call(
         &self,
         ctx: &Ctx,
         input: &[u8],
         is_get: bool,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<crate::output::RpcOutput, RpcErr> {
+        use crate::output::{HttpInfo, RpcOutput};
+        use http::{HeaderMap, HeaderValue};
         match self {
             Handler::Rpc { f, skip_query } => {
                 let input_val: Value = if *skip_query {
@@ -346,9 +354,30 @@ impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
                 } else {
                     serde_json::from_slice(input).unwrap_or(Value::Null)
                 };
-                f.call(ctx, input_val).await.map(|b| (b, true))
+                let bytes = f.call(ctx, input_val).await?;
+                // Typed handlers always produce JSON; pre-set the content-type so
+                // transports don't need to know the serialization format.
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                Ok(RpcOutput {
+                    data: bytes,
+                    http: Some(HttpInfo {
+                        status: None,
+                        headers: Some(headers),
+                    }),
+                })
             }
-            Handler::Bytes(f) => f.call(ctx, input).await.map(|b| (b, false)),
+            Handler::Bytes(f) => {
+                let bytes = f.call(ctx, input).await?;
+                Ok(RpcOutput {
+                    data: bytes,
+                    http: None,
+                })
+            }
+            Handler::RpcOutput(f) => f.call(ctx, input).await,
         }
     }
 }

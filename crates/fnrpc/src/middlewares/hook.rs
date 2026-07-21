@@ -1,16 +1,15 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use http::Extensions;
 
 use crate::error::RpcErr;
 use crate::middleware::{RpcLayer, RpcService};
+use crate::output::RpcOutput;
 
 type BeforeHook<Ctx> =
     Arc<dyn for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<&'a [u8], RpcErr> + Send + Sync>;
 
-type AfterHook<Ctx> =
-    Arc<dyn Fn(&Ctx, &str, &mut Result<(Cow<'static, [u8]>, bool), RpcErr>) + Send + Sync>;
+type AfterHook<Ctx> = Arc<dyn Fn(&Ctx, &str, &mut Result<RpcOutput, RpcErr>) + Send + Sync>;
 
 /// A convenience layer with before/after hooks.
 ///
@@ -60,7 +59,10 @@ impl<Ctx> HookLayer<Ctx> {
     /// (zero allocation). Return `Err(RpcErr)` to short-circuit.
     pub fn before<F>(mut self, f: F) -> Self
     where
-        F: for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<&'a [u8], RpcErr> + Send + Sync + 'static,
+        F: for<'a> Fn(&Ctx, &str, &'a [u8], bool) -> Result<&'a [u8], RpcErr>
+            + Send
+            + Sync
+            + 'static,
     {
         self.before = Some(Arc::new(f));
         self
@@ -71,7 +73,7 @@ impl<Ctx> HookLayer<Ctx> {
     /// The hook receives a mutable reference to the result (writable).
     pub fn after<F>(mut self, f: F) -> Self
     where
-        F: Fn(&Ctx, &str, &mut Result<(Cow<'static, [u8]>, bool), RpcErr>) + Send + Sync + 'static,
+        F: Fn(&Ctx, &str, &mut Result<RpcOutput, RpcErr>) + Send + Sync + 'static,
     {
         self.after = Some(Arc::new(f));
         self
@@ -92,9 +94,9 @@ pub struct HookService<Ctx, S> {
 
 impl<Ctx: Send + Sync + 'static, S> RpcService<Ctx> for HookService<Ctx, S>
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
+    S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> + Send + Sync,
 {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -104,7 +106,7 @@ where
         input: &[u8],
         is_get: bool,
         extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         if let Some(ref before) = self.before {
             let input = before(ctx, path, input, is_get)?;
             let mut result = self.inner.call(ctx, path, input, is_get, extensions).await;
@@ -124,7 +126,7 @@ where
 
 impl<Ctx: Send + Sync + 'static, S> RpcLayer<Ctx, S> for HookLayer<Ctx>
 where
-    S: RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr> + Send + Sync,
+    S: RpcService<Ctx, Response = RpcOutput, Error = RpcErr> + Send + Sync,
 {
     type Service = HookService<Ctx, S>;
 

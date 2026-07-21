@@ -17,8 +17,11 @@ use xitca_router::Router;
 
 use crate::error::RpcErr;
 use crate::gen_ts_client;
-use crate::handler::{BytesHandlerFn, Handler, HandlerFn, RpcFn, RpcFnExt, TsTypeInfo};
+use crate::handler::{
+    BytesHandlerFn, Handler, HandlerFn, RpcFn, RpcFnExt, RpcOutputHandlerFn, TsTypeInfo,
+};
 use crate::middleware::RpcLayer;
+use crate::output::RpcOutput;
 
 /// Metadata for a single procedure, used by TypeScript codegen.
 #[derive(Debug, Clone)]
@@ -42,13 +45,13 @@ pub trait ErasedHandler<Ctx>: Send + Sync {
         input: &'a [u8],
         is_get: bool,
         extensions: &'a mut Extensions,
-    ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>>;
 }
 
 /// Blanket impl: any `RpcService` can be used as `ErasedHandler`.
 impl<Ctx: Send + Sync + 'static, T> ErasedHandler<Ctx> for T
 where
-    T: crate::middleware::RpcService<Ctx, Response = (Cow<'static, [u8]>, bool), Error = RpcErr>
+    T: crate::middleware::RpcService<Ctx, Response = RpcOutput, Error = RpcErr>
         + Send
         + Sync
         + 'static,
@@ -60,7 +63,7 @@ where
         input: &'a [u8],
         is_get: bool,
         extensions: &'a mut Extensions,
-    ) -> Pin<Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>> {
         Box::pin(crate::middleware::RpcService::call(
             self, ctx, path, input, is_get, extensions,
         ))
@@ -72,7 +75,7 @@ where
 impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx>
     for Box<dyn ErasedHandler<Ctx>>
 {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -82,7 +85,7 @@ impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx>
         input: &[u8],
         is_get: bool,
         extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         (**self).call(ctx, path, input, is_get, extensions).await
     }
 }
@@ -157,7 +160,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
         path: &str,
         input: &[u8],
         is_get: bool,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         let slot = match self.handler_router.at(path).ok() {
             Some(m) => m.value,
             None => return Err(RpcErr::not_found(format!("unknown path: {path}"))),
@@ -222,7 +225,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
 /// which matches the handler's `KEY` constant. This avoids needing prefix
 /// information at this level — prefix stripping is handled by the caller.
 impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx> for RpcRouter<Ctx> {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -232,7 +235,7 @@ impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx> for RpcRoute
         input: &[u8],
         is_get: bool,
         _extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         // Use the last path segment as dispatch key (e.g. "/api/greet" → "greet")
         let dispatch_path = path
             .trim_start_matches('/')
@@ -262,7 +265,7 @@ struct RouterIntoHandler<Ctx: Send + Sync + 'static> {
 }
 
 impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx> for RouterIntoHandler<Ctx> {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -272,7 +275,7 @@ impl<Ctx: Send + Sync + 'static> crate::middleware::RpcService<Ctx> for RouterIn
         input: &[u8],
         is_get: bool,
         extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         // Strip leading slash for handler lookup (keys are bare like "echo", not "/echo")
         let lookup_path = path.strip_prefix('/').unwrap_or(path);
         match self.router.handler_router.at(lookup_path).ok() {
@@ -373,7 +376,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         impl<Ctx: Send + Sync + 'static, H: RpcFn<Ctx>> crate::middleware::RpcService<Ctx>
             for RpcHandler<Ctx, H>
         {
-            type Response = (Cow<'static, [u8]>, bool);
+            type Response = RpcOutput;
             type Error = RpcErr;
 
             async fn call(
@@ -383,7 +386,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 input: &[u8],
                 is_get: bool,
                 _extensions: &mut Extensions,
-            ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+            ) -> Result<RpcOutput, RpcErr> {
                 let input_val: Value = if is_get {
                     let query_str = std::str::from_utf8(input).unwrap_or("");
                     query_str
@@ -404,7 +407,18 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                     serde_json::from_slice(input).unwrap_or(Value::Null)
                 };
                 let result = self.0.call_value(ctx, input_val).await?;
-                Ok((result, true))
+                let mut headers = ::http::HeaderMap::new();
+                headers.insert(
+                    ::http::header::CONTENT_TYPE,
+                    ::http::HeaderValue::from_static("application/json"),
+                );
+                Ok(RpcOutput {
+                    data: result,
+                    http: Some(crate::output::HttpInfo {
+                        status: None,
+                        headers: Some(headers),
+                    }),
+                })
             }
         }
 
@@ -452,7 +466,7 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>>
             crate::middleware::RpcService<Ctx> for BytesHandler<Ctx, F>
         {
-            type Response = (Cow<'static, [u8]>, bool);
+            type Response = RpcOutput;
             type Error = RpcErr;
 
             async fn call(
@@ -462,9 +476,12 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 input: &[u8],
                 _is_get: bool,
                 _extensions: &mut Extensions,
-            ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+            ) -> Result<RpcOutput, RpcErr> {
                 let result = F::exec(ctx, input).await?;
-                Ok((result, false))
+                Ok(RpcOutput {
+                    data: result,
+                    http: None,
+                })
             }
         }
 
@@ -487,7 +504,72 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         self
     }
 
-    /// Register a subscribe handler.
+    /// Register a raw handler that returns [`RpcOutput`].
+    ///
+    /// Unlike [`route_bytes`](Self::route_bytes), this handler may set an
+    /// explicit HTTP status code and/or response headers via
+    /// [`RpcOutput::http`](crate::output::RpcOutput::http). Raw handlers bypass
+    /// serde and codegen (not included in `bindings.ts`).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[fnrpc::rpc_bytes]
+    /// fn custom(ctx: &(), input: &[u8]) -> Result<fnrpc::output::RpcOutput, fnrpc::error::RpcErr> {
+    ///     Ok(fnrpc::output::RpcOutput::ok(b"created".to_vec())
+    ///         .with_status(http::StatusCode::CREATED)
+    ///         .header("x-test", "1"))
+    /// }
+    /// ```
+    pub fn route_raw<F: crate::handler::RpcOutputFn<Ctx> + 'static>(mut self, handler: F) -> Self {
+        struct OutputHandler<Ctx, F: crate::handler::RpcOutputFn<Ctx>>(F, PhantomData<Ctx>);
+        impl<Ctx: Send + Sync + 'static, F: crate::handler::RpcOutputFn<Ctx>>
+            RpcOutputHandlerFn<Ctx> for OutputHandler<Ctx, F>
+        {
+            fn call<'a>(
+                &'a self,
+                ctx: &'a Ctx,
+                input: &'a [u8],
+            ) -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>> {
+                Box::pin(async move { F::exec(ctx, input).await })
+            }
+        }
+        impl<Ctx: Send + Sync + 'static, F: crate::handler::RpcOutputFn<Ctx>>
+            crate::middleware::RpcService<Ctx> for OutputHandler<Ctx, F>
+        {
+            type Response = RpcOutput;
+            type Error = RpcErr;
+
+            async fn call(
+                &self,
+                ctx: &Ctx,
+                _path: &str,
+                input: &[u8],
+                _is_get: bool,
+                _extensions: &mut Extensions,
+            ) -> Result<RpcOutput, RpcErr> {
+                F::exec(ctx, input).await
+            }
+        }
+
+        let output_handler = OutputHandler(handler, PhantomData);
+
+        if self.middlewares.is_empty() {
+            let raw_handler = Arc::new(Handler::RpcOutput(Box::new(output_handler)));
+            self.router
+                .insert(F::KEY.to_string(), HandlerSlot::Raw(raw_handler))
+                .unwrap();
+        } else {
+            let mut handler: Box<dyn ErasedHandler<Ctx>> = Box::new(output_handler);
+            for mw in self.middlewares.iter().rev() {
+                handler = mw(handler);
+            }
+            self.router
+                .insert(F::KEY.to_string(), HandlerSlot::Erased(Arc::from(handler)))
+                .unwrap();
+        }
+        self
+    }
     pub fn subscribe<H: crate::handler::RpcSubscribe<Ctx> + 'static>(mut self, handler: H) -> Self {
         // Register input/output types into the shared registry so they get
         // emitted as `export type ...` definitions (subscribe handlers were
@@ -556,11 +638,8 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
     pub fn layer<L>(mut self, layer: L) -> Self
     where
         L: RpcLayer<Ctx, Box<dyn ErasedHandler<Ctx>>> + 'static,
-        L::Service: crate::middleware::RpcService<
-                Ctx,
-                Response = (Cow<'static, [u8]>, bool),
-                Error = RpcErr,
-            > + Send
+        L::Service: crate::middleware::RpcService<Ctx, Response = RpcOutput, Error = RpcErr>
+            + Send
             + Sync
             + 'static,
     {
@@ -585,9 +664,9 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 &'a [u8],
                 bool,
                 &'a mut Extensions,
-            ) -> Pin<
-                Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>,
-            > + Clone
+            )
+                -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>>
+            + Clone
             + Send
             + Sync
             + 'static,
@@ -665,12 +744,11 @@ where
             &'a [u8],
             bool,
             &'a mut Extensions,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<(Cow<'static, [u8]>, bool), RpcErr>> + Send + 'a>,
-        > + Send
+        ) -> Pin<Box<dyn Future<Output = Result<RpcOutput, RpcErr>> + Send + 'a>>
+        + Send
         + Sync,
 {
-    type Response = (Cow<'static, [u8]>, bool);
+    type Response = RpcOutput;
     type Error = RpcErr;
 
     async fn call(
@@ -680,7 +758,7 @@ where
         input: &[u8],
         is_get: bool,
         extensions: &mut Extensions,
-    ) -> Result<(Cow<'static, [u8]>, bool), RpcErr> {
+    ) -> Result<RpcOutput, RpcErr> {
         (self.func)(&self.handler, ctx, path, input, is_get, extensions).await
     }
 }

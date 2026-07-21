@@ -173,13 +173,19 @@ where
         let result = state.router.dispatch(&app_ctx, &path, &input, is_get).await;
 
         match result {
-            Ok((bytes, is_json)) => {
-                let mut builder = xitca_web::http::Response::builder().status(StatusCode::OK);
-                if is_json {
-                    builder =
-                        builder.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            Ok(out) => {
+                let status = out
+                    .http
+                    .as_ref()
+                    .and_then(|h| h.status)
+                    .unwrap_or(StatusCode::OK);
+                let mut builder = xitca_web::http::Response::builder().status(status);
+                if let Some(headers) = out.http.as_ref().and_then(|h| h.headers.as_ref()) {
+                    for (name, value) in headers.iter() {
+                        builder = builder.header(name, value);
+                    }
                 }
-                let resp_body = match &bytes {
+                let resp_body = match &out.data {
                     Cow::Borrowed(b"null") => ResponseBody::bytes(Bytes::from_static(b"null")),
                     Cow::Borrowed(slice) => ResponseBody::bytes(Bytes::from_static(*slice)),
                     Cow::Owned(vec) => ResponseBody::bytes(Bytes::copy_from_slice(vec)),

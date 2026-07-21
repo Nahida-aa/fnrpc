@@ -35,7 +35,9 @@ fnrpc (core)
 │   ├── hook.rs         —   HookLayer (before/after hooks)
 │   └── tracing.rs      —   TracingLayer (structured logging)
 ├── router.rs           — RpcRouter, RpcRouterBuilder, InnerService
-└── handler.rs          — RpcFn, RawRpcFn, Handler enum
+├── handler.rs           — RpcFn, RawRpcFn, Handler enum
+├── handler/rpc_output.rs — RpcOutputFn, RpcOutputHandlerFn (route_raw)
+└── output.rs           — RpcOutput, HttpInfo (framework-agnostic output)
 
 fnrpc-web               — standalone HTTP server on xitca-http
 ├── App::new()          — single router, zero Box::pin

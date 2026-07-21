@@ -3,9 +3,10 @@
 //! These attributes transform plain Rust functions into typed RPC handlers
 //! that are registered with [`RpcRouter`](fnrpc::router::RpcRouter).
 
-mod func;
-mod subscribe;
 mod bytes_handler;
+mod func;
+mod raw_handler;
+mod subscribe;
 
 use proc_macro::TokenStream;
 
@@ -263,4 +264,39 @@ pub fn rpc_subscribe(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn rpc_bytes(attr: TokenStream, item: TokenStream) -> TokenStream {
     bytes_handler::rpc_bytes_impl(attr, item)
+}
+
+/// Register a function as a raw handler returning [`RpcOutput`].
+///
+/// Like [`rpc_bytes`], this bypasses JSON serialization and codegen (not
+/// included in `bindings.ts`). The difference: the function returns
+/// [`RpcOutput`](fnrpc::output::RpcOutput), so it may set an explicit HTTP
+/// status code and/or response headers via [`RpcOutput::http`].
+///
+/// The function receives raw `&[u8]` and must return `RpcOutput` (or
+/// `Result<RpcOutput, RpcErr>`).
+///
+/// # Attribute arguments
+///
+/// ```ignore
+/// #[rpc_raw]              // key = function name
+/// #[rpc_raw("my_key")]    // key = "my_key"
+/// ```
+///
+/// # Example
+///
+/// ```ignore
+/// #[fnrpc::rpc_raw]
+/// fn created(input: &[u8]) -> fnrpc::output::RpcOutput {
+///     fnrpc::output::RpcOutput::ok(b"created".to_vec())
+///         .with_status(http::StatusCode::CREATED)
+///         .header("x-fnrpc", "1")
+/// }
+/// ```
+///
+/// Register with [`route_raw`](fnrpc::router::RpcRouterBuilder::route_raw)
+/// instead of `route_bytes`.
+#[proc_macro_attribute]
+pub fn rpc_raw(attr: TokenStream, item: TokenStream) -> TokenStream {
+    raw_handler::rpc_raw_impl(attr, item)
 }
