@@ -14,3 +14,8 @@ command names and passes the subscription cancellation id as `channel_id`.
 Also adds a unit test (`packages/fnrpc-client/test/tauri.test.ts`) asserting
 the invoked command names, and wires `bun run test` into CI so this class of
 regression is caught.
+
+Additionally fixes a pre-existing type error in `src/sse.ts` (the SSE
+`AsyncIterator` `next()` return type was incompatible with
+`IteratorResult<SSEEvent>`), and adds `@types/bun` plus a `tsconfig.test.json`
+so tests can `import { describe, it, expect } from "bun:test"` with full typing.

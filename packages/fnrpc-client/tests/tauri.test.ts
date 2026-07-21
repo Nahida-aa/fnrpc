@@ -1,3 +1,4 @@
+import { describe, it, expect } from "bun:test";
 import { tauriTransport } from "../src/tauri";
 import type { TauriCore } from "../src/tauri";
 

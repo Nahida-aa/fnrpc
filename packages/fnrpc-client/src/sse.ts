@@ -105,7 +105,12 @@ export async function connectSSE(opts: SSEConnectOptions): Promise<SSEResult> {
     iterable: {
       [Symbol.asyncIterator]() {
         return {
-          next: () => reader.read(),
+          next: () =>
+            reader.read().then((r) =>
+              r.done
+                ? { done: true as const, value: undefined as unknown as SSEEvent }
+                : { done: false as const, value: r.value as SSEEvent },
+            ),
           return: () => {
             reader.cancel()
             return Promise.resolve({ done: true, value: undefined as any })
