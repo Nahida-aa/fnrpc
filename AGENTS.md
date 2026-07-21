@@ -10,6 +10,7 @@
   - `cargo test -p fnrpc-xitca` — 2 integration tests
   - `cargo test -p fnrpc-axum` — 3 integration tests
 - Regenerate bindings: `cd examples/tauri-solid-tanstack/src-tauri && cargo run --bin gen-fnrpc`
+- Release process (Changesets-driven, Rust versions derived from the TS package — do NOT hand-publish): see [`.agents/release.md`](.agents/release.md)
 - Architecture, API, patterns → `SUMMARY.md` (may be outdated)
 - Benchmark guide → `.agents/benchmark-guide.md`
 - Roadmap → `ROADMAP.md`
