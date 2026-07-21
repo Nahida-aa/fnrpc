@@ -36,6 +36,9 @@ jobs:
       - name: Typecheck TS packages
         run: bun run typecheck
 
+      - name: Test TS packages
+        run: bun run test
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"

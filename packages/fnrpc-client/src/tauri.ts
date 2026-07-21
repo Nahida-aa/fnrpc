@@ -102,14 +102,14 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
                   resolveNext = null;
                 }
                 // Notify Rust side to cancel the subscription
-                mod.invoke("rpc_cancel_sub", { channelId }).catch(() => {});
+                mod.invoke("__fnrpc_rpc_cancel_sub", { channel_id: channelId }).catch(() => {});
                 return Promise.resolve({ done: true, value: undefined as any });
               },
             };
           },
         } satisfies AsyncIterable<unknown>;
 
-        await mod.invoke("rpc_sub", {
+        await mod.invoke("__fnrpc_rpc_sub", {
           path,
           input: serialized,
           channel,
@@ -122,7 +122,7 @@ export function tauriTransport(getCore: () => Promise<TauriCore>) {
     // query / mutate
     return getCore()
       .then((mod) =>
-        mod.invoke("rpc_fn", {
+        mod.invoke("__fnrpc_rpc_fn", {
           path,
           input: flattenForRust(serialize(input)) ?? null,
         }),
