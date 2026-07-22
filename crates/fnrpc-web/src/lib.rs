@@ -375,30 +375,33 @@ async fn multi_call<Ctx: Send + Sync + 'static>(
     ctx: &Ctx,
     mut req: Request<RequestExt<RequestBody>>,
 ) -> Response<ResponseBody> {
-    let path = req.uri().path().to_string();
-    let matched = router.at(&path).ok();
-    if let Some(m) = matched {
-        let input: Cow<'_, [u8]> = if req.method() == Method::GET {
-            req.uri().query().unwrap_or("").as_bytes().into()
-        } else {
-            let mut buf = Vec::new();
-            while let Some(chunk) = req.body_mut().data().await {
-                match chunk {
-                    Ok(c) => buf.extend_from_slice(c.as_ref()),
-                    Err(_) => {
-                        let body = serde_json::to_vec(&RpcErr::bad_request("body read error"))
-                            .unwrap_or_default();
-                        return Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                            .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
-                            .unwrap();
-                    }
+    // Read the body *first* so the `path`/`input` borrows below do not overlap
+    // the mutable `req.body_mut()` borrow. This avoids an owned `String` for
+    // the path (the previous `req.uri().path().to_string()`).
+    let input: Cow<'_, [u8]> = if req.method() == Method::GET {
+        req.uri().query().unwrap_or("").as_bytes().into()
+    } else {
+        let mut buf = Vec::new();
+        while let Some(chunk) = req.body_mut().data().await {
+            match chunk {
+                Ok(c) => buf.extend_from_slice(c.as_ref()),
+                Err(_) => {
+                    let body = serde_json::to_vec(&RpcErr::bad_request("body read error"))
+                        .unwrap_or_default();
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                        .body(ResponseBody::bytes(Bytes::copy_from_slice(&body)))
+                        .unwrap();
                 }
             }
-            buf.into()
-        };
+        }
+        buf.into()
+    };
 
+    let path = req.uri().path();
+    let matched = router.at(path).ok();
+    if let Some(m) = matched {
         let is_get = req.method() == Method::GET;
         let mut extensions = Extensions::new();
         let result = m
