@@ -37,7 +37,7 @@ fn prebuild_get(uri: &str, n: usize) -> Vec<axum::http::Request<axum::body::Body
 
 // ── Benchmarks ────────────────────────────────────────
 
-pub(crate) async fn bench_macro(n: usize) {
+pub async fn bench_macro(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();
     let state = Arc::new(FnrpcState::new(router, |_| ()));
     let app = Router::new()
@@ -64,7 +64,7 @@ pub(crate) async fn bench_macro(n: usize) {
     drop(_p);
 }
 
-pub(crate) async fn bench_noop_raw(n: usize) {
+pub async fn bench_noop_raw(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_bytes(noop_raw).build();
     let state = Arc::new(FnrpcState::new(router, |_| ()));
     let app = Router::new()

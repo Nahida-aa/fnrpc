@@ -34,7 +34,7 @@ fn prebuild_get(uri: &str, n: usize) -> Vec<axum::http::Request<axum::body::Body
 
 // ── Benchmarks ────────────────────────────────────────
 
-pub(crate) async fn bench(n: usize) {
+pub async fn bench(n: usize) {
     let app = Router::new()
         .route("/echo", get(handler_echo_get))
         .route("/noop_raw", get(handler_noop_raw));

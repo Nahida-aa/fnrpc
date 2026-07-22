@@ -1,10 +1,13 @@
 use std::pin::Pin;
 
 use dhat::{HeapStats, Profiler};
+use fnrpc::RpcOutput;
 use fnrpc::error::RpcErr;
 use fnrpc::handler::RpcFn;
 use fnrpc::router::RpcRouterBuilder;
 use fnrpc_web::App;
+use http::HeaderValue;
+use http::header::CONTENT_TYPE;
 use xitca_http::body::RequestBody;
 use xitca_http::bytes::Bytes;
 use xitca_http::http::{Method, Request, RequestExt, Uri};
@@ -35,10 +38,15 @@ impl RpcFn<()> for EchoManual {
 async fn echo_post(input: String) -> String {
     input
 }
-
+/// plaintext
 #[fnrpc::rpc_bytes]
-async fn noop_raw(input: &[u8]) -> &'static [u8] {
+async fn noop_raw(_input: &[u8]) -> &'static [u8] {
     b"ok"
+}
+
+#[fnrpc::rpc_raw]
+async fn null_json(_input: &[u8]) -> RpcOutput {
+    RpcOutput::ok(b"null").header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
 }
 
 fn build_get(uri: &Uri) -> Request<RequestExt<RequestBody>> {
@@ -66,7 +74,7 @@ fn prebuild_post(uri: &Uri, body: &[u8], n: usize) -> Vec<Request<RequestExt<Req
     (0..n).map(|_| build_post(uri, body)).collect()
 }
 
-pub(crate) async fn bench_macro(n: usize) {
+pub async fn bench_macro(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
@@ -89,7 +97,7 @@ pub(crate) async fn bench_macro(n: usize) {
     drop(_p);
 }
 
-pub(crate) async fn bench_manual(n: usize) {
+pub async fn bench_manual(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_fn(EchoManual).build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
@@ -112,7 +120,7 @@ pub(crate) async fn bench_manual(n: usize) {
     drop(_p);
 }
 
-pub(crate) async fn bench_post(n: usize) {
+pub async fn bench_post(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_fn(echo_post).build();
     let app = App::new(router, |_| ());
     let uri_echo: Uri = "/echo".parse().unwrap();
@@ -136,7 +144,7 @@ pub(crate) async fn bench_post(n: usize) {
     drop(_p);
 }
 
-pub(crate) async fn bench_noop_raw(n: usize) {
+pub async fn bench_noop_raw(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_bytes(noop_raw).build();
     let app = App::new(router, |_| ());
     let uri_noop_raw: Uri = "/noop_raw".parse().unwrap();
@@ -159,14 +167,38 @@ pub(crate) async fn bench_noop_raw(n: usize) {
     drop(_p);
 }
 
+/// Fair comparison point vs xitca-web's `null_json`: same body (`b"null"`)
+/// and same `Content-Type: application/json` header, but served through
+/// fnrpc's `route_raw` → `RpcOutput` path instead of xitca's native handler.
+pub async fn bench_null_json(n: usize) {
+    let router = RpcRouterBuilder::<()>::new().route_raw(null_json).build();
+    let app = App::new(router, |_| ());
+    let uri_null_json: Uri = "/null_json".parse().unwrap();
+    let reqs = prebuild_get(&uri_null_json, n);
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for req in reqs {
+        let _ = app.call(req).await;
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "fnrpc-web/null_json: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
+}
+
 use fnrpc::middlewares::hook::HookLayer;
 
-pub(crate) async fn bench_macro_mw(n: usize) {
+pub async fn bench_macro_mw(n: usize) {
     let router = RpcRouterBuilder::<()>::new()
         .route_fn(echo_macro)
-        .layer(HookLayer::new().before(|_ctx, _path, input, _is_get| {
-            Ok(input)
-        }))
+        .layer(HookLayer::new().before(|_ctx, _path, input, _is_get| Ok(input)))
         .build();
     let app = App::new(router, |_| ());
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
@@ -201,9 +233,9 @@ fn echo_sub(input: u32) -> impl futures::Stream<Item = u32> {
 /// Benchmark subscribe dispatch via RpcRouter::dispatch_subscribe.
 /// This measures the cost of looking up and calling a subscribe handler
 /// through the erased trait object, including stream creation.
-pub(crate) async fn bench_subscribe(n: usize) {
-    use futures::StreamExt;
+pub async fn bench_subscribe(n: usize) {
     use fnrpc::handler::SubscribeExt;
+    use futures::StreamExt;
     let router = RpcRouterBuilder::<()>::new().subscribe(echo_sub).build();
     let input = br#"0"#; // valid JSON input for u32
 
@@ -230,13 +262,13 @@ pub(crate) async fn bench_subscribe(n: usize) {
 /// format each item as SSE `data: ...\n\n`, and build a Response.
 /// Unlike bench_subscribe, this includes the overhead of SSE framing and
 /// Response construction — comparable to xitca-web/sse.
-pub(crate) async fn bench_sse(n: usize) {
-    use futures::StreamExt;
+pub async fn bench_sse(n: usize) {
     use fnrpc::handler::SubscribeExt;
+    use futures::StreamExt;
     use xitca_http::body::{Frame, ResponseBody, StreamBody};
     use xitca_http::bytes::Bytes;
-    use xitca_http::http::{Response, StatusCode};
     use xitca_http::http::header::{CONTENT_TYPE, HeaderValue};
+    use xitca_http::http::{Response, StatusCode};
 
     let router = RpcRouterBuilder::<()>::new().subscribe(echo_sub).build();
 
@@ -244,7 +276,9 @@ pub(crate) async fn bench_sse(n: usize) {
         .file_name("benches/target/dhat-heap.json")
         .build();
     for _ in 0..n {
-        let mut stream = router.dispatch_subscribe(&(), "echo_sub", br#"10"#).unwrap();
+        let mut stream = router
+            .dispatch_subscribe(&(), "echo_sub", br#"10"#)
+            .unwrap();
         // Build SSE response: read first item, format as SSE, construct Response
         // We only consume one item to keep the benchmark focused on dispatch + SSE framing,
         // not on the full stream iteration (which would dominate with 10 items).
@@ -253,11 +287,15 @@ pub(crate) async fn bench_sse(n: usize) {
             Some(Ok(bytes)) => {
                 let sse = format!("data: {}\n\n", String::from_utf8_lossy(&bytes));
                 ResponseBody::body(StreamBody::new(futures::stream::once(
-                    futures::future::ready(Ok::<_, std::convert::Infallible>(Frame::Data(Bytes::from(sse)))),
+                    futures::future::ready(Ok::<_, std::convert::Infallible>(Frame::Data(
+                        Bytes::from(sse),
+                    ))),
                 )))
             }
             _ => ResponseBody::body(StreamBody::new(futures::stream::once(
-                futures::future::ready(Ok::<_, std::convert::Infallible>(Frame::Data(Bytes::from_static(b"data: error\n\n")))),
+                futures::future::ready(Ok::<_, std::convert::Infallible>(Frame::Data(
+                    Bytes::from_static(b"data: error\n\n"),
+                ))),
             ))),
         };
         let _ = Response::builder()
@@ -276,12 +314,15 @@ pub(crate) async fn bench_sse(n: usize) {
     drop(_p);
 }
 
-pub(crate) async fn bench_macro_multi(n: usize) {
+pub async fn bench_macro_multi(n: usize) {
     use std::path::PathBuf;
     let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();
     let app = App::build(|_| ())
         .rpc("/api/{*path}", router)
-        .rpc("/echo", RpcRouterBuilder::<()>::new().route_fn(echo_macro).build())
+        .rpc(
+            "/echo",
+            RpcRouterBuilder::<()>::new().route_fn(echo_macro).build(),
+        )
         .static_dir("/static", "./");
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
     let reqs = prebuild_get(&uri_echo_get, n);

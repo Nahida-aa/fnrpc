@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 use http::Extensions;
 
 use crate::error::RpcErr;
-use crate::output::RpcOutput;
 use crate::middleware::{RpcLayer, RpcService};
+use crate::output::RpcOutput;
 
 /// A logging layer that emits structured [`tracing`] events per call.
 ///
@@ -38,8 +38,8 @@ where
         // Only allocate strings when tracing is enabled at info level
         if tracing::level_enabled!(tracing::Level::INFO) {
             match &result {
-                Ok((output, _is_json)) => {
-                    let output_str = String::from_utf8_lossy(output);
+                Ok(output) => {
+                    let output_str = String::from_utf8_lossy(&output.data);
                     let input_str = String::from_utf8_lossy(input);
                     tracing::info!(
                         path = %path,

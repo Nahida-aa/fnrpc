@@ -89,7 +89,10 @@ required-features = ["reqwest"]
 [[bin]]
 name = "dhat_lookup"
 path = "src/bin/dhat_lookup.rs"
-required-features = ["reqwest"]
+
+[[bin]]
+name = "dhat_callpath_text"
+path = "src/bin/dhat_callpath_text.rs"
 
 [[bin]]
 name = "xitca_web_server"

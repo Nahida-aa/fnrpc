@@ -57,7 +57,7 @@ fn build_svc(router: fnrpc::router::RpcRouter<()>) -> impl Service<WebRequest<Re
 
 // ── Benchmarks ────────────────────────────────────────
 
-pub(crate) async fn bench_macro(n: usize) {
+pub async fn bench_macro(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_fn(echo_macro).build();
     let svc = build_svc(router);
     let uri_echo_get: Uri = r#"/echo?input=%22hello%22"#.parse().unwrap();
@@ -80,7 +80,7 @@ pub(crate) async fn bench_macro(n: usize) {
     drop(_p);
 }
 
-pub(crate) async fn bench_noop_raw(n: usize) {
+pub async fn bench_noop_raw(n: usize) {
     let router = RpcRouterBuilder::<()>::new().route_bytes(noop_raw).build();
     let svc = build_svc(router);
     let uri_noop_raw: Uri = "/noop_raw".parse().unwrap();

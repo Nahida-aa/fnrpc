@@ -47,7 +47,7 @@ impl RpcOutput {
 
     /// Convenience form accepting `&'static str` for both name and value
     /// (the common case).
-    pub fn header_str(mut self, key: &'static str, value: &'static str) -> Self {
+    pub fn header_str(self, key: &'static str, value: &'static str) -> Self {
         self.header(
             http::HeaderName::from_static(key),
             http::HeaderValue::from_static(value),

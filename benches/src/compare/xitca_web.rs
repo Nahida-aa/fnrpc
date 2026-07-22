@@ -1,6 +1,7 @@
 use dhat::{HeapStats, Profiler};
 use futures::StreamExt;
 use serde_json::Value;
+use xitca_service::ready::ReadyService;
 use xitca_web::App;
 use xitca_web::WebContext;
 use xitca_web::body::{BodyExt, Frame, RequestBody, ResponseBody, StreamBody};
@@ -10,16 +11,17 @@ use xitca_web::http::{Method, RequestExt, StatusCode, WebResponse};
 use xitca_web::route::{get, post};
 use xitca_web::service::file::ServeDir;
 use xitca_web::service::{Service, ServiceExt, fn_service};
-use xitca_service::ready::ReadyService;
+
+use crate::compare::xitca_web_f::raw_json::null_json;
 
 /// Ping — returns "pong" with JSON content type.
-async fn handler_ping(
-    _ctx: WebContext<'_, ()>,
-) -> Result<WebResponse, xitca_web::error::Error> {
+async fn handler_ping(_ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_web::error::Error> {
     Ok(WebResponse::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(b"\"pong\"")))
+        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
+            b"\"pong\"",
+        )))
         .unwrap())
 }
 
@@ -31,19 +33,6 @@ async fn handler_noop_raw(
         .status(StatusCode::OK)
         .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
             b"ok",
-        )))
-        .unwrap())
-}
-
-/// JSON noop — returns `null` with Content-Type: application/json.
-async fn handler_noop_json(
-    _ctx: WebContext<'_, ()>,
-) -> Result<WebResponse, xitca_web::error::Error> {
-    Ok(WebResponse::builder()
-        .status(StatusCode::OK)
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-        .body(ResponseBody::bytes(xitca_web::bytes::Bytes::from_static(
-            b"null",
         )))
         .unwrap())
 }
@@ -131,7 +120,11 @@ async fn handler_sse(ctx: WebContext<'_, ()>) -> Result<WebResponse, xitca_web::
     let n: u32 = 10;
 
     let items: Vec<_> = (1..=n)
-        .map(|i| Ok::<_, xitca_web::error::Error>(Frame::Data(xitca_web::bytes::Bytes::from(format!("data: {i}\n\n")))))
+        .map(|i| {
+            Ok::<_, xitca_web::error::Error>(Frame::Data(xitca_web::bytes::Bytes::from(format!(
+                "data: {i}\n\n"
+            ))))
+        })
         .collect();
     let stream = futures::stream::iter(items);
 
@@ -162,11 +155,11 @@ fn make_get_req(uri: &str) -> http::Request<RequestExt<RequestBody>> {
         .unwrap()
 }
 
-pub(crate) async fn bench(n: usize) {
+pub async fn bench(n: usize) {
     let app = App::new()
         .at("/ping", get(fn_service(handler_ping)))
         .at("/noop-raw", get(fn_service(handler_noop_raw)))
-        .at("/noop-json", get(fn_service(handler_noop_json)))
+        .at("/null_json", get(fn_service(null_json)))
         .at("/echo_post", post(fn_service(handler_echo_post)))
         .at("/echo-get", get(fn_service(handler_echo_get)))
         .at("/sse", get(fn_service(handler_sse)));
@@ -343,13 +336,10 @@ impl<S> ReadyService for XitcaNoopMwService<S> {
     async fn ready(&self) -> Self::Ready {}
 }
 
-pub(crate) async fn bench_mw(n: usize) {
+pub async fn bench_mw(n: usize) {
     // xitca-web middleware on stable: use `enclosed` with a zero-size struct.
     let app = App::new()
-        .at(
-            "/echo-get",
-            get(fn_service(handler_echo_get)),
-        )
+        .at("/echo-get", get(fn_service(handler_echo_get)))
         .enclosed(XitcaNoopMw);
     let svc = app.finish().call(()).await.unwrap();
     let uri_echo_get: http::Uri = r#"/echo-get?input=%22hello%22"#.parse().unwrap();
@@ -386,7 +376,7 @@ pub(crate) async fn bench_mw(n: usize) {
 
 // ── Benchmark with RPC + static dir ─────────────────────
 
-pub(crate) async fn bench_multi(n: usize) {
+pub async fn bench_multi(n: usize) {
     let app = App::new()
         .at("/api/{*path}", get(fn_service(handler_echo_get)))
         .at("/echo", get(fn_service(handler_echo_get)))
@@ -422,4 +412,30 @@ pub(crate) async fn bench_multi(n: usize) {
         "./benches/target/dhat-heap.json",
         "./benches/target/dhat-xitca-web-echo-multi.json",
     );
+}
+
+/// Fair comparison point vs fnrpc-web's `null_json`: same body (`b"null"`)
+/// and same `Content-Type: application/json` header, served by xitca's native
+/// handler (no fnrpc `RpcOutput` wrapper).
+pub async fn bench_null_json(n: usize) {
+    let app = App::new()
+        .at("/null_json", get(fn_service(null_json)))
+        .finish();
+    let svc = app.call(()).await.unwrap();
+
+    let _p = Profiler::builder()
+        .file_name("benches/target/dhat-heap.json")
+        .build();
+    for _ in 0..n {
+        let _ = svc.call(make_get_req("/null_json")).await.unwrap();
+    }
+    let s = HeapStats::get();
+    eprintln!(
+        "xitca-web/null_json: {:>8}B, {:>6} blks  ({:>6.1}B, {:>5.1}blks/op)",
+        s.total_bytes,
+        s.total_blocks,
+        s.total_bytes as f64 / n as f64,
+        s.total_blocks as f64 / n as f64
+    );
+    drop(_p);
 }

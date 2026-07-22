@@ -6,13 +6,14 @@
 //!   cargo run -p benches --bin dhat_compare -- fnrpc-web [n]
 //!   cargo run -p benches --bin dhat_compare -- xitca-web [n]
 
+use benches::compare;
 use dhat::Alloc;
 
 #[global_allocator]
 static ALLOC: Alloc = Alloc;
 
-#[path = "../compare/mod.rs"]
-mod compare;
+// #[path = "../compare/mod.rs"]
+// mod compare;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -32,6 +33,14 @@ fn main() {
         "fnrpc-web-manual" => rt.block_on(compare::fnrpc_web::bench_manual(n)),
         "fnrpc-web-post" => rt.block_on(compare::fnrpc_web::bench_post(n)),
         "fnrpc-web-noop-raw" => rt.block_on(compare::fnrpc_web::bench_noop_raw(n)),
+        "fnrpc-web-null-json" => rt.block_on(compare::fnrpc_web::bench_null_json(n)),
+        "fnrpc-web-f-text" => rt.block_on(compare::fnrpc_web_f::text::bench_text(n)),
+        "fnrpc-web-f-text-owned" => {
+            rt.block_on(compare::fnrpc_web_f::text::bench_text_raw_owned(n))
+        }
+        "fnrpc-web-f-text-raw" => rt.block_on(compare::fnrpc_web_f::text::bench_text_route_raw(n)),
+        "fnrpc-web-f-text-empty" => rt.block_on(compare::fnrpc_web_f::text::bench_text_empty(n)),
+        "fnrpc-web-f-raw-json" => rt.block_on(compare::fnrpc_web_f::raw_json::bench_null_json(n)),
         "fnrpc-web-subscribe" => rt.block_on(compare::fnrpc_web::bench_subscribe(n)),
         "fnrpc-web-sse" => rt.block_on(compare::fnrpc_web::bench_sse(n)),
         "fnrpc-web-mw" => rt.block_on(compare::fnrpc_web::bench_macro_mw(n)),
@@ -42,6 +51,9 @@ fn main() {
         "fnrpc-axum-noop-raw" => rt.block_on(compare::fnrpc_axum_web::bench_noop_raw(n)),
         "axum" => rt.block_on(compare::axum_web::bench(n)),
         "xitca-web" => rt.block_on(compare::xitca_web::bench(n)),
+        "xitca-web-null-json" => rt.block_on(compare::xitca_web::bench_null_json(n)),
+        "xitca-web-f-text" => rt.block_on(compare::xitca_web_f::text::bench_text(n)),
+        "xitca-web-f-raw-json" => rt.block_on(compare::xitca_web_f::raw_json::bench_null_json(n)),
         "xitca-web-mw" => rt.block_on(compare::xitca_web::bench_mw(n)),
         "xitca-web-multi" => rt.block_on(compare::xitca_web::bench_multi(n)),
         _ => {
