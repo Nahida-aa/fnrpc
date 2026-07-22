@@ -47,6 +47,12 @@ sed -i \
 git add Cargo.toml
 git commit -m "chore: bump Rust crates to v$NEW_VERSION"
 
+# Push the version bump back to main so the workspace version stays in
+# sync with the published crates (otherwise the next release reads a stale
+# CURRENT_VERSION and never advances).
+git pull --ff-only
+git push origin main
+
 # ── Publish in dependency order ────────────────────────────────
 
 echo "Publishing fnrpc-macros..."
