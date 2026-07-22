@@ -162,12 +162,12 @@ pub async fn rpc_fn_impl<Ctx: Send + Sync + 'static>(
 ) -> Result<Value, String> {
     let ctx = (state.ctx_factory)();
     let input_bytes = serde_json::to_vec(&input).map_err(|e| e.to_string())?;
-    let (result, _is_json) = state
+    let result = state
         .router
         .dispatch(&ctx, path, &input_bytes, false)
         .await
         .map_err(|e| serde_json::to_string(&e).unwrap())?;
-    serde_json::from_slice(&result).map_err(|e| e.to_string())
+    serde_json::from_slice(&result.data).map_err(|e| e.to_string())
 }
 
 /// Internal implementation of the `rpc_sub` command.
