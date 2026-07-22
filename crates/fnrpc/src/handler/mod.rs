@@ -17,8 +17,9 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use specta::Type;
+pub mod bytes_handler;
 pub mod rpc_output;
-use crate::error::RpcErr;
+use crate::{error::RpcErr, handler::bytes_handler::BytesHandlerFn};
 pub use rpc_output::{RpcOutputFn, RpcOutputHandlerFn};
 
 /// TypeScript type reference info for a single type (input or output).
@@ -293,15 +294,6 @@ pub trait HandlerFn<Ctx>: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
 }
 
-/// Object-safe bytes handler trait.
-pub trait BytesHandlerFn<Ctx>: Send + Sync {
-    fn call<'a>(
-        &'a self,
-        ctx: &'a Ctx,
-        input: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>;
-}
-
 // ── Handler enum (unified dispatch) ──────────────────────
 /// A unified handler that can be either a typed RPC function or a bytes handler.
 pub enum Handler<Ctx: Send + Sync + 'static> {
@@ -383,23 +375,23 @@ impl<Ctx: Send + Sync + 'static> Handler<Ctx> {
 }
 
 fn percent_decode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut bytes = s.bytes();
-    while let Some(b) = bytes.next() {
+    let mut bytes: Vec<u8> = Vec::with_capacity(s.len());
+    let mut iter = s.bytes();
+    while let Some(b) = iter.next() {
         match b {
-            b'+' => result.push(' '),
+            b'+' => bytes.push(b' '),
             b'%' => {
-                let hi = bytes.next().and_then(|c| hex_val(c));
-                let lo = bytes.next().and_then(|c| hex_val(c));
+                let hi = iter.next().and_then(|c| hex_val(c));
+                let lo = iter.next().and_then(|c| hex_val(c));
                 match (hi, lo) {
-                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
-                    _ => result.push('%'),
+                    (Some(h), Some(l)) => bytes.push(h << 4 | l),
+                    _ => bytes.push(b'%'),
                 }
             }
-            _ => result.push(b as char),
+            _ => bytes.push(b),
         }
     }
-    result
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn hex_val(b: u8) -> Option<u8> {

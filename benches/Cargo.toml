@@ -95,6 +95,10 @@ name = "dhat_callpath_text"
 path = "src/bin/dhat_callpath_text.rs"
 
 [[bin]]
+name = "dhat_callpath_dispatch"
+path = "src/bin/dhat_callpath_dispatch.rs"
+
+[[bin]]
 name = "xitca_web_server"
 path = "src/bin/xitca_web_server.rs"
 

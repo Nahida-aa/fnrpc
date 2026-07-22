@@ -32,7 +32,7 @@ pub async fn big_echo(input: BigInput) -> BigInput {
     input
 }
 
-/// 原始
+/// Echo a single u64 primitive back as a `String` confirmation (GET query).
 #[fnrpc::rpc_query]
 pub async fn big_echo_primitive(input: u64) -> String {
     format!("input={input}",)
@@ -116,6 +116,16 @@ pub fn tick_seq_post(input: TickInput) -> impl futures::Stream<Item = TickOutput
     tick_stream(input)
 }
 
+#[fnrpc::rpc_query]
+pub async fn zh_input(input: String) -> String {
+    format!("zh_input={input}",)
+}
+
+#[fnrpc::rpc_query("post")]
+pub async fn zh_input_post(input: String) -> String {
+    format!("zh_input={input}",)
+}
+
 /// Build the shared router used by both the server (`main`) and the codegen
 /// binary (`gen_fnrpc`), so the generated bindings exactly match the served
 /// procedures.
@@ -129,5 +139,7 @@ pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<()> {
         .route_fn(big_out)
         .subscribe(tick_seq)
         .subscribe(tick_seq_post)
+        .route_fn(zh_input)
+        .route_fn(zh_input_post)
         .build()
 }

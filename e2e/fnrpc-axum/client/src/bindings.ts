@@ -54,6 +54,8 @@ export type Procedures = {
   big_out: { kind: "query"; method: "GET"; input: null; output: BigOutput; error: RpcErr };
   tick_seq: { kind: "subscribe"; method: "GET"; input: TickInput; output: TickOutput; error: RpcErr };
   tick_seq_post: { kind: "subscribe"; method: "POST"; input: TickInput; output: TickOutput; error: RpcErr };
+  zh_input: { kind: "query"; method: "GET"; input: string; output: string; error: RpcErr };
+  zh_input_post: { kind: "query"; method: "POST"; input: string; output: string; error: RpcErr };
 }
 
 export const __procedureMeta = {
@@ -65,4 +67,6 @@ export const __procedureMeta = {
   big_out: { kind: "query", method: "GET" },
   tick_seq: { kind: "subscribe", method: "GET" },
   tick_seq_post: { kind: "subscribe", method: "POST" },
+  zh_input: { kind: "query", method: "GET" },
+  zh_input_post: { kind: "query", method: "POST" },
 } as const;

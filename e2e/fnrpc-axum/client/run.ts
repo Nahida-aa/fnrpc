@@ -19,7 +19,13 @@
  */
 
 import { spawn, type Subprocess } from "bun";
-import { fnrpc } from "./src/client";
+
+// `fnrpc` is imported dynamically *after* `runGen()` regenerates
+// `bindings.ts`, so the client reflects the freshly generated procedures
+// (e.g. `zh_input`). A top-level static import would bind to the stale
+// bindings present on disk when this process started.
+type FnrpcClient = typeof import("./src/client")["fnrpc"];
+let fnrpc: FnrpcClient;
 
 const PORT = 3000;
 const BASE = `http://localhost:${PORT}`;
@@ -73,6 +79,10 @@ async function waitForServer(timeoutMs = 30000): Promise<void> {
 async function main() {
   // 1. Regenerate bindings from the current server router.
   await runGen();
+
+  // Load the client *after* bindings are regenerated so it picks up the
+  // freshly generated procedures.
+  fnrpc = (await import("./src/client")).fnrpc;
 
   const server = startServer();
   try {
@@ -178,6 +188,27 @@ async function main() {
       );
     }
     console.log(`OK [big_echo_primitive_mutate (u64, POST mutate)]: ${primMut}`);
+    passed++;
+
+    // String with CJK (Chinese) characters: proves the request/response JSON
+    // path is transparent to UTF-8 (no mojibake) end-to-end.
+    const zh = await fnrpc.zh_input("中文测试");
+    if (zh !== "zh_input=中文测试") {
+      throw new Error(
+        `[zh_input] mismatch: expected zh_input=中文测试, got ${zh}`,
+      );
+    }
+    console.log(`OK [zh_input (String, GET query)]: ${zh}`);
+    passed++;
+
+    // Same CJK string but served over POST (input in the request body).
+    const zhPost = await fnrpc.zh_input_post("中文测试");
+    if (zhPost !== "zh_input=中文测试") {
+      throw new Error(
+        `[zh_input_post] mismatch: expected zh_input=中文测试, got ${zhPost}`,
+      );
+    }
+    console.log(`OK [zh_input_post (String, POST query)]: ${zhPost}`);
     passed++;
 
     // 3. SSE subscription assertion: response-direction BigInt envelope over

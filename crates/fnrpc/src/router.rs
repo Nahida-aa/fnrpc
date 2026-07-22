@@ -17,9 +17,8 @@ use xitca_router::Router;
 
 use crate::error::RpcErr;
 use crate::gen_ts_client;
-use crate::handler::{
-    BytesHandlerFn, Handler, HandlerFn, RpcFn, RpcFnExt, RpcOutputHandlerFn, TsTypeInfo,
-};
+use crate::handler::bytes_handler::BytesHandlerFn;
+use crate::handler::{Handler, HandlerFn, RpcFn, RpcFnExt, RpcOutputHandlerFn, TsTypeInfo};
 use crate::middleware::RpcLayer;
 use crate::output::RpcOutput;
 
@@ -703,23 +702,23 @@ impl<Ctx: Send + Sync + 'static> Default for RpcRouterBuilder<Ctx> {
 // ── Percent decoding (moved from handler.rs for route_fn use) ──
 
 fn percent_decode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut bytes = s.bytes();
-    while let Some(b) = bytes.next() {
+    let mut bytes: Vec<u8> = Vec::with_capacity(s.len());
+    let mut iter = s.bytes();
+    while let Some(b) = iter.next() {
         match b {
-            b'+' => result.push(' '),
+            b'+' => bytes.push(b' '),
             b'%' => {
-                let hi = bytes.next().and_then(|c| hex_val(c));
-                let lo = bytes.next().and_then(|c| hex_val(c));
+                let hi = iter.next().and_then(|c| hex_val(c));
+                let lo = iter.next().and_then(|c| hex_val(c));
                 match (hi, lo) {
-                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
-                    _ => result.push('%'),
+                    (Some(h), Some(l)) => bytes.push(h << 4 | l),
+                    _ => bytes.push(b'%'),
                 }
             }
-            _ => result.push(b as char),
+            _ => bytes.push(b),
         }
     }
-    result
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn hex_val(b: u8) -> Option<u8> {

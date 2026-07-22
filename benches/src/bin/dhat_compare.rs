@@ -32,8 +32,6 @@ fn main() {
         "fnrpc-web" | "fnrpc-web-macro" => rt.block_on(compare::fnrpc_web::bench_macro(n)),
         "fnrpc-web-manual" => rt.block_on(compare::fnrpc_web::bench_manual(n)),
         "fnrpc-web-post" => rt.block_on(compare::fnrpc_web::bench_post(n)),
-        "fnrpc-web-noop-raw" => rt.block_on(compare::fnrpc_web::bench_noop_raw(n)),
-        "fnrpc-web-null-json" => rt.block_on(compare::fnrpc_web::bench_null_json(n)),
         "fnrpc-web-f-text" => rt.block_on(compare::fnrpc_web_f::text::bench_text(n)),
         "fnrpc-web-f-text-owned" => {
             rt.block_on(compare::fnrpc_web_f::text::bench_text_raw_owned(n))

@@ -211,24 +211,28 @@ where
 }
 
 /// Minimal percent-decoding for query values.
+///
+/// Decoded bytes are accumulated into a `Vec<u8>` and converted to a `String`
+/// with UTF-8 in one pass, so multi-byte sequences (e.g. CJK characters) are
+/// decoded correctly instead of each byte being cast to a `char`.
 fn urlencoding_decode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut bytes = s.bytes();
-    while let Some(b) = bytes.next() {
+    let mut bytes: Vec<u8> = Vec::with_capacity(s.len());
+    let mut iter = s.bytes();
+    while let Some(b) = iter.next() {
         match b {
-            b'+' => result.push(' '),
+            b'+' => bytes.push(b' '),
             b'%' => {
-                let hi = bytes.next().and_then(|c| hex_val(c));
-                let lo = bytes.next().and_then(|c| hex_val(c));
+                let hi = iter.next().and_then(|c| hex_val(c));
+                let lo = iter.next().and_then(|c| hex_val(c));
                 match (hi, lo) {
-                    (Some(h), Some(l)) => result.push((h << 4 | l) as char),
-                    _ => result.push('%'),
+                    (Some(h), Some(l)) => bytes.push(h << 4 | l),
+                    _ => bytes.push(b'%'),
                 }
             }
-            _ => result.push(b as char),
+            _ => bytes.push(b),
         }
     }
-    result
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn hex_val(b: u8) -> Option<u8> {
