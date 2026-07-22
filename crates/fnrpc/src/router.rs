@@ -457,10 +457,12 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
                 input: &'a [u8],
             ) -> Pin<Box<dyn Future<Output = Result<Cow<'static, [u8]>, RpcErr>> + Send + 'a>>
             {
-                Box::pin(async move {
-                    let result = F::exec(ctx, input).await?;
-                    Ok(result)
-                })
+                // Forward `F::exec`'s already-boxed future directly instead of
+                // wrapping it in a second `Box::pin`. `RawRpcFn::exec` (the macro)
+                // returns `Pin<Box<dyn Future>>`, so this is the single future box
+                // on the route_bytes path. This drops the double-box from 2 to 1
+                // block/op (dhat-verified).
+                F::exec(ctx, input)
             }
         }
         impl<Ctx: Send + Sync + 'static, F: crate::handler::RawRpcFn<Ctx>>
