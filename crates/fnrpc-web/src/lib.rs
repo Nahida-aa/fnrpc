@@ -288,9 +288,15 @@ async fn single_call<Ctx: Send + Sync + 'static>(
     mut req: Request<RequestExt<RequestBody>>,
 ) -> Response<ResponseBody> {
     let ctx = ctx_factory(req.headers());
-    let path = req.uri().path().strip_prefix('/').unwrap_or("").to_owned();
+    // Detect subscribe with a *transient* `&str` borrow so the long-lived `path`
+    // borrow below does not overlap `req.body_mut()` (which would otherwise
+    // force an owned `String`, costing one heap block per request).
+    let has_sub = {
+        let p = req.uri().path().strip_prefix('/').unwrap_or("");
+        router.has_subscribe(p)
+    };
 
-    if router.has_subscribe(&path) {
+    if has_sub {
         let input: Cow<'_, [u8]> = if req.method() == Method::GET {
             // Extract and URL-decode the "input" query parameter
             let input_str = req
@@ -330,9 +336,10 @@ async fn single_call<Ctx: Send + Sync + 'static>(
             }
             body_buf.into()
         };
-        // BigInt fields (sent as strings) are converted to numbers by the
-        // handler using its own schema — no client `meta` envelope needed.
-        return build_sse_response(router.dispatch_subscribe(&ctx, &path, &input));
+        // Borrow `path` *after* the body read so it never conflicts with the
+        // mutable `req.body_mut()` borrow above.
+        let path = req.uri().path().strip_prefix('/').unwrap_or("");
+        return build_sse_response(router.dispatch_subscribe(&ctx, path, &input));
     }
 
     let input: Cow<'_, [u8]> = if req.method() == Method::GET {
@@ -357,7 +364,9 @@ async fn single_call<Ctx: Send + Sync + 'static>(
     };
 
     let is_get = req.method() == Method::GET;
-    let result = router.dispatch(&ctx, &path, &input, is_get).await;
+    // Borrow `path` after the body read; no owned `String` needed.
+    let path = req.uri().path().strip_prefix('/').unwrap_or("");
+    let result = router.dispatch(&ctx, path, &input, is_get).await;
     build_response(result)
 }
 
