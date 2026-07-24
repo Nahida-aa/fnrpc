@@ -76,6 +76,59 @@ bug where it did not).
   `cargo search` / `cargo update --precise` resolve against the mirror.
   `cargo publish` still targets crates.io (pass `--registry crates-io` if
   needed).
-- specta is pinned to `=2.0.0-rc.25` (latest on crates.io). `rc.26` exists
-  only as a local checkout under `learn_ls/specta` and is **not** published,
-  so do not bump specta until it is released.
+- specta is pinned to `=2.0.0-rc.26` (the same git rev tauri-specta uses) via a
+  `[patch.crates-io]` block in the workspace `Cargo.toml`. **rc.26 is NOT on
+  crates.io yet** — it is only available from the specta git repo. tauri-specta
+  uses the identical setup and is likewise blocked from publishing an rc.26
+  build to crates.io (its crates.io releases stop at rc.21).
+
+## TEMPORARY: manual publish until specta rc.26 hits crates.io
+
+The automated `release.yml` run currently **fails** at `publish-rust.sh` with:
+
+```
+error: failed to select a version for the requirement `specta = "=2.0.0-rc.26"`
+candidate versions found which didn't match: 2.0.0-rc.25, 2.0.0-rc.24, ...
+required by package `fnrpc v0.4.0`
+```
+
+`cargo publish` ignores `[patch.crates-io]`, so a crate depending on
+`specta = "=2.0.0-rc.26"` cannot be published to crates.io until specta-rs
+ships rc.26 there. **Do not rely on the automated workflow for now.**
+
+Until then, publish by hand from a clean checkout of `main` (this is the one
+case where manual `cargo publish` is allowed, overriding the "never by hand"
+rule above):
+
+```bash
+# From repo root, after `cargo login` (or CARGO_REGISTRY_TOKEN set):
+cargo publish -p fnrpc-macros
+cargo publish -p fnrpc
+cargo publish -p fnrpc-axum
+cargo publish -p fnrpc-xitca
+cargo publish -p fnrpc-web
+cargo publish -p fnrpc-tauri
+```
+
+Publish **in dependency order** (macros first; `fnrpc` before its integrations).
+`cargo publish` waits for each crate to become available on the index before
+the next dependent one can resolve, so run them sequentially.
+
+Notes / state as of this writing:
+- The Rust workspace and TS packages are already at **0.4.0** (bumped by the
+  partial `release.yml` run). `fnrpc-macros 0.4.0` was published to crates.io;
+  the rest of the 0.4.0 crates are NOT (the run failed on the `specta` req).
+- That leaves `fnrpc-macros 0.4.0` published while `fnrpc` 0.4.0 is absent — a
+  broken partial publish. Once specta rc.26 is on crates.io, re-run the manual
+  publish above (or re-enable `release.yml`) to fill in the remaining 0.4.0
+  crates; the version numbers already line up, so no downgrade / re-version is
+  needed. Do **not** yank `fnrpc-macros 0.4.0` — it just holds the 0.4.0 slot.
+- The TS packages (npm `@fnrpc/client`) were NOT published for 0.4.0 either
+  (the changesets publish step was skipped when the job failed). Publish them
+  manually too if needed: `bun install && bun run build && bun x changeset
+  publish` (or `bun publish` from `packages/fnrpc-client`).
+
+When specta rc.26 lands on crates.io: remove the `[patch.crates-io]` block from
+the workspace `Cargo.toml`, switch the `specta`/`specta-typescript`/
+`specta-serde`/`specta-util` deps to plain crates.io versions (`=2.0.0-rc.26` /
+`0.0.13`), and re-enable the automated `release.yml` flow.
