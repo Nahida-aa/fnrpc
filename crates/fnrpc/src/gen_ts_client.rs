@@ -47,6 +47,10 @@ pub fn resolve_ts_ref(data_type: &DataType, types: &specta::Types) -> String {
                 "unknown".to_string()
             }
         }
+        // `specta_typescript::primitives::inline` forbids BigInt-style primitives
+        // (they must go through the `Remapper` at export time), so a bare u64/i64/...
+        // used directly as a procedure input/output would render as `unknown`.
+        // Map it to `bigint` here for the `Procedures` reference string.
         DataType::Primitive(p)
             if matches!(
                 p,
@@ -60,7 +64,6 @@ pub fn resolve_ts_ref(data_type: &DataType, types: &specta::Types) -> String {
         {
             "bigint".to_string()
         }
-        DataType::Primitive(Primitive::f64) => "number | null".to_string(),
         _ => {
             let exporter = specta_typescript::Typescript::default();
             specta_typescript::primitives::inline(&exporter, types, data_type)
