@@ -47,11 +47,14 @@ sed -i \
 git add Cargo.toml
 git commit -m "chore: bump Rust crates to v$NEW_VERSION"
 
-# Push the version bump back to main so the workspace version stays in
-# sync with the published crates (otherwise the next release reads a stale
+# The Changesets action checks out the release branch (e.g.
+# `changeset-release/main`) and runs this script there, so there is no
+# upstream tracking configured. Push the version bump to the current branch,
+# then fast-forward `main` to it so the workspace version stays in sync with
+# the published crates (otherwise the next release reads a stale
 # CURRENT_VERSION and never advances).
-git pull --ff-only
-git push origin main
+git push origin HEAD
+git push origin HEAD:main
 
 # ── Publish in dependency order ────────────────────────────────
 
