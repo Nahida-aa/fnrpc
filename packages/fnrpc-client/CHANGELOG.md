@@ -1,5 +1,17 @@
 # @fnrpc/client
 
+## 0.4.0
+
+### Minor Changes
+
+- [`facc7b0`](https://github.com/Nahida-aa/fnrpc/commit/facc7b0ec02cfec92685a04c1e91bfdc5badf896) Thanks [@Nahida-aa](https://github.com/Nahida-aa)! - Remove the unused `rpc_url` parameter from `generate_ts_client` and `write_ts_client` (and `RpcRouter::generate_ts_client`). The base URL is a client-side runtime concern and was never embedded in the generated `bindings.ts`, so the parameter was dead. This is a breaking change to the codegen API.
+
+  Also adds a type-generation e2e test (`crates/fnrpc/tests/typegen.rs`) that locks down the Rust→TS mapping for scalars (bigint, `Option`/`Vec` of bigint, `f64` → `number | null`), nested structs, enums (unit + data variants), and the `RpcErr` error type.
+
+- [`1193862`](https://github.com/Nahida-aa/fnrpc/commit/1193862706c4abda2e1d8909a8c9a7867b6fb3a9) Thanks [@Nahida-aa](https://github.com/Nahida-aa)! - Upgrade specta to `2.0.0-rc.26` (tracked via `[patch.crates-io]` in the workspace `Cargo.toml`, the same git rev tauri-specta uses, since rc.26 is not yet published to crates.io).
+
+  Codegen now applies serde attributes to the generated TypeScript through `specta-serde::PhasesFormat`, so `#[serde(rename = ...)]` — including **enum variant renames** — now appear in the generated `bindings.ts` (previously a no-op `Format` silently dropped them). BigInt-style Rust integers (u64/i64/u128/i128/usize/isize) are remapped to TS `bigint` via `specta-util::Remapper`, preserving lossless round-trips.
+
 ## 0.3.4
 
 ### Patch Changes
