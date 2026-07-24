@@ -1,6 +1,6 @@
 # fnrpc
 
-- specta pinned to `=2.0.0-rc.25` (manual `Type` impl for `RpcErr` — see `error.rs`)
+- specta pinned to `=2.0.0-rc.26` (pulled from git via `[patch.crates-io]` in the workspace `Cargo.toml`, same rev tauri-specta uses — rc.26 is not yet on crates.io). `specta-serde` (`PhasesFormat`) drives codegen so `#[serde(rename)]` (incl. enum variant renames) is applied to generated TS; `specta-util`'s `Remapper` rewrites BigInt-style ints to `bigint`. See `gen_ts_client.rs`.
 - Workspace: `crates/*`, examples excluded
 - Tests:
   - `cargo test -p fnrpc` — 24 unit + integration tests

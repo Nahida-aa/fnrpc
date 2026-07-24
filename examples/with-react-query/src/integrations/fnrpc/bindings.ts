@@ -38,7 +38,7 @@ export type Procedures = {
   create_user: { kind: "mutate"; method: "POST"; input: [string, string]; output: User; error: RpcErr };
   tick: { kind: "subscribe"; method: "GET"; input: bigint; output: bigint; error: RpcErr };
   echo_stream: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
-  post_echo_stream: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
+  post_echo_stream: { kind: "subscribe"; method: "POST"; input: string; output: string; error: RpcErr };
   watch_status: { kind: "subscribe"; method: "GET"; input: string; output: string; error: RpcErr };
 }
 
@@ -50,6 +50,6 @@ export const __procedureMeta = {
   create_user: { kind: "mutate", method: "POST" },
   tick: { kind: "subscribe", method: "GET" },
   echo_stream: { kind: "subscribe", method: "GET" },
-  post_echo_stream: { kind: "subscribe", method: "GET" },
+  post_echo_stream: { kind: "subscribe", method: "POST" },
   watch_status: { kind: "subscribe", method: "GET" },
 } as const;

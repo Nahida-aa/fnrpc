@@ -15,6 +15,8 @@ xitca-router.workspace = true
 serde_json.workspace = true
 specta.workspace = true
 specta-typescript.workspace = true
+specta-serde.workspace = true
+specta-util.workspace = true
 tracing = { version = "0.1", optional = true }
 
 [features]

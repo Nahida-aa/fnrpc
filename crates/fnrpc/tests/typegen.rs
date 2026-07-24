@@ -121,14 +121,15 @@ fn generates_expected_ts_types_and_metadata() {
     assert_contains(&generated, "\tf: number | null,");
 
     // ── enum sum type ─────────────────────────────────────────────────────
-    // A Rust enum becomes a TS union of its variants. Assert the type is
-    // exported and that both unit and data variants appear.
+    // A Rust enum becomes a TS union of its variants. serde renames ARE applied
+    // (via `specta_serde::PhasesFormat`), so the `#[serde(rename = "in_review")]`
+    // variant surfaces as `"in_review"`, not the Rust identifier `"InReview"`.
     assert_contains(&generated, "export type Status =");
     assert_contains(&generated, "\"Pending\"");
     assert_contains(&generated, "\"Active\"");
-    assert_contains(&generated, "\"InReview\"");
-    // data-carrying variant `WithCount(u32)` maps to its inner type `number`
-    assert_contains(&generated, "number;");
+    assert_contains(&generated, "\"in_review\"");
+    // data-carrying variant `WithCount(u32)` maps to an object `{ WithCount: number }`
+    assert_contains(&generated, "{ WithCount: number }");
 
     // ── fnrpc-specific Procedures interface ──────────────────────────────
     assert_contains(&generated, "export type Procedures = {");

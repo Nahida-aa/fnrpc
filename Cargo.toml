@@ -27,8 +27,10 @@ http = "1"
 # survive round-trips without precision loss.
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 serde = { version = "1", features = ["derive"] }
-specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
-specta-typescript = { version = "0.0.12", features = ["serde"] }
+specta = { version = "=2.0.0-rc.26", features = ["derive", "serde_json"] }
+specta-typescript = { version = "0.0.13", features = ["serde"] }
+specta-serde = { version = "0.0.13" }
+specta-util = { version = "0.0.13" }
 xitca-router = "0.4"
 fnrpc = { version = "0.3.4", path = "crates/fnrpc" }
 fnrpc-macros = { version = "0.3.4", path = "crates/fnrpc-macros" }
@@ -36,3 +38,14 @@ fnrpc-macros = { version = "0.3.4", path = "crates/fnrpc-macros" }
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+# Specta rc.26 crates are not yet published to crates.io; track the exact
+# commit tauri-specta uses so we stay in sync with upstream behaviour
+# (including serde variant/field renames via `specta-serde::PhasesFormat`).
+# TODO: Remove once the rc.26 Specta crates are published.
+[patch.crates-io]
+specta = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
+specta-macros = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
+specta-serde = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
+specta-typescript = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
+specta-util = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }

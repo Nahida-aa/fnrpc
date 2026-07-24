@@ -37,7 +37,7 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 async-trait = "0.1.89"
-specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
+specta.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
