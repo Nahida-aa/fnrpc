@@ -631,7 +631,7 @@ fn test_subscribe_input_type_is_generated() {
     // Previously `subscribe` skipped registering types into the shared
     // registry, so `SubInput` was referenced but never defined.
     let router = RpcRouterBuilder::<()>::new().subscribe(sub_struct).build();
-    let bindings = fnrpc::gen_ts_client::generate_ts_client(&router, "http://localhost");
+    let bindings = fnrpc::gen_ts_client::generate_ts_client(&router);
 
     assert!(
         bindings.contains("export type SubInput"),

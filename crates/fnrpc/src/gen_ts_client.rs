@@ -110,21 +110,7 @@ impl specta::Format for NoFmt {
 /// - All specta-exported type definitions for input/output types.
 /// - A `Procedures` type mapping each procedure name to its `{ kind, method, input, output, error }`.
 /// - A `__procedureMeta` const map used at runtime by the TS client for dispatch.
-pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
-    router: &RpcRouter<Ctx>,
-    _rpc_url: &str,
-) -> String {
-    // Debug: print registered types
-    eprintln!("Types count: {}", router.types.len());
-    for ndt in router.types.into_sorted_iter() {
-        eprintln!(
-            "  type: {} (module={:?}, ty={})",
-            ndt.name,
-            ndt.module_path,
-            ndt.ty.is_some()
-        );
-    }
-
+pub fn generate_ts_client<Ctx: Send + Sync + 'static>(router: &RpcRouter<Ctx>) -> String {
     // Export all types from the shared registry at once.
     // NOTE: `export` fails (rather than silently skipping) when a type cannot
     // be represented in TypeScript — e.g. BigInt-style Rust integers (u64/i64/...)
@@ -203,9 +189,8 @@ pub fn generate_ts_client<Ctx: Send + Sync + 'static>(
 /// Returns `io::Error` if the file cannot be written.
 pub fn write_ts_client<Ctx: Send + Sync + 'static>(
     router: &RpcRouter<Ctx>,
-    rpc_url: &str,
     output_path: &Path,
 ) -> std::io::Result<()> {
-    let content = generate_ts_client(router, rpc_url);
+    let content = generate_ts_client(router);
     std::fs::write(output_path, content)
 }

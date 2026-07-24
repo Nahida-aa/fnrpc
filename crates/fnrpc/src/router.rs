@@ -145,8 +145,8 @@ impl<Ctx: Send + Sync + 'static> RpcRouter<Ctx> {
     }
 
     /// Generate TypeScript client code.
-    pub fn generate_ts_client(&self, rpc_url: &str) -> String {
-        gen_ts_client::generate_ts_client(self, rpc_url)
+    pub fn generate_ts_client(&self) -> String {
+        gen_ts_client::generate_ts_client(self)
     }
 
     /// Dispatch a call through the handler's middleware chain.

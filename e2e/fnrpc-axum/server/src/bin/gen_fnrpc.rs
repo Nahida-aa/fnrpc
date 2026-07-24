@@ -23,7 +23,7 @@ fn main() {
         std::fs::create_dir_all(parent).expect("failed to create client/src dir");
     }
 
-    fnrpc::gen_ts_client::write_ts_client(&router, "http://localhost:3000", &output_path)
+    fnrpc::gen_ts_client::write_ts_client(&router, &output_path)
         .expect("failed to write TS bindings");
 
     println!("wrote bindings -> {}", output_path.display());

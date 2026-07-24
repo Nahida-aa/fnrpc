@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc"
-version = "0.2.0"
+version = "0.3.4"
 dependencies = [
  "fnrpc-macros",
  "futures",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-axum"
-version = "0.2.0"
+version = "0.3.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -173,7 +173,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-macros"
-version = "0.2.0"
+version = "0.3.4"
 dependencies = [
  "proc-macro2",
  "quote",
