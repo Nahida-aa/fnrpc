@@ -580,10 +580,12 @@ async fn test_bigint_decoded_by_schema_end_to_end() {
     let out = router.dispatch(&(), "big_id", wire, false).await.unwrap();
     assert!(has_json_header(&out));
 
-    // The handler now returns a `{ json, meta }` envelope on the response side;
-    // decode it back to a bare value (as the TS client does via `deserialize`).
+    // The handler now returns a `{ json, meta }` envelope on the response side.
+    // `decode_bigint_by_schema` is the *request* decoder (client sends plain
+    // JSON, never an envelope), so feed it the bare `json` payload — not the
+    // envelope — to verify schema-driven reconstruction.
     let value: serde_json::Value = serde_json::from_slice(&out.data).unwrap();
-    let value = fnrpc::serializer::decode_bigint_by_schema::<BigIdOutput>(value);
+    let value = fnrpc::serializer::decode_bigint_by_schema::<BigIdOutput>(value["json"].clone());
     let output: BigIdOutput = serde_json::from_value(value).unwrap();
     // Full u64 / i128 precision preserved through schema-driven decode.
     assert_eq!(output.id, 18446744073709551615u64);
@@ -600,11 +602,12 @@ async fn test_bigint_plain_value_call_decoded_by_schema() {
         "list": ["1", "2"]
     });
     let output = BigId.call(&(), input).await.unwrap();
-    // `call` returns the `{ json, meta }` envelope; decode it back to a bare
-    // value (as the TS client does via `deserialize`).
+    // `call` returns the `{ json, meta }` response envelope. `decode_bigint_by_schema`
+    // is the request decoder (plain JSON, no envelope), so unwrap the `json`
+    // payload before feeding it in.
     let out: BigIdOutput = serde_json::from_value(fnrpc::serializer::decode_bigint_by_schema::<
         BigIdOutput,
-    >(output))
+    >(output["json"].clone()))
     .unwrap();
     assert_eq!(out.id, 18446744073709551615u64);
     assert_eq!(out.signed, 170141183460469231731687303715884105727i128);

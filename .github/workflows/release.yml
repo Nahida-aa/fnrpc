@@ -47,8 +47,15 @@ jobs:
       - uses: changesets/action@v1
         id: changesets
         with:
+          # `version` bumps each TS package's version and commits the bump.
           version: bun x changeset version
-          publish: bun x changeset publish
+          # Publish with `bun publish` (NOT `changeset publish`): bun understands
+          # the `workspace:*` protocol and rewrites it to the real package version
+          # in the published tarball, whereas `changeset publish` ships
+          # `workspace:*` verbatim (broken install for consumers).
+          # `--tolerate-republish` keeps CI re-runs safe when a version already
+          # exists on npm.
+          publish: bun install && bun publish --access public --tolerate-republish
           commit: "chore: version packages"
           title: "chore: version packages"
         env:

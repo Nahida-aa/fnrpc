@@ -2,15 +2,19 @@
 //!
 //! A `BigInt`-style Rust integer (`u64`/`i64`/`usize`/...) cannot be carried
 //! through JSON as a number without losing precision, so on the wire it is
-//! represented as a string. The server knows the field's true type from its own
-//! [`specta::Type`] schema ([`crate::handler::RpcFn::Input`]), so it converts
-//! those string leaves back into JSON numbers *itself* — it does **not** trust
-//! a client-supplied `meta` envelope to tell it which fields are bigint.
+//! represented as a string. The TS client encodes these as strings via
+//! [`fnrpc_client::toRustJson`] and sends a **plain JSON value** (no envelope),
+//! so the server receives plain JSON with bigint fields already as strings.
 //!
-//! Clients may send either:
-//! - a `{ json, meta }` envelope (the `meta` is ignored here), or
-//! - a plain JSON value with bigint fields already encoded as strings,
-//!   and this decoder handles both identically.
+//! The server knows each field's true type from its own [`specta::Type`] schema
+//! ([`crate::handler::RpcFn::Input`]), so it converts those string leaves back
+//! into JSON numbers *itself*. It never relies on a client-supplied envelope or
+//! `meta` to locate bigint fields — the schema is the single source of truth on
+//! the request side.
+//!
+//! The response side is asymmetric: the client has no schema, so the server
+//! emits a `{ json, meta }` envelope (when bigint leaves are present) to tell
+//! the client where to restore `BigInt`s. See [`encode_bigint_by_schema`].
 //!
 //! The client-side analogue of the envelope codec lives in the `fnrpc-client`
 //! crate ([`fnrpc_client::unpack_meta`]).
@@ -25,32 +29,26 @@ use specta::{Type, Types};
 /// Convert a bigint-typed JSON value from its wire (string) form into a JSON
 /// number, using the server's own schema rather than a client `meta` envelope.
 ///
-/// - If `input` is a `{ json, meta }` envelope, only the `json` part is used
-///   (the `meta` is ignored).
-/// - If `input` is a plain JSON value, it is decoded as-is.
-/// - Only fields whose type in `T`'s schema is a BigInt-style integer are
-///   touched; any such field that arrives as a string is converted to a number.
-///   Fields that already arrive as numbers (e.g. from a client that already
-///   narrowed them) are left untouched.
+/// The client always sends a plain JSON value (via [`fnrpc_client::toRustJson`])
+/// with bigint fields already encoded as strings, so `input` is decoded as-is —
+/// there is no request-side envelope to unwrap.
+///
+/// Only fields whose type in `T`'s schema is a BigInt-style integer are
+/// touched; any such field that arrives as a string is converted to a number.
+/// Fields that already arrive as numbers (e.g. from a client that already
+/// narrowed them) are left untouched.
 ///
 /// The BIGINT type ID (`0`) is defined in the TS serializer and in
 /// `fnrpc-client` (`fnrpc_client::unpack_meta`); this decoder does not need it
 /// because it is driven entirely by the schema, not by `meta`.
 pub fn decode_bigint_by_schema<T: Type>(input: Value) -> Value {
-    // Determine the JSON payload: an envelope's `json` field, or the value
-    // itself when the client sent plain JSON (no envelope).
-    let payload = match &input {
-        Value::Object(obj) if obj.contains_key("json") => obj["json"].clone(),
-        _ => input,
-    };
-
     let mut types = Types::default();
     let dt = T::definition(&mut types);
 
     let mut paths: Vec<Vec<Segment>> = Vec::new();
     collect_bigint_paths(&dt, &mut Vec::new(), &mut paths, &types, 0);
 
-    let mut payload = payload;
+    let mut payload = input;
     for path in &paths {
         apply_at(&mut payload, path, 0);
     }
@@ -435,18 +433,18 @@ mod tests {
     }
 
     #[test]
-    fn envelope_json_meta_is_ignored() {
-        // Even with a bogus/empty meta, schema decoding reconstructs bigint.
+    fn request_is_plain_json_no_envelope() {
+        // The TS client sends plain JSON via `toRustJson` (bigint fields already
+        // string-encoded), never a `{ json, meta }` envelope. Schema decoding
+        // must reconstruct bigint directly from that bare JSON — there is no
+        // envelope to unwrap on the request side.
         let input = json!({
-            "json": {
-                "id": "42",
-                "name": "x",
-                "nested": { "count": "7" },
-                "list": ["8"],
-                "opt": "9",
-                "map": { "k": "10" }
-            },
-            "meta": []
+            "id": "42",
+            "name": "x",
+            "nested": { "count": "7" },
+            "list": ["8"],
+            "opt": "9",
+            "map": { "k": "10" }
         });
         let out = decode_bigint_by_schema::<Sample>(input);
         assert_eq!(out["id"], json!(42));
@@ -529,8 +527,12 @@ mod tests {
             list: vec![1, 2, 18446744073709551615],
         };
         let encoded = encode_bigint_by_schema(&out);
-        // Client stores the string form; server decodes it back by schema.
-        let decoded = decode_bigint_by_schema::<BigOut>(encoded);
+        // `encode` emits a `{ json, meta }` response envelope. The bare JSON
+        // payload is what would cross the wire back as a request (the client
+        // re-sends plain JSON), and `decode` reconstructs bigint from it by
+        // schema alone — no envelope unwrapping on the request side.
+        let json = encoded["json"].clone();
+        let decoded = decode_bigint_by_schema::<BigOut>(json);
         assert_eq!(decoded["id"], json!(18446744073709551615u64));
         assert_eq!(
             decoded["big"],
