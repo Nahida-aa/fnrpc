@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { toRustJson, flattenForRust, serialize, deserialize, isEnvelope, type Serialized } from "../src/serializer";
+import { toRustJson, flattenForRust, serialize, deserialize, type Serialized } from "../src/serializer";
 
 describe("toRustJson (wire format sent to the Rust backend)", () => {
   it("keeps bigint as a string without precision loss and drops meta", () => {
@@ -72,15 +72,19 @@ describe("deserialize (response envelope from the Rust server)", () => {
     expect(out.list).toEqual([1n, 18446744073709551615n]);
   });
 
-  it("isEnvelope detects the envelope but ignores bare JSON", () => {
-    expect(isEnvelope({ json: {}, meta: [] })).toBe(true);
-    expect(isEnvelope({ id: 1 })).toBe(false);
-    expect(isEnvelope(null)).toBe(false);
-    expect(isEnvelope([1, 2, 3])).toBe(false);
-  });
-
   it("deserialize with empty meta returns the bare json", () => {
     const out = deserialize({ json: { a: 1 }, meta: [] }) as Record<string, unknown>;
     expect(out).toEqual({ a: 1 });
+  });
+
+  it("deserialize throws on a non-envelope payload (protocol violation)", () => {
+    // The server must always send { json, meta }; bare JSON is a bug, not a
+    // tolerated legacy shape — there are no users to stay compatible with.
+    expect(() => deserialize({ id: 1 })).toThrow();
+    expect(() => deserialize(null)).toThrow();
+    expect(() => deserialize([1, 2, 3])).toThrow();
+    expect(() => deserialize("hello")).toThrow();
+    // `meta` missing / not an array is also a violation.
+    expect(() => deserialize({ json: { a: 1 } } as unknown)).toThrow();
   });
 });

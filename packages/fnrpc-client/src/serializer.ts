@@ -67,13 +67,23 @@ function walk(
  *
  * The fnrpc server **always** sends a `{ json, meta }` envelope (see
  * `encode_bigint_by_schema` on the Rust side) — `meta` is `[]` when the
- * response contains no BigInt fields. This function therefore always treats
- * the input as an envelope and never sniffs for a "bare JSON" form; the
- * protocol shape is fixed rather than decided at runtime. When `meta` is
- * empty it returns `json` unchanged.
+ * response contains no BigInt fields. The protocol shape is fixed; a
+ * payload that is not a `{ json, meta }` envelope is a protocol violation
+ * and throws. When `meta` is empty, `json` is returned unchanged.
  */
-export function deserialize(input: Serialized): unknown {
-  const { json, meta } = input;
+export function deserialize(input: unknown): unknown {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("json" in input) ||
+    !("meta" in input) ||
+    !Array.isArray((input as Serialized).meta)
+  ) {
+    throw new Error(
+      "fnrpc: expected a { json, meta } envelope from the server, got a non-envelope payload",
+    );
+  }
+  const { json, meta } = input as Serialized;
   if (!meta || meta.length === 0) return json;
 
   // Top-level bigint (whole response is a single bigint string).
@@ -144,25 +154,6 @@ function convertLeaf(value: any, typeId: number): any {
     default:
       return value;
   }
-}
-
-/**
- * Detect whether a parsed JSON response is a BigInt envelope
- * (`{ json, meta }`) produced by the fnrpc server.
- *
- * The current server **always** emits this envelope (with `meta: []` when
- * there are no BigInt fields), so `deserialize` can assume it. `isEnvelope`
- * is kept as a defensive guard for responses from older servers that still
- * sent bare JSON — it lets call sites accept both shapes transparently.
- */
-export function isEnvelope(value: unknown): value is Serialized {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "json" in value &&
-    "meta" in value &&
-    Array.isArray((value as Serialized).meta)
-  );
 }
 
 // ── Serialize for the Rust backend (no precision loss) ──

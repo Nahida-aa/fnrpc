@@ -7,7 +7,9 @@ function makeCore() {
   const core: TauriCore = {
     invoke: (cmd: string, args?: Record<string, unknown>) => {
       calls.push({ cmd, args: args ?? {} });
-      return Promise.resolve(undefined);
+      // The server always returns a `{ json, meta }` envelope; mirror that so
+      // the transport's `deserialize` path is exercised.
+      return Promise.resolve({ json: null, meta: [] });
     },
     Channel: class {
       id = 1;

@@ -1,5 +1,5 @@
 import type { ProcedureKind } from "./types"
-import { serialize, toRustJson, safeStringify, deserialize, isEnvelope } from "./serializer"
+import { serialize, toRustJson, safeStringify, deserialize } from "./serializer"
 import { RpcError } from "./error"
 import { connectSSE } from "./sse"
 
@@ -17,14 +17,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Restore BigInt values from a server `{ json, meta }` envelope when present.
- * Bare JSON responses are returned unchanged (backward compatible).
+ * Decode a server response. The wire protocol ALWAYS returns a
+ * `{ json, meta }` envelope, so any non-envelope payload is a protocol
+ * violation and `deserialize` throws.
  */
 function decodeResponse(value: unknown): unknown {
-  if (isEnvelope(value)) {
-    return deserialize(value)
-  }
-  return value
+  return deserialize(value)
 }
 
 /**
