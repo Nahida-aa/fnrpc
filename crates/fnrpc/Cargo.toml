@@ -26,3 +26,7 @@ ts-bindings = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
+serde = { version = "1", features = ["derive"] }
+specta-typescript = { workspace = true }
+specta-serde = { workspace = true }
+specta-util = { workspace = true }
