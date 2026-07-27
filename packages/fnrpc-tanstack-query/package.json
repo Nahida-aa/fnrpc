@@ -1,15 +1,15 @@
 {
   "name": "@fnrpc/tanstack-query",
-  "version": "0.4.2",
+  "version": "0.4.5",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Nahida-aa/fnrpc.git"
   },
-  "type": "module",
   "files": [
     "dist"
   ],
+  "type": "module",
   "exports": {
     "./package.json": "./package.json",
     ".": {
@@ -26,8 +26,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tanstack/query-core": "^5.101.2",
-    "@fnrpc/client": "workspace:*"
+    "@fnrpc/client": "workspace:*",
+    "@tanstack/query-core": "^5.101.2"
   },
   "devDependencies": {
     "rolldown": "^1.0.0",
