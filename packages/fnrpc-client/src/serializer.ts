@@ -62,8 +62,15 @@ function walk(
 // ── Deserialize ──────────────────────────────────────────
 
 /**
- * Deserialise a `Serialized` value back to its original JS form,
- * restoring BigInt strings to actual `BigInt` values.
+ * Deserialise a server response back to its original JS form, restoring
+ * BigInt strings to actual `BigInt` values.
+ *
+ * The fnrpc server **always** sends a `{ json, meta }` envelope (see
+ * `encode_bigint_by_schema` on the Rust side) — `meta` is `[]` when the
+ * response contains no BigInt fields. This function therefore always treats
+ * the input as an envelope and never sniffs for a "bare JSON" form; the
+ * protocol shape is fixed rather than decided at runtime. When `meta` is
+ * empty it returns `json` unchanged.
  */
 export function deserialize(input: Serialized): unknown {
   const { json, meta } = input;
@@ -143,8 +150,10 @@ function convertLeaf(value: any, typeId: number): any {
  * Detect whether a parsed JSON response is a BigInt envelope
  * (`{ json, meta }`) produced by the fnrpc server.
  *
- * The server only emits this envelope when the response actually contains
- * BigInt-style integers; everything else is returned as bare JSON.
+ * The current server **always** emits this envelope (with `meta: []` when
+ * there are no BigInt fields), so `deserialize` can assume it. `isEnvelope`
+ * is kept as a defensive guard for responses from older servers that still
+ * sent bare JSON — it lets call sites accept both shapes transparently.
  */
 export function isEnvelope(value: unknown): value is Serialized {
   return (

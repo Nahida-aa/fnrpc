@@ -524,7 +524,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "benches"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "actix-rt",
  "actix-web",
@@ -1428,7 +1428,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e-fnrpc-axum-server"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "axum",
  "fnrpc",
@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "fnrpc-macros",
  "futures",
@@ -1630,7 +1630,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-axum"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -1647,14 +1647,14 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-client"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "fnrpc-macros"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1663,7 +1663,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-tauri"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "fnrpc",
  "futures",
@@ -1676,7 +1676,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-web"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "fnrpc",
@@ -1694,7 +1694,7 @@ dependencies = [
 
 [[package]]
 name = "fnrpc-xitca"
-version = "0.3.4"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "fnrpc",

@@ -22,6 +22,27 @@ fn has_json_header(out: &RpcOutput) -> bool {
         .map_or(false, |h| h.contains_key(http::header::CONTENT_TYPE))
 }
 
+/// Parse a `route_fn` response and return the payload inside the fixed
+/// `{ json, meta }` envelope. The server always wraps RpcFn output in this
+/// envelope (with `meta: []` when there are no BigInt fields), so tests read
+/// the value via `.json` rather than treating the body as bare JSON.
+fn envelope_json(out: &RpcOutput) -> serde_json::Value {
+    let value: serde_json::Value = serde_json::from_slice(&out.data).expect("response is JSON");
+    value
+        .get("json")
+        .cloned()
+        .expect("RpcFn response is wrapped as { json, meta }")
+}
+
+/// Extract the payload from a `call`/`call_value` result, which is a `{ json,
+/// meta }` envelope (the same fixed shape as the wire response).
+fn payload_of(result: serde_json::Value) -> serde_json::Value {
+    result
+        .get("json")
+        .cloned()
+        .expect("RpcFn call result is wrapped as { json, meta }")
+}
+
 // --- Test types ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -130,7 +151,7 @@ async fn test_manual_rpc() {
 
     // Direct handler call via RpcFnExt
     let result = Greet.call(&(), input).await.unwrap();
-    let output: GreetOutput = serde_json::from_value(result).unwrap();
+    let output: GreetOutput = serde_json::from_value(payload_of(result)).unwrap();
     assert_eq!(output.message, "hello world");
 }
 
@@ -144,7 +165,7 @@ async fn test_ctx_rpc() {
     let input = serde_json::json!({ "name": "world" });
 
     let result = CtxGreet.call(&ctx, input).await.unwrap();
-    let output: GreetOutput = serde_json::from_value(result).unwrap();
+    let output: GreetOutput = serde_json::from_value(payload_of(result)).unwrap();
     assert_eq!(output.message, "yo world");
 }
 
@@ -153,7 +174,7 @@ async fn test_macro_rpc() {
     let input = serde_json::json!({ "name": "world" });
 
     let result = macro_greet.call(&(), input).await.unwrap();
-    let output: GreetOutput = serde_json::from_value(result).unwrap();
+    let output: GreetOutput = serde_json::from_value(payload_of(result)).unwrap();
     assert_eq!(output.message, "macro hello world");
 }
 
@@ -186,7 +207,7 @@ async fn test_macro_health_no_ctx() {
         .call(&(), serde_json::json!(null))
         .await
         .unwrap();
-    assert_eq!(result, serde_json::json!("ok"));
+    assert_eq!(payload_of(result), serde_json::json!("ok"));
 }
 
 #[tokio::test]
@@ -195,7 +216,7 @@ async fn test_macro_health_with_ctx() {
         .call(&(), serde_json::json!(null))
         .await
         .unwrap();
-    assert_eq!(result, serde_json::json!("ok"));
+    assert_eq!(payload_of(result), serde_json::json!("ok"));
 }
 
 #[tokio::test]
@@ -206,7 +227,7 @@ async fn test_macro_ctx_rpc() {
     let input = serde_json::json!({ "name": "world" });
 
     let result = macro_ctx_greet.call(&ctx, input).await.unwrap();
-    let output: GreetOutput = serde_json::from_value(result).unwrap();
+    let output: GreetOutput = serde_json::from_value(payload_of(result)).unwrap();
     assert_eq!(output.message, "yo world");
 }
 
@@ -232,7 +253,11 @@ async fn test_subscribe() {
     use fnrpc::handler::SubscribeExt;
     let stream = sub_count.call(&(), serde_json::json!(3));
     let items: Vec<i32> = stream
-        .map(|v| serde_json::from_value::<i32>(v.unwrap()).unwrap())
+        .map(|v| {
+            let env = v.unwrap();
+            let json = env.get("json").cloned().unwrap();
+            serde_json::from_value::<i32>(json).unwrap()
+        })
         .collect()
         .await;
     assert_eq!(items, vec![1, 2, 3]);
@@ -246,7 +271,11 @@ async fn test_subscribe_ctx() {
     };
     let stream = sub_count_ctx.call(&ctx, serde_json::json!(2));
     let items: Vec<String> = stream
-        .map(|v| serde_json::from_value::<String>(v.unwrap()).unwrap())
+        .map(|v| {
+            let env = v.unwrap();
+            let json = env.get("json").cloned().unwrap();
+            serde_json::from_value::<String>(json).unwrap()
+        })
         .collect()
         .await;
     assert_eq!(items, vec!["n1".to_string(), "n2".to_string()]);
@@ -273,7 +302,7 @@ fn multi_param_ctx(ctx: &AppCtx, a: i32, b: i32) -> String {
 async fn test_multi_param() {
     let input = serde_json::json!([1, 2, "hello"]);
     let result = multi_param.call(&(), input).await.unwrap();
-    assert_eq!(result, serde_json::json!("12hello"));
+    assert_eq!(payload_of(result), serde_json::json!("12hello"));
 }
 
 #[tokio::test]
@@ -283,7 +312,7 @@ async fn test_multi_param_ctx() {
     };
     let input = serde_json::json!([3, 4]);
     let result = multi_param_ctx.call(&ctx, input).await.unwrap();
-    assert_eq!(result, serde_json::json!("7x"));
+    assert_eq!(payload_of(result), serde_json::json!("7x"));
 }
 
 #[tokio::test]
@@ -432,7 +461,7 @@ async fn test_echo_get_dispatch() {
         .dispatch(&(), "test_echo_get", b"input=%22hello%22", true)
         .await
         .unwrap();
-    assert_eq!(&*out.data, br#""hello""#);
+    assert_eq!(envelope_json(&out), serde_json::json!("hello"));
     assert!(has_json_header(&out)); // RpcFn handler returns JSON
 }
 
@@ -452,7 +481,7 @@ async fn test_echo_post_dispatch() {
         .dispatch(&(), "test_echo_post", br#""world""#, false)
         .await
         .unwrap();
-    assert_eq!(&*out.data, br#""world""#);
+    assert_eq!(envelope_json(&out), serde_json::json!("world"));
     assert!(has_json_header(&out));
 }
 
@@ -479,7 +508,7 @@ async fn test_echo_with_middleware() {
         .dispatch(&(), "test_echo_get", b"input=%22hi%22", true)
         .await
         .unwrap();
-    assert_eq!(&*out.data, br#""hi""#);
+    assert_eq!(envelope_json(&out), serde_json::json!("hi"));
     assert!(has_json_header(&out));
     assert_eq!(mw_called.load(Ordering::SeqCst), 1);
 }
@@ -509,7 +538,7 @@ async fn test_layer_fn_middleware() {
         .dispatch(&(), "test_echo_get", b"input=%22layer_fn%22", true)
         .await
         .unwrap();
-    assert_eq!(&*out.data, br#""layer_fn""#);
+    assert_eq!(envelope_json(&out), serde_json::json!("layer_fn"));
     assert_eq!(call_count.load(Ordering::SeqCst), 1);
 }
 
@@ -529,7 +558,7 @@ async fn test_tracing_layer() {
         .dispatch(&(), "test_echo_get", b"input=%22tracing%22", true)
         .await
         .unwrap();
-    assert_eq!(&*out.data, br#""tracing""#);
+    assert_eq!(envelope_json(&out), serde_json::json!("tracing"));
     assert!(has_json_header(&out));
 }
 

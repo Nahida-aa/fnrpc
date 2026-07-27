@@ -13,8 +13,10 @@
 //! the request side.
 //!
 //! The response side is asymmetric: the client has no schema, so the server
-//! emits a `{ json, meta }` envelope (when bigint leaves are present) to tell
-//! the client where to restore `BigInt`s. See [`encode_bigint_by_schema`].
+//! **always** emits a fixed `{ json, meta }` envelope. `meta` lists the paths
+//! of BigInt leaves (empty `[]` when there are none) so the client knows where
+//! to restore `BigInt`s. The shape is constant — never bare JSON — so the
+//! client parses it the same way every time. See [`encode_bigint_by_schema`].
 //!
 //! The client-side analogue of the envelope codec lives in the `fnrpc-client`
 //! crate ([`fnrpc_client::unpack_meta`]).
@@ -71,13 +73,16 @@ pub(crate) type MetaItem = (u8, Vec<Segment>);
 /// driven entirely by the handler's own schema (symmetric to
 /// [`decode_bigint_by_schema`] on the request side).
 ///
-/// - If the output contains no BigInt-style integer leaves, the bare JSON
-///   value is returned (no envelope) — fully backward compatible.
-/// - Otherwise the BigInt leaves are converted to strings and a `meta` array
-///   records their paths, producing `{ "json": <json>, "meta": [...] }`.
+/// The response is **always** wrapped as `{ "json": <json>, "meta": [...] }`,
+/// regardless of whether any BigInt leaves are present. `meta` is an array of
+/// `[type_id, ...path]` entries; when there are no BigInt fields it is simply
+/// an empty array `[]`.
 ///
-/// The client reconstructs `BigInt` from the `meta` paths; no client-side
-/// schema or negotiation is needed.
+/// The envelope shape is fixed on purpose: the wire protocol must not switch
+/// form based on runtime reflection (e.g. "bare JSON when no bigint"), because
+/// any such heuristic is untrustworthy and forces the client to sniff for the
+/// envelope. A constant structure lets the client always parse `{ json, meta }`
+/// and rebuild `BigInt`s from `meta` without guessing.
 pub fn encode_bigint_by_schema<T: Type + Serialize>(output: &T) -> Value {
     let mut json = match serde_json::to_value(output) {
         Ok(v) => v,
@@ -89,10 +94,6 @@ pub fn encode_bigint_by_schema<T: Type + Serialize>(output: &T) -> Value {
 
     let mut paths: Vec<Vec<Segment>> = Vec::new();
     collect_bigint_paths(&dt, &mut Vec::new(), &mut paths, &types, 0);
-
-    if paths.is_empty() {
-        return json;
-    }
 
     for path in &paths {
         to_string_at(&mut json, path, 0);
@@ -504,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn no_bigint_passthrough_as_plain_json() {
+    fn no_bigint_still_wrapped_as_envelope() {
         #[derive(Type, serde::Serialize)]
         struct Plain {
             name: String,
@@ -514,9 +515,13 @@ mod tests {
             name: "x".to_string(),
             count: 1,
         };
-        // A non-bigint value should pass through as bare JSON (no envelope).
+        // Even without bigint, the response is always the fixed `{ json, meta }`
+        // envelope (with `meta: []`) — never bare JSON.
         let encoded = encode_bigint_by_schema(&out);
-        assert_eq!(encoded, json!({ "name": "x", "count": 1 }));
+        assert_eq!(
+            encoded,
+            json!({ "json": { "name": "x", "count": 1 }, "meta": [] })
+        );
     }
 
     #[test]

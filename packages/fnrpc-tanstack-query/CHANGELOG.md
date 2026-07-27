@@ -1,5 +1,23 @@
 # @fnrpc/tanstack-query
 
+## 0.4.2
+
+### Patch Changes
+
+- Fix wire protocol: server now always wraps query/mutate/subscribe responses in a fixed `{ json, meta }` envelope (with `meta: []` when there are no BigInt fields), instead of returning bare JSON when no bigint was present. The envelope shape is now constant, so clients no longer need to sniff for it.
+
+- Updated dependencies []:
+  - @fnrpc/client@0.4.2
+
+## 0.4.1
+
+### Patch Changes
+
+- Fix published dependency: replace `workspace:*` with the real package version so `@fnrpc/tanstack-query` installs correctly from npm.
+
+- Updated dependencies []:
+  - @fnrpc/client@0.4.1
+
 ## 0.4.0
 
 ### Patch Changes
