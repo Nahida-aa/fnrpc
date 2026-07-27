@@ -44,25 +44,24 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Write npmrc for publishing
+        # `bun publish` reads `.npmrc` for the registry token. The NPM_TOKEN
+        # secret must be an npm token with publish rights and 2FA-TO-PUBLISH
+        # disabled (granular token -> "Require 2FA to publish" OFF), so bun can
+        # publish without prompting for an OTP in this headless environment.
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+
       - uses: changesets/action@v1
         id: changesets
         with:
           # `version` bumps each TS package's version and commits the bump.
           version: bun x changeset version
-          # Publish with `bun publish` (NOT `changeset publish`): bun understands
-          # the `workspace:*` protocol and rewrites it to the real package version
-          # in the published tarball, whereas `changeset publish` ships
-          # `workspace:*` verbatim (broken install for consumers).
-          # `--tolerate-republish` keeps CI re-runs safe when a version already
-          # exists on npm.
-          #
-          # NOTE: `bun install` does NOT sync workspace-internal package versions
-          # into `bun.lock` (it leaves the existing lock's version fields as-is),
-          # so `bun publish` would resolve `workspace:*` to the STALE version
-          # recorded in the lock. Rebuilding the lock first guarantees the
-          # published dependency points at the version just bumped by
-          # `changeset version`.
-          publish: rm -f bun.lock && bun install && bun publish --access public --tolerate-republish
+          # Publish via the script: it rebuilds `bun.lock`, runs `bun run build`
+          # (REQUIRED — the published artifact is the compiled `dist/`), then
+          # `bun publish` (which understands the `workspace:*` protocol and
+          # rewrites it to the real version, unlike `changeset publish`).
+          publish: ./scripts/publish-ts.sh
           commit: "chore: version packages"
           title: "chore: version packages"
         env:

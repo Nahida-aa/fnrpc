@@ -1,0 +1,8 @@
+# Example project-level npmrc for publishing fnrpc TS packages.
+# Copy to `.npmrc` (already gitignored) and fill in a token.
+#
+# The token must be an npm token with publish rights and 2FA-TO-PUBLISH
+# DISABLED (granular token -> turn OFF "Require 2FA to publish"), so that
+# `bun publish` can authenticate without prompting for an OTP.
+//
+registry.npmjs.org/:_authToken=npm_REPLACE_WITH_TOKEN

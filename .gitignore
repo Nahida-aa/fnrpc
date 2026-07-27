@@ -222,3 +222,4 @@ benches/target/
 benches/logs/
 
 .agents/*.local.md
+.npmrc
