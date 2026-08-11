@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
-import tailwindcss from '@tailwindcss/vite';
-import { devtools } from '@tanstack/devtools-vite';
-import { tanstackRouter } from '@tanstack/router-plugin/vite';
+import tailwindcss from "@tailwindcss/vite";
+import { devtools } from "@tanstack/devtools-vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
@@ -13,8 +13,8 @@ export default defineConfig(() => ({
   plugins: [
     devtools(),
     tailwindcss(),
-		tanstackRouter({ target: 'solid', autoCodeSplitting: true }),
-    solid()
+    tanstackRouter({ target: "solid", autoCodeSplitting: true }),
+    solid(),
   ],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -23,7 +23,7 @@ export default defineConfig(() => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: 1421,
     strictPort: true,
     host: host || false,
     hmr: host
