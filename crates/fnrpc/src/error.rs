@@ -29,8 +29,13 @@ pub struct RpcErr {
     pub name: &'static str,
     pub code: String,
     pub message: String,
-    #[specta(type = Option<specta_typescript::Unknown>)]
-    pub data: Option<Value>,
+    // `data` is a required `Value` (serialized as `null` when unset) rather than
+    // `Option<Value>`: an `Option` field makes `PhasesFormat` split `RpcErr`
+    // into `_Serialize`/`_Deserialize` variants, and the resulting union breaks
+    // TanStack Query's nominal typing. `RpcErr` is never deserialized server-side,
+    // so requiring the field costs nothing.
+    #[specta(type = specta_typescript::Unknown)]
+    pub data: Value,
 }
 
 impl RpcErr {
@@ -40,13 +45,13 @@ impl RpcErr {
             name: "RpcErr",
             code: code.into(),
             message: message.into(),
-            data: None,
+            data: Value::Null,
         }
     }
 
     /// Attach arbitrary JSON data to this error.
     pub fn with_data(mut self, data: Value) -> Self {
-        self.data = Some(data);
+        self.data = data;
         self
     }
 

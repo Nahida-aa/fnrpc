@@ -93,8 +93,16 @@ fn generates_expected_ts_types_and_metadata() {
     // ── specta type definitions ──────────────────────────────────────────
     // fnrpc maps big integers to `bigint` (Specta forbids this by default; we
     // override it), and delegates the rest to Specta's inline mapping.
+    //
+    // Since Specta's `PhasesFormat` now models optional fields as a phase
+    // difference, structs with `Option<...>` fields split into `_Serialize` /
+    // `_Deserialize` variants (the field is required when serializing, optional
+    // when deserializing) and the bare name becomes the union of both.
     assert_contains(&generated, "export type Inner = {");
-    assert_contains(&generated, "export type Scalars = {");
+    assert_contains(
+        &generated,
+        "export type Scalars = Scalars_Serialize | Scalars_Deserialize;",
+    );
 
     // big integers → bigint (our proxy layer). Specta emits tab-indented fields.
     assert_contains(&generated, "\tu: bigint,");
@@ -174,5 +182,7 @@ fn generates_expected_ts_types_and_metadata() {
     assert_contains(&generated, "\tname: string,");
     assert_contains(&generated, "\tcode: string,");
     assert_contains(&generated, "\tmessage: string,");
-    assert_contains(&generated, "\tdata: unknown | null,");
+    // `data` is a required `Value` (serialized as `null` when unset) so
+    // `RpcErr` stays a single type; `unknown` covers the `null` case.
+    assert_contains(&generated, "\tdata: unknown,");
 }

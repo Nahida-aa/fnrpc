@@ -33,7 +33,7 @@ export type RpcErr = {
 	name: string,
 	code: string,
 	message: string,
-	data: unknown | null,
+	data: unknown,
 };
 
 export type TickInput = {

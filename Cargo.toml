@@ -44,8 +44,8 @@ codegen-units = 1
 # (including serde variant/field renames via `specta-serde::PhasesFormat`).
 # TODO: Remove once the rc.26 Specta crates are published.
 [patch.crates-io]
-specta = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
-specta-macros = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
-specta-serde = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
-specta-typescript = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
-specta-util = { git = "https://github.com/specta-rs/specta.git", rev = "3c535739ea7bd8737ecdbff6c3aef9b7330da706" }
+specta = { git = "https://github.com/specta-rs/specta.git", rev = "7bfd7428d675201f2beec8a0f0221599a2b3ea45" }
+specta-macros = { git = "https://github.com/specta-rs/specta.git", rev = "7bfd7428d675201f2beec8a0f0221599a2b3ea45" }
+specta-serde = { git = "https://github.com/specta-rs/specta.git", rev = "7bfd7428d675201f2beec8a0f0221599a2b3ea45" }
+specta-typescript = { git = "https://github.com/specta-rs/specta.git", rev = "7bfd7428d675201f2beec8a0f0221599a2b3ea45" }
+specta-util = { git = "https://github.com/specta-rs/specta.git", rev = "7bfd7428d675201f2beec8a0f0221599a2b3ea45" }

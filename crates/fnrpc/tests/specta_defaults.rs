@@ -36,9 +36,9 @@ pub enum Color {
 }
 
 /// `serde_json::Value` is *not* a black box `any` in Specta — it expands into a
-/// precise recursive union of every JSON variant. This is the whole reason
-/// fnrpc needs a remap step (the `Number` branch carries `i64`/`u64`, which
-/// Specta forbids exporting by default).
+/// precise recursive union of every JSON variant. The `Number` branch is an
+/// untagged enum whose `i64`/`u64` variants are what Specta forbids exporting
+/// by default, so fnrpc still needs its remap step to render it as `number`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[allow(dead_code)]
 pub struct WithJson {
@@ -134,18 +134,16 @@ fn default_enum_mapping() {
 fn default_json_value_is_precise_union() {
     // Must go through the remap, otherwise Specta forbids the i64/u64 branches.
     let out = export_resolved::<WithJson>().expect("WithJson export should succeed after remap");
-    // Not an `any` — it enumerates every JSON variant.
+    // Not an `any` — it enumerates every JSON variant. Since the rc.26-era
+    // serde fixes, the enum collapses to a flat structural union (Number is
+    // modeled as an untagged finite number, so it renders as `number`).
     assert_contains(&out, "export type Value =");
-    assert_contains(&out, "\"Null\"");
-    assert_contains(&out, "({ Bool: boolean })");
-    assert_contains(&out, "({ String: string })");
-    assert_contains(&out, "({ Array: Value[] })");
-    assert_contains(&out, "{ [key in string]: Value }");
-    // The Number branch carries f64 (number | null) and i64/u64 (bigint).
-    assert_contains(&out, "Number:");
-    assert_contains(&out, "f64: number | null");
-    assert_contains(&out, "i64: bigint");
-    assert_contains(&out, "u64: bigint");
+    assert_contains(&out, "null | boolean | number | string | Value[] | { [key in string]: Value }");
+    // No residual variant names (Null/Bool/Number/...) leak into the union.
+    assert!(
+        !out.contains("({ Bool: boolean })"),
+        "old object-variant shape leaked into Value:\n{out}"
+    );
 }
 
 /// Documents the *gotcha*: the default Specta export forbids BigInt-style
