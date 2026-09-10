@@ -337,6 +337,33 @@ impl<Ctx: Send + Sync + 'static> RpcRouterBuilder<Ctx> {
         }
     }
 
+    /// Register a type for TypeScript codegen without attaching it to a procedure.
+    ///
+    /// Normally only types reachable from a procedure's `Input`/`Output` are
+    /// exported to `bindings.ts`. Use this to export types the frontend needs
+    /// but that no RPC function mentions — e.g. domain types returned by
+    /// [`route_raw`](Self::route_raw) / [`route_bytes`](Self::route_bytes)
+    /// handlers (which bypass codegen), or shared types the client imports
+    /// directly.
+    ///
+    /// The type's dependencies are registered recursively, as with procedure
+    /// types. This has no runtime effect — the registry is only read by
+    /// [`generate_ts_client`](crate::gen_ts_client::generate_ts_client).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// RpcRouterBuilder::<()>::new()
+    ///     .register_type::<Todo>()
+    ///     .register_type::<TodoFilter>()
+    ///     .route_fn(list_todos)
+    ///     .build();
+    /// ```
+    pub fn register_type<T: Type>(mut self) -> Self {
+        gen_ts_client::register_type::<T>(&mut self.types);
+        self
+    }
+
     /// Register a typed RPC function (query or mutate).
     ///
     /// The handler is wrapped with all pending middleware layers before

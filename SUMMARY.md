@@ -63,6 +63,7 @@ Builder methods:
 - `builder.subscribe(handler)` — register subscribe handler
 - `builder.layer(layer)` — add middleware layer
 - `builder.layer_fn(func)` — add closure-based middleware
+- `builder.register_type::<T>()` — export a type to `bindings.ts` without a procedure
 
 ### Proc macros
 

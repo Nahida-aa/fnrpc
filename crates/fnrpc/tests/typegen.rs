@@ -48,6 +48,13 @@ pub struct Scalars {
     pub f: f64,
 }
 
+/// A type no procedure mentions — only reachable via `register_type`.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct Orphan {
+    pub label: String,
+    pub nested: Inner,
+}
+
 #[fnrpc::rpc_query]
 pub async fn scalars_get(input: Scalars) -> Scalars {
     input
@@ -185,4 +192,27 @@ fn generates_expected_ts_types_and_metadata() {
     // `data` is a required `Value` (serialized as `null` when unset) so
     // `RpcErr` stays a single type; `unknown` covers the `null` case.
     assert_contains(&generated, "\tdata: unknown,");
+}
+
+/// `register_type` exports types that no procedure's Input/Output reaches —
+/// e.g. types used by `route_raw`/`route_bytes` handlers, which bypass
+/// codegen entirely.
+#[test]
+fn register_type_exports_types_without_a_procedure() {
+    let router = RpcRouterBuilder::<()>::new()
+        .route_fn(scalars_get)
+        .register_type::<Orphan>()
+        .build();
+    let generated = generate_ts_client(&router);
+
+    assert_contains(&generated, "export type Orphan = {");
+    assert_contains(&generated, "\tlabel: string,");
+    // The type's dependencies are registered recursively too.
+    assert_contains(&generated, "export type Inner = {");
+
+    // It must NOT leak into `Procedures` / `__procedureMeta` — it is not callable.
+    assert!(
+        !generated.contains("Orphan: { kind:"),
+        "`register_type` must not create a procedure:\n{generated}"
+    );
 }
