@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use specta::Type;
-use specta::datatype::{DataType, Primitive, Reference};
+use specta::datatype::{DataType, NamedReferenceType, Primitive, Reference};
 
 use crate::handler::TsTypeInfo;
 use crate::router::RpcRouter;
@@ -46,7 +46,22 @@ pub fn resolve_ts_ref(data_type: &DataType, types: &specta::Types) -> String {
         DataType::Reference(Reference::Named(r)) => {
             if let Some(ndt) = types.get(r) {
                 if ndt.ty.is_some() {
-                    ndt.name.to_string()
+                    // A generic use site must carry its type arguments: the
+                    // exported type is `Wrapper<T>`, so a bare `Wrapper` is
+                    // not valid TypeScript.
+                    match &r.inner {
+                        NamedReferenceType::Reference { generics, .. }
+                            if !generics.is_empty() =>
+                        {
+                            let args = generics
+                                .iter()
+                                .map(|(_, dt)| resolve_ts_ref(dt, types))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!("{}<{}>", ndt.name, args)
+                        }
+                        _ => ndt.name.to_string(),
+                    }
                 } else {
                     inline_ts(types, data_type)
                 }
