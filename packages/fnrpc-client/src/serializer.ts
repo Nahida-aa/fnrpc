@@ -134,7 +134,12 @@ function applyMeta(node: any, segments: (string | number)[], typeId: number): vo
   }
 
   if (rest.length === 0) {
-    if (node != null && typeof node === "object") {
+    // `meta` is schema-driven, so it names every BigInt leaf the *type* can
+    // hold, not just the ones present in this payload — an enum's inactive
+    // variants are the common case. An absent path must therefore be skipped
+    // rather than written: assigning here would add a phantom `undefined` key
+    // to the decoded object.
+    if (node != null && typeof node === "object" && head in node) {
       node[head] = convertLeaf(node[head], typeId);
     }
     return;

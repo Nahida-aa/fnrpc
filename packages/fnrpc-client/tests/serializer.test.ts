@@ -77,6 +77,36 @@ describe("deserialize (response envelope from the Rust server)", () => {
     expect(out).toEqual({ a: 1 });
   });
 
+  it("skips meta paths that are absent from the payload", () => {
+    // `meta` is schema-driven, so it lists every BigInt leaf the *type* can
+    // hold — an enum's inactive variants are the common case. Those paths are
+    // legitimately missing here and must not be written as `undefined`.
+    const out = deserialize({
+      json: { Small: "18446744073709551615", tag: "t" },
+      meta: [
+        [0, "Small"],
+        [0, "Named", "big"],
+      ],
+    }) as Record<string, unknown>;
+
+    expect(out.Small).toBe(18446744073709551615n);
+    expect(Object.keys(out)).toEqual(["Small", "tag"]);
+    expect("Named" in out).toBe(false);
+  });
+
+  it("does not fabricate a key for an absent single-segment path", () => {
+    // Regression: the single-segment branch assigned unconditionally, so an
+    // unresolvable path added a phantom `undefined` key to the decoded object
+    // (silently, with no way for the caller to notice).
+    const out = deserialize({
+      json: { tag: "t" },
+      meta: [[0, "missing"]],
+    }) as Record<string, unknown>;
+
+    expect(Object.keys(out)).toEqual(["tag"]);
+    expect("missing" in out).toBe(false);
+  });
+
   it("deserialize throws on a non-envelope payload (protocol violation)", () => {
     // The server must always send { json, meta }; bare JSON is a bug, not a
     // tolerated legacy shape — there are no users to stay compatible with.
