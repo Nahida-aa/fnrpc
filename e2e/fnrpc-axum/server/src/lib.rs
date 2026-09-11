@@ -116,6 +116,88 @@ pub fn tick_seq_post(input: TickInput) -> impl futures::Stream<Item = TickOutput
     tick_stream(input)
 }
 
+// ── Shapes whose *serde* wire form differs from their Rust form ─────
+//
+// These are the cases the BigInt path reflection used to get wrong: it walked
+// specta's Rust view of the type while the JSON is produced by serde, so the
+// `meta` paths named keys that do not exist in the payload. Each shape below
+// is echoed back so both directions are exercised — the request must decode
+// the string-encoded BigInt, and the response must carry a `meta` path the
+// client can actually resolve.
+
+/// `rename_all = "camelCase"`: the wire key is `userId`, not `user_id`.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CamelInput {
+    pub user_id: u64,
+    pub total: i64,
+}
+
+#[fnrpc::rpc_mutate]
+pub async fn camel_echo(input: CamelInput) -> CamelInput {
+    input
+}
+
+/// `#[serde(flatten)]`: the inner struct's fields are hoisted onto the outer
+/// object, so `inner` never appears as a key on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct FlatInner {
+    pub big: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct FlatInput {
+    #[serde(flatten)]
+    pub inner: FlatInner,
+    pub tag: String,
+}
+
+#[fnrpc::rpc_mutate]
+pub async fn flat_echo(input: FlatInput) -> FlatInput {
+    input
+}
+
+/// Generic: the BigInt lives in the type *argument*, which the generic
+/// definition itself never mentions.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct Wrapper<T> {
+    pub v: T,
+    pub label: String,
+}
+
+#[fnrpc::rpc_mutate]
+pub async fn wrapper_echo(input: Wrapper<u64>) -> Wrapper<u64> {
+    input
+}
+
+/// Externally tagged enum: serde puts the payload *under the variant name*,
+/// so `Small(u64)` is `{"Small": ...}` on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub enum Payload {
+    Small(u64),
+    Named { big: i64 },
+}
+
+#[fnrpc::rpc_mutate]
+pub async fn payload_echo(input: Payload) -> Payload {
+    input
+}
+
+/// Newtype: serde serialises it transparently, so `UserId(u64)` is a bare
+/// number with no wrapper to index into.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct UserId(u64);
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct NewtypeInput {
+    pub id: UserId,
+}
+
+#[fnrpc::rpc_mutate]
+pub async fn newtype_echo(input: NewtypeInput) -> NewtypeInput {
+    input
+}
+
 #[fnrpc::rpc_query]
 pub async fn zh_input(input: String) -> String {
     format!("zh_input={input}",)
@@ -137,6 +219,11 @@ pub fn build_fn_rpc_router() -> fnrpc::router::RpcRouter<()> {
         .route_fn(big_echo_primitive_mutate)
         .route_fn(big_echo_mutate)
         .route_fn(big_out)
+        .route_fn(camel_echo)
+        .route_fn(flat_echo)
+        .route_fn(wrapper_echo)
+        .route_fn(payload_echo)
+        .route_fn(newtype_echo)
         .subscribe(tick_seq)
         .subscribe(tick_seq_post)
         .route_fn(zh_input)

@@ -211,6 +211,56 @@ async function main() {
     console.log(`OK [zh_input_post (String, POST query)]: ${zhPost}`);
     passed++;
 
+    // 2b. Shapes whose *serde* wire form differs from their Rust form. The
+    // server must emit `meta` paths the client can actually resolve, in both
+    // directions: the request has to decode the string-encoded BigInt, and the
+    // response envelope has to point at the key that really exists.
+    //
+    // These mirror crates/fnrpc/tests/bigint_wire.rs, but through the real
+    // network + the real TS `deserialize`, which the Rust tests cannot cover.
+
+    // `#[serde(rename_all = "camelCase")]` — wire key is `userId`.
+    const camel = await fnrpc.camel_echo({
+      userId: 18446744073709551615n,
+      total: 9223372036854775807n,
+    });
+    assertBig("camel_echo (rename_all camelCase)", camel.userId, 18446744073709551615n);
+    assertBig("camel_echo (rename_all camelCase) total", camel.total, 9223372036854775807n);
+
+    // `#[serde(flatten)]` — `inner` is hoisted away, `big` is a top-level key.
+    const flat = await fnrpc.flat_echo({ big: 18446744073709551615n, tag: "t" });
+    assertBig("flat_echo (serde flatten)", flat.big, 18446744073709551615n);
+    if (flat.tag !== "t") {
+      throw new Error(`[flat_echo] tag mismatch: expected "t", got ${flat.tag}`);
+    }
+    passed++;
+
+    // Generic — the BigInt is only visible after substituting `T = u64`.
+    const wrapped = await fnrpc.wrapper_echo({
+      v: 18446744073709551615n,
+      label: "g",
+    });
+    assertBig("wrapper_echo (generic Wrapper<u64>)", wrapped.v, 18446744073709551615n);
+
+    // Externally tagged enum — payload lives under the variant key.
+    const small = await fnrpc.payload_echo({ Small: 18446744073709551615n });
+    assertBig(
+      "payload_echo (enum newtype variant)",
+      (small as { Small: bigint }).Small,
+      18446744073709551615n,
+    );
+
+    const named = await fnrpc.payload_echo({ Named: { big: 9223372036854775807n } });
+    assertBig(
+      "payload_echo (enum named variant)",
+      (named as { Named: { big: bigint } }).Named.big,
+      9223372036854775807n,
+    );
+
+    // Newtype — serialised transparently, no wrapper to index into.
+    const newtyped = await fnrpc.newtype_echo({ id: 18446744073709551615n });
+    assertBig("newtype_echo (newtype struct)", newtyped.id, 18446744073709551615n);
+
     // 3. SSE subscription assertion: response-direction BigInt envelope over
     // SSE. Each emitted `TickOutput.n` is a `u64`, restored to BigInt by the
     // client. The SSE client auto-reconnects, so we collect the expected

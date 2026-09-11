@@ -12,6 +12,36 @@ export type BigOutput = {
 	list: bigint[],
 };
 
+/**  `rename_all = "camelCase"`: the wire key is `userId`, not `user_id`. */
+export type CamelInput = {
+	userId: bigint,
+	total: bigint,
+};
+
+/**
+ *  `#[serde(flatten)]`: the inner struct's fields are hoisted onto the outer
+ *  object, so `inner` never appears as a key on the wire.
+ */
+export type FlatInner = {
+	big: bigint,
+};
+
+export type FlatInput = {
+	tag: string,
+} & FlatInner;
+
+export type NewtypeInput = {
+	id: UserId,
+};
+
+/**
+ *  Externally tagged enum: serde puts the payload *under the variant name*,
+ *  so `Small(u64)` is `{"Small": ...}` on the wire.
+ */
+export type Payload = ({ Small: bigint }) & { Named?: never } | ({ Named: {
+	big: bigint,
+} }) & { Small?: never };
+
 /**
  *  An RPC error returned by any handler (query, mutate, subscribe).
  * 
@@ -45,6 +75,21 @@ export type TickOutput = {
 	n: bigint,
 };
 
+/**
+ *  Newtype: serde serialises it transparently, so `UserId(u64)` is a bare
+ *  number with no wrapper to index into.
+ */
+export type UserId = bigint;
+
+/**
+ *  Generic: the BigInt lives in the type *argument*, which the generic
+ *  definition itself never mentions.
+ */
+export type Wrapper<T> = {
+	v: T,
+	label: string,
+};
+
 export type Procedures = {
   big_echo: { kind: "query"; method: "GET"; input: BigInput; output: BigInput; error: RpcErr };
   big_echo_primitive: { kind: "query"; method: "GET"; input: bigint; output: string; error: RpcErr };
@@ -52,6 +97,11 @@ export type Procedures = {
   big_echo_primitive_mutate: { kind: "mutate"; method: "POST"; input: bigint; output: string; error: RpcErr };
   big_echo_mutate: { kind: "mutate"; method: "POST"; input: BigInput; output: BigInput; error: RpcErr };
   big_out: { kind: "query"; method: "GET"; input: null; output: BigOutput; error: RpcErr };
+  camel_echo: { kind: "mutate"; method: "POST"; input: CamelInput; output: CamelInput; error: RpcErr };
+  flat_echo: { kind: "mutate"; method: "POST"; input: FlatInput; output: FlatInput; error: RpcErr };
+  wrapper_echo: { kind: "mutate"; method: "POST"; input: Wrapper<bigint>; output: Wrapper<bigint>; error: RpcErr };
+  payload_echo: { kind: "mutate"; method: "POST"; input: Payload; output: Payload; error: RpcErr };
+  newtype_echo: { kind: "mutate"; method: "POST"; input: NewtypeInput; output: NewtypeInput; error: RpcErr };
   tick_seq: { kind: "subscribe"; method: "GET"; input: TickInput; output: TickOutput; error: RpcErr };
   tick_seq_post: { kind: "subscribe"; method: "POST"; input: TickInput; output: TickOutput; error: RpcErr };
   zh_input: { kind: "query"; method: "GET"; input: string; output: string; error: RpcErr };
@@ -65,6 +115,11 @@ export const __procedureMeta = {
   big_echo_primitive_mutate: { kind: "mutate", method: "POST" },
   big_echo_mutate: { kind: "mutate", method: "POST" },
   big_out: { kind: "query", method: "GET" },
+  camel_echo: { kind: "mutate", method: "POST" },
+  flat_echo: { kind: "mutate", method: "POST" },
+  wrapper_echo: { kind: "mutate", method: "POST" },
+  payload_echo: { kind: "mutate", method: "POST" },
+  newtype_echo: { kind: "mutate", method: "POST" },
   tick_seq: { kind: "subscribe", method: "GET" },
   tick_seq_post: { kind: "subscribe", method: "POST" },
   zh_input: { kind: "query", method: "GET" },

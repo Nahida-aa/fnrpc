@@ -10,6 +10,11 @@ including an SSE subscription.
     `big_echo_primitive_mutate`, `big_echo_mutate` accept `u64` / `i128` /
     `Vec<u64>` fields and return a string confirmation with the exact values
     decoded.
+  - `camel_echo`, `flat_echo`, `wrapper_echo`, `payload_echo`, `newtype_echo`
+    echo shapes whose **serde** wire form differs from their Rust form —
+    `rename_all`, `#[serde(flatten)]`, a generic argument, an externally tagged
+    enum, and a newtype struct. These are the shapes whose `meta` paths the
+    server used to compute from the wrong view of the type.
   - `tick_seq` is an SSE subscription (`#[fnrpc::rpc_subscribe]`) that emits a
     head message embedding the exact `start` value, then `count` tick messages.
   - `src/bin/gen_fnrpc.rs` regenerates the TS client bindings from the *same*
@@ -56,3 +61,11 @@ all return bigint structs, and `tick_seq` streams `u64` values over SSE.
 
 It also exercises the typed `createClient` surface (query / mutate with GET and
 POST) and the SSE `subscribe` transport.
+
+The serde-shaped procedures additionally prove the `meta` paths name the keys
+that actually exist on the wire: a `#[serde(rename_all)]` field is addressed by
+its renamed key, a flattened field by its hoisted key, a generic argument by
+where `T` was substituted, an enum payload under its variant key, and a newtype
+without any wrapper segment. Mirrors
+`crates/fnrpc/tests/bigint_wire.rs`, but over the real network and through the
+real TS `deserialize`.
