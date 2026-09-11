@@ -12,6 +12,12 @@
 //! `meta` to locate bigint fields — the schema is the single source of truth on
 //! the request side.
 //!
+//! The schema is reflected over its **serde-resolved** view (see
+//! [`wire_type`]), not specta's raw Rust view. That matters: `T::definition`
+//! reports Rust field names and no serde rewrites, while the JSON is produced
+//! by serde. Reflecting over the raw view yields paths that do not exist in the
+//! payload for renamed, flattened, generic, or enum-tagged shapes.
+//!
 //! The response side is asymmetric: the client has no schema, so the server
 //! **always** emits a fixed `{ json, meta }` envelope. `meta` lists the paths
 //! of BigInt leaves (empty `[]` when there are none) so the client knows where
@@ -21,12 +27,18 @@
 //! The client-side analogue of the envelope codec lives in the `fnrpc-client`
 //! crate ([`fnrpc_client::unpack_meta`]).
 
+use std::any::TypeId;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+
 use serde::Serialize;
 use serde_json::Value;
 use specta::datatype::{
-    DataType, Enum, Fields, List, NamedFields, Primitive, Reference, UnnamedFields,
+    DataType, Enum, Fields, Generic, List, NamedFields, NamedReferenceType, Primitive, Reference,
+    UnnamedFields,
 };
-use specta::{Type, Types};
+use specta::{Format as _, Type, Types};
+use specta_serde::{Phase, PhasesFormat, select_phase_datatype};
 
 /// Convert a bigint-typed JSON value from its wire (string) form into a JSON
 /// number, using the server's own schema rather than a client `meta` envelope.
@@ -43,18 +55,78 @@ use specta::{Type, Types};
 /// The BIGINT type ID (`0`) is defined in the TS serializer and in
 /// `fnrpc-client` (`fnrpc_client::unpack_meta`); this decoder does not need it
 /// because it is driven entirely by the schema, not by `meta`.
-pub fn decode_bigint_by_schema<T: Type>(input: Value) -> Value {
-    let mut types = Types::default();
-    let dt = T::definition(&mut types);
-
-    let mut paths: Vec<Vec<Segment>> = Vec::new();
-    collect_bigint_paths(&dt, &mut Vec::new(), &mut paths, &types, 0);
+pub fn decode_bigint_by_schema<T: Type + 'static>(input: Value) -> Value {
+    let paths = bigint_paths::<T>(Phase::Deserialize);
 
     let mut payload = input;
-    for path in &paths {
+    for path in paths.iter() {
         apply_at(&mut payload, path, 0);
     }
     payload
+}
+
+/// The serde-aware ("wire") view of `T` in the given direction.
+///
+/// `T::definition` yields specta's *Rust* view of the type: Rust field names,
+/// no serde renames, no flattened fields hoisted, no enum tagging applied.
+/// The JSON on the wire is produced by **serde**, so reflecting over the raw
+/// view produces paths that do not exist in the payload (see the module docs).
+///
+/// `PhasesFormat` is the same rewrite the codegen pipeline applies before
+/// exporting TypeScript, so walking its output yields paths whose names match
+/// the real JSON keys. `select_phase_datatype` then picks the direction we
+/// need: what the client *sent* follows the deserialize shape, what the server
+/// *returns* follows the serialize shape.
+///
+/// Not every type graph survives phase resolution; when it fails we fall back
+/// to the raw graph so a request still produces a response (with the same
+/// possibly-wrong paths as before) instead of failing outright.
+fn wire_type<T: Type + 'static>(phase: Phase) -> (Types, DataType) {
+    let mut types = Types::default();
+    let dt = T::definition(&mut types);
+
+    match PhasesFormat.map_types(&types) {
+        Ok(resolved) => {
+            let resolved = resolved.into_owned();
+            let dt = select_phase_datatype(&dt, &resolved, phase);
+            (resolved, dt)
+        }
+        Err(_) => (types, dt),
+    }
+}
+
+/// Cached BigInt leaf paths, keyed by `(type, direction)`.
+///
+/// The paths depend only on `T`'s schema, never on the value, so they are
+/// computed once per `(T, phase)` instead of on every request — resolving the
+/// serde phases clones the whole type registry, which is far too expensive to
+/// redo per call.
+type PathCache = Mutex<HashMap<(TypeId, bool), Arc<Vec<Vec<Segment>>>>>;
+
+static BIGINT_PATH_CACHE: OnceLock<PathCache> = OnceLock::new();
+
+fn bigint_paths<T: Type + 'static>(phase: Phase) -> Arc<Vec<Vec<Segment>>> {
+    let key = (TypeId::of::<T>(), phase == Phase::Serialize);
+    let cache = BIGINT_PATH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(paths) = guard.get(&key) {
+        return Arc::clone(paths);
+    }
+
+    let (types, dt) = wire_type::<T>(phase);
+    let mut paths: Vec<Vec<Segment>> = Vec::new();
+    collect_bigint_paths(
+        &dt,
+        &mut Vec::new(),
+        &mut paths,
+        &types,
+        phase,
+        &[],
+        0,
+    );
+    let paths = Arc::new(paths);
+    guard.insert(key, Arc::clone(&paths));
+    paths
 }
 
 /// Type ID used in the response `meta` array to mark a BigInt leaf.
@@ -83,23 +155,22 @@ pub(crate) type MetaItem = (u8, Vec<Segment>);
 /// any such heuristic is untrustworthy and forces the client to sniff for the
 /// envelope. A constant structure lets the client always parse `{ json, meta }`
 /// and rebuild `BigInt`s from `meta` without guessing.
-pub fn encode_bigint_by_schema<T: Type + Serialize>(output: &T) -> Value {
+pub fn encode_bigint_by_schema<T: Type + Serialize + 'static>(output: &T) -> Value {
     let mut json = match serde_json::to_value(output) {
         Ok(v) => v,
         Err(_) => return Value::Null,
     };
 
-    let mut types = Types::default();
-    let dt = T::definition(&mut types);
+    let paths = bigint_paths::<T>(Phase::Serialize);
 
-    let mut paths: Vec<Vec<Segment>> = Vec::new();
-    collect_bigint_paths(&dt, &mut Vec::new(), &mut paths, &types, 0);
-
-    for path in &paths {
+    for path in paths.iter() {
         to_string_at(&mut json, path, 0);
     }
 
-    let meta: Vec<MetaItem> = paths.into_iter().map(|p| (BIGINT_TYPE_ID, p)).collect();
+    let meta: Vec<MetaItem> = paths
+        .iter()
+        .map(|p| (BIGINT_TYPE_ID, p.clone()))
+        .collect();
 
     let mut envelope = serde_json::Map::new();
     envelope.insert("json".to_string(), json);
@@ -137,11 +208,18 @@ pub(crate) enum Segment {
     AnyKey,
 }
 
+/// Walk the serde-resolved type graph and record a path for every BigInt leaf.
+///
+/// `generics` carries the type arguments in scope at this use site (e.g.
+/// `T = u64` for `Wrapper<u64>`), so a generic parameter inside a definition
+/// can be resolved to the concrete argument it stands for.
 fn collect_bigint_paths(
     dt: &DataType,
     cur: &mut Vec<Segment>,
     out: &mut Vec<Vec<Segment>>,
     types: &Types,
+    phase: Phase,
+    generics: &[(Generic, DataType)],
     depth: usize,
 ) {
     // Bound recursion for pathological self-referential types.
@@ -155,22 +233,39 @@ fn collect_bigint_paths(
                 out.push(cur.clone());
             }
         }
+        // A generic parameter standing in for a concrete argument, e.g. the
+        // `T` inside `Wrapper<u64>`. Without substitution the BigInt in the
+        // argument is invisible — the definition only ever mentions `T`.
+        DataType::Generic(g) => {
+            if let Some((_, substituted)) = generics.iter().find(|(param, _)| param == g) {
+                collect_bigint_paths(substituted, cur, out, types, phase, generics, depth + 1);
+            }
+        }
         DataType::Struct(s) => match &s.fields {
             Fields::Named(NamedFields { fields, .. }) => {
                 for (name, field) in fields {
                     if let Some(ty) = &field.ty {
                         cur.push(Segment::Field(name.to_string()));
-                        collect_bigint_paths(ty, cur, out, types, depth + 1);
+                        collect_bigint_paths(ty, cur, out, types, phase, generics, depth + 1);
                         cur.pop();
                     }
                 }
             }
             Fields::Unnamed(UnnamedFields { fields, .. }) => {
-                for (idx, field) in fields.iter().enumerate() {
-                    if let Some(ty) = &field.ty {
-                        cur.push(Segment::Index(idx));
-                        collect_bigint_paths(ty, cur, out, types, depth + 1);
-                        cur.pop();
+                // serde serialises a single-field tuple struct transparently:
+                // `struct UserId(u64)` is a bare number on the wire, not `[n]`.
+                // Only a genuine 2+ tuple becomes a JSON array.
+                if fields.len() == 1 {
+                    if let Some(ty) = fields[0].ty.as_ref() {
+                        collect_bigint_paths(ty, cur, out, types, phase, generics, depth + 1);
+                    }
+                } else {
+                    for (idx, field) in fields.iter().enumerate() {
+                        if let Some(ty) = &field.ty {
+                            cur.push(Segment::Index(idx));
+                            collect_bigint_paths(ty, cur, out, types, phase, generics, depth + 1);
+                            cur.pop();
+                        }
                     }
                 }
             }
@@ -178,57 +273,82 @@ fn collect_bigint_paths(
         },
         DataType::List(l) => {
             cur.push(Segment::AnyElem);
-            collect_bigint_paths(list_ty(l), cur, out, types, depth + 1);
+            collect_bigint_paths(list_ty(l), cur, out, types, phase, generics, depth + 1);
             cur.pop();
         }
         DataType::Map(m) => {
             // Map keys are almost never bigint; convert every value.
             cur.push(Segment::AnyKey);
-            collect_bigint_paths(m.value_ty(), cur, out, types, depth + 1);
+            collect_bigint_paths(m.value_ty(), cur, out, types, phase, generics, depth + 1);
             cur.pop();
         }
         DataType::Tuple(t) => {
             for (idx, elem) in t.elements.iter().enumerate() {
                 cur.push(Segment::Index(idx));
-                collect_bigint_paths(elem, cur, out, types, depth + 1);
+                collect_bigint_paths(elem, cur, out, types, phase, generics, depth + 1);
                 cur.pop();
             }
         }
         DataType::Nullable(inner) => {
-            collect_bigint_paths(inner, cur, out, types, depth + 1);
+            collect_bigint_paths(inner, cur, out, types, phase, generics, depth + 1);
         }
         DataType::Reference(r) => match r {
-            Reference::Named(named) => match &named.inner {
-                specta::datatype::NamedReferenceType::Inline { dt: inline, .. } => {
-                    collect_bigint_paths(inline, cur, out, types, depth + 1);
-                }
-                _ => {
-                    if let Some(ndt) = types.get(named) {
-                        if let Some(ty) = &ndt.ty {
-                            collect_bigint_paths(ty, cur, out, types, depth + 1);
+            Reference::Named(named) => {
+                // `PhasesFormat` may have split this type into `*_Serialize` /
+                // `*_Deserialize` variants; select ours before descending.
+                let selected = select_phase_datatype(
+                    &DataType::Reference(Reference::Named(named.clone())),
+                    types,
+                    phase,
+                );
+                let DataType::Reference(Reference::Named(named)) = selected else {
+                    return;
+                };
+
+                // Type arguments instantiated at this use site.
+                let args: Vec<(Generic, DataType)> = match &named.inner {
+                    NamedReferenceType::Reference { generics, .. } => generics.clone(),
+                    _ => Vec::new(),
+                };
+
+                match &named.inner {
+                    NamedReferenceType::Inline { dt: inline, .. } => {
+                        collect_bigint_paths(inline, cur, out, types, phase, &args, depth + 1);
+                    }
+                    _ => {
+                        if let Some(ty) = types.get(&named).and_then(|ndt| ndt.ty.as_ref()) {
+                            collect_bigint_paths(ty, cur, out, types, phase, &args, depth + 1);
                         }
                     }
                 }
-            },
+            }
             Reference::Opaque(_) => {}
         },
         DataType::Enum(e) => {
-            collect_enum_paths(e, cur, out, types, depth + 1);
+            collect_enum_paths(e, cur, out, types, phase, generics, depth + 1);
         }
         DataType::Intersection(parts) => {
             for part in parts {
-                collect_bigint_paths(part, cur, out, types, depth + 1);
+                collect_bigint_paths(part, cur, out, types, phase, generics, depth + 1);
             }
         }
-        DataType::Generic(_) => {}
     }
 }
 
+/// Walk every variant of an enum.
+///
+/// After `PhasesFormat`, serde's enum representation has already been lowered
+/// into the shape: an externally tagged variant becomes a named field keyed by
+/// the variant name (`Small(u64)` → `{ Small: u64 }`), so the generic
+/// named-field rule below produces the right path without special-casing
+/// tagging. Untagged variants keep their payload inline, which is also correct.
 fn collect_enum_paths(
     e: &Enum,
     cur: &mut Vec<Segment>,
     out: &mut Vec<Vec<Segment>>,
     types: &Types,
+    phase: Phase,
+    generics: &[(Generic, DataType)],
     depth: usize,
 ) {
     for (_name, variant) in &e.variants {
@@ -237,17 +357,25 @@ fn collect_enum_paths(
                 for (fname, field) in fields {
                     if let Some(ty) = &field.ty {
                         cur.push(Segment::Field(fname.to_string()));
-                        collect_bigint_paths(ty, cur, out, types, depth + 1);
+                        collect_bigint_paths(ty, cur, out, types, phase, generics, depth + 1);
                         cur.pop();
                     }
                 }
             }
             Fields::Unnamed(UnnamedFields { fields, .. }) => {
-                for (idx, field) in fields.iter().enumerate() {
-                    if let Some(ty) = &field.ty {
-                        cur.push(Segment::Index(idx));
-                        collect_bigint_paths(ty, cur, out, types, depth + 1);
-                        cur.pop();
+                // Same transparency rule as struct newtypes: a single-field
+                // variant carries its payload directly, not inside an array.
+                if fields.len() == 1 {
+                    if let Some(ty) = fields[0].ty.as_ref() {
+                        collect_bigint_paths(ty, cur, out, types, phase, generics, depth + 1);
+                    }
+                } else {
+                    for (idx, field) in fields.iter().enumerate() {
+                        if let Some(ty) = &field.ty {
+                            cur.push(Segment::Index(idx));
+                            collect_bigint_paths(ty, cur, out, types, phase, generics, depth + 1);
+                            cur.pop();
+                        }
                     }
                 }
             }

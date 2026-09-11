@@ -179,7 +179,7 @@ pub trait RawRpcFn<Ctx>: Send + Sync {
 
 /// Typed RPC subscribe trait.
 pub trait RpcSubscribe<Ctx>: Send + Sync {
-    type Input: DeserializeOwned + Type;
+    type Input: DeserializeOwned + Type + 'static;
     type Output: Serialize + Type + 'static;
     const KEY: &'static str;
     const METHOD: &'static str = "GET";
