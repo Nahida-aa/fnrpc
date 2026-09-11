@@ -194,6 +194,56 @@ fn generates_expected_ts_types_and_metadata() {
     assert_contains(&generated, "\tdata: unknown,");
 }
 
+/// Shapes that *hold* a BigInt without being named types themselves must render
+/// inline as `bigint`-flavoured TypeScript. `specta_typescript` forbids
+/// BigInt-style primitives outright (JS precision loss), so without the
+/// remapper these all collapsed to `unknown` and silently untyped the
+/// procedure's output.
+#[fnrpc::rpc_query]
+pub async fn big_list(_input: ()) -> Vec<u64> {
+    vec![]
+}
+
+#[fnrpc::rpc_query]
+pub async fn big_option(_input: ()) -> Option<u64> {
+    None
+}
+
+#[fnrpc::rpc_query]
+pub async fn big_map(_input: ()) -> std::collections::HashMap<String, u64> {
+    std::collections::HashMap::new()
+}
+
+#[fnrpc::rpc_query]
+pub async fn big_tuple(_input: ()) -> (u64, String) {
+    (0, String::new())
+}
+
+fn build_container_router() -> fnrpc::router::RpcRouter<()> {
+    RpcRouterBuilder::<()>::new()
+        .route_fn(big_list)
+        .route_fn(big_option)
+        .route_fn(big_map)
+        .route_fn(big_tuple)
+        .build()
+}
+
+#[test]
+fn bigint_containers_render_inline_not_unknown() {
+    let generated = generate_ts_client(&build_container_router());
+
+    assert_contains(&generated, "output: bigint[];");
+    assert_contains(&generated, "output: bigint | null;");
+    assert_contains(&generated, "output: { [key in string]: bigint };");
+    assert_contains(&generated, "output: [bigint, string];");
+
+    // The regression itself: none of them may degrade to `unknown`.
+    assert!(
+        !generated.contains("output: unknown"),
+        "a BigInt-bearing output shape collapsed to `unknown`:\n{generated}"
+    );
+}
+
 /// `register_type` exports types that no procedure's Input/Output reaches —
 /// e.g. types used by `route_raw`/`route_bytes` handlers, which bypass
 /// codegen entirely.

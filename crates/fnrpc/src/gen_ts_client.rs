@@ -24,24 +24,31 @@ pub fn register_type<T: Type>(types: &mut specta::Types) {
     T::definition(types);
 }
 
+/// Render a [`DataType`] as an inline TypeScript type.
+///
+/// BigInt-style primitives are remapped first. `specta_typescript` rejects them
+/// outright (to avoid JS precision loss), so without this every shape *holding*
+/// one — `Vec<u64>`, `Option<u64>`, `(u64, String)`, `HashMap<String, u64>` —
+/// would fail to render and collapse to `unknown`.
+fn inline_ts(types: &specta::Types, data_type: &DataType) -> String {
+    let exporter = specta_typescript::Typescript::default();
+    let remapper = bigint_remapper();
+    let types = remapper.remap_types(types.clone());
+    let data_type = remapper.remap_dt(data_type.clone());
+    specta_typescript::primitives::inline(&exporter, &types, &data_type)
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
 /// Resolve a [`DataType`] to a TypeScript type reference string.
 /// Called after all types have been registered.
 pub fn resolve_ts_ref(data_type: &DataType, types: &specta::Types) -> String {
     match data_type {
-        DataType::Struct(_) | DataType::Enum(_) => types
-            .clone()
-            .into_sorted_iter()
-            .next()
-            .map(|ndt| ndt.name.to_string())
-            .unwrap_or_else(|| "unknown".to_string()),
         DataType::Reference(Reference::Named(r)) => {
             if let Some(ndt) = types.get(r) {
                 if ndt.ty.is_some() {
                     ndt.name.to_string()
                 } else {
-                    let exporter = specta_typescript::Typescript::default();
-                    specta_typescript::primitives::inline(&exporter, types, data_type)
-                        .unwrap_or_else(|_| "unknown".to_string())
+                    inline_ts(types, data_type)
                 }
             } else {
                 "unknown".to_string()
@@ -64,11 +71,13 @@ pub fn resolve_ts_ref(data_type: &DataType, types: &specta::Types) -> String {
         {
             "bigint".to_string()
         }
-        _ => {
-            let exporter = specta_typescript::Typescript::default();
-            specta_typescript::primitives::inline(&exporter, types, data_type)
-                .unwrap_or_else(|_| "unknown".to_string())
-        }
+        // Everything else is rendered inline. This includes a bare
+        // `Struct`/`Enum`, which only a hand-written `impl Type` can produce —
+        // `#[derive(Type)]` always yields a `Reference`, even with
+        // `#[specta(inline)]`. Such a shape was never registered, so it has no
+        // name to emit; taking the first type in the registry (the previous
+        // behaviour) silently referenced an unrelated type instead.
+        _ => inline_ts(types, data_type),
     }
 }
 
